@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import logo from "../../assets/vabgen_logo.png";
 import "./login.css";
 
-const Login = () => {
+const Login = ({ onLogin }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: "", password: "", remember: false });
   const [showPwd, setShowPwd] = useState(false);
@@ -35,7 +36,8 @@ const Login = () => {
 
       if (res.ok) {
         setMsg({ type: "success", text: `Welcome back to VabGen Rx, ${data.user.name}!` });
-        navigate("/dashboard"); // ✅ redirect after login
+        onLogin(data.user);
+        navigate("/dashboard");
       } else {
         setMsg({ type: "danger", text: data.message || "Invalid email or password." });
       }
@@ -52,7 +54,14 @@ const Login = () => {
 
         {/* Brand Header */}
         <div className="login-header">
-          <h1 className="brand-name">VabGen Rx</h1>
+          <img
+            src={logo}
+            alt="VabGen Rx Logo"
+            style={{ width: 120, height: 120, objectFit: "contain", marginBottom: 10 }}
+          />
+          <h1 className="brand-name">
+            VabGen <span style={{ color: "#ef4444" }}>R</span><span style={{ color: "#1a73e8" }}>x</span>
+          </h1>
           <p className="brand-tagline">Medication Safety Platform</p>
         </div>
 
@@ -110,7 +119,6 @@ const Login = () => {
                 />
                 Remember me
               </label>
-              <a href="/forgot-password" className="forgot-link">Forgot password?</a>
             </div>
 
             <button type="submit" className="btn-submit" disabled={loading}>
@@ -118,12 +126,7 @@ const Login = () => {
             </button>
           </form>
 
-          <p className="switch-text">
-            Don't have an account?{" "}
-            <span className="switch-link" onClick={() => navigate("/register")}>
-              Create one
-            </span>
-          </p>
+      
         </div>
       </div>
     </div>
