@@ -181,14 +181,25 @@
 
 .dash-viewall:hover { text-decoration: underline; }
 
-/* ─── Middle Row ──────────────────────────────────────────── */
+/* ─── Main Content Grid ───────────────────────────────────── */
 
-.dash-mid {
+.dash-content-grid {
   display: grid;
   grid-template-columns: 1fr 280px;
   gap: 16px;
-  margin-bottom: 20px;
+  align-items: start;
 }
+
+/* ─── Left Column ─────────────────────────────────────────── */
+
+.dash-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ─── Old mid row (no-op, kept for safety) ───────────────── */
+.dash-mid { display: contents; }
 
 /* ─── Appointments Table ──────────────────────────────────── */
 
@@ -293,10 +304,20 @@
 
 /* ─── Timeline ────────────────────────────────────────────── */
 
-.timeline-list {
+.dash-timeline {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 180px);
+}
+
+.timeline-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
 }
 
 .timeline-item {
@@ -345,7 +366,7 @@
 
 .dash-bottom {
   display: grid;
-  grid-template-columns: 1fr 1fr 300px;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
@@ -417,13 +438,13 @@
 .monthly-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 20px;
   margin-bottom: 16px;
 }
 
 .monthly-stat-box {
   border-radius: 10px;
-  padding: 14px;
+  padding: 24px;
   text-align: center;
 }
 
@@ -618,13 +639,14 @@
 /* ─── Responsive ──────────────────────────────────────────── */
 
 @media (max-width: 1200px) {
-  .dash-cards { grid-template-columns: repeat(2, 1fr); }
-  .dash-mid   { grid-template-columns: 1fr; }
-  .dash-bottom { grid-template-columns: 1fr 1fr; }
+  .dash-cards        { grid-template-columns: repeat(2, 1fr); }
+  .dash-content-grid { grid-template-columns: 1fr; }
+  .dash-bottom       { grid-template-columns: 1fr 1fr; }
+  .dash-timeline     { position: static; max-height: none; }
 }
 
 @media (max-width: 768px) {
-  .dash-main  { margin-left: 0; padding: 16px; }
-  .dash-cards { grid-template-columns: 1fr 1fr; }
+  .dash-main   { margin-left: 0; padding: 16px; }
+  .dash-cards  { grid-template-columns: 1fr 1fr; }
   .dash-bottom { grid-template-columns: 1fr; }
 }

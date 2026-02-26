@@ -7,11 +7,9 @@ const NAV_ITEMS = {
   MAIN: [
     { label: "Dashboard",   icon: "🏠", path: "/dashboard" },
     { label: "My Patients", icon: "👤", path: "/patients" },
-   
   ],
   TOOLS: [
-    { label: "Calculators", icon: "🧮", path: "/calculators" },
-    { label: "Settings",    icon: "⚙️", path: "/settings" },
+    { label: "Settings",    icon: "⚙️", path: "/settings" },  // ← was already here
   ],
 };
 
@@ -45,7 +43,7 @@ const Nav = ({ user }) => {
         const data = await res.json();
         if (res.ok) setProfile(data.user);
       } catch (err) {
-        console.error('Failed to fetch profile:', err);
+        console.error("Failed to fetch profile:", err);
       }
     };
     fetchProfile();
@@ -61,7 +59,6 @@ const Nav = ({ user }) => {
   return (
     <>
       <aside className="nav-sidebar">
-        {/* Logo / Brand */}
         <div className="nav-brand">
           <img src={logo} alt="VabGen Rx" className="nav-logo" />
           <span className="nav-brand-name">
@@ -69,12 +66,10 @@ const Nav = ({ user }) => {
           </span>
         </div>
 
-        {/* Navigation Links */}
         <nav className="nav-links">
           <NavSection title="MAIN"  items={NAV_ITEMS.MAIN} />
           <NavSection title="TOOLS" items={NAV_ITEMS.TOOLS} />
 
-          {/* Logout Button */}
           <div className="nav-section">
             <button
               className="nav-item nav-logout-btn"
@@ -86,7 +81,6 @@ const Nav = ({ user }) => {
           </div>
         </nav>
 
-        {/* User Footer */}
         <div className="nav-footer">
           {displayUser?.image_url ? (
             <img
@@ -94,14 +88,14 @@ const Nav = ({ user }) => {
               alt="Profile"
               className="nav-avatar-img"
               onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
+                e.target.style.display = "none";
+                e.target.nextSibling.style.display = "flex";
               }}
             />
           ) : null}
           <div
             className="nav-avatar"
-            style={{ display: displayUser?.image_url ? 'none' : 'flex' }}
+            style={{ display: displayUser?.image_url ? "none" : "flex" }}
           >
             {displayUser?.name ? displayUser.name.charAt(0).toUpperCase() : "U"}
           </div>
@@ -116,7 +110,6 @@ const Nav = ({ user }) => {
         </div>
       </aside>
 
-      {/* Logout Confirmation Modal */}
       {showLogoutModal && (
         <div className="logout-overlay">
           <div className="logout-modal">
@@ -124,16 +117,10 @@ const Nav = ({ user }) => {
             <h3 className="logout-title">Confirm Logout</h3>
             <p className="logout-msg">Are you sure you want to logout from VabGen Rx?</p>
             <div className="logout-actions">
-              <button
-                className="logout-cancel"
-                onClick={() => setShowLogoutModal(false)}
-              >
+              <button className="logout-cancel" onClick={() => setShowLogoutModal(false)}>
                 Cancel
               </button>
-              <button
-                className="logout-confirm"
-                onClick={handleLogoutConfirm}
-              >
+              <button className="logout-confirm" onClick={handleLogoutConfirm}>
                 Yes, Logout
               </button>
             </div>
