@@ -1,21 +1,40 @@
-# VabGen Rx
+# VabGen-Rx
 
-## Clinical Pharmacology Web Application
+## Tech Stack
+- **Frontend:** React + Vite
+- **Backend:** Node.js native HTTP
+- **Database:** Azure SQL databases for credentials and patients
+- **Storage:** Azure Blob Storage for profile photos
 
-### Overview
-VabGen Rx is a clinical pharmacology web application developed to assist healthcare professionals in making informed decisions regarding pharmaceutical therapies. It leverages current pharmacological knowledge and data to provide accurate information about drug interactions, dosage recommendations, and patient-specific considerations. 
+## Features
+- **Doctor Login**: Secure login for healthcare professionals.
+- **Patient Management**: Efficient management of inpatient and outpatient details.
+- **Dashboard**: A comprehensive view of patient information and statistics.
+- **Diagnosis & Prescription**: Tools for medical diagnosis and prescription management.
+- **Drug Interaction Alerts**: Notifications for potential drug interactions.
+- **Referral System**: Seamlessly refer patients to other professionals.
+- **Settings**: Customize user preferences and application settings.
+- **Dark Mode**: Support for dark mode to enhance user experience.
 
-### Features
-- **Drug Interaction Checker:** Quickly assess potential interactions between prescribed medications.
-- **Dosage Calculator:** Provides patient-specific dosage recommendations based on age, weight, and renal function.
-- **Drug Database:** A comprehensive database of available medications with detailed pharmacological information.
-- **Patient Profiles:** Ability to create and manage profiles for individual patients, track medication history and therapy outcomes.
+## Architecture Diagram
+![Architecture Diagram](link_to_architecture_diagram.png)
 
-### Getting Started
-For more information on setup, usage, and contribution to the project, please refer to the documentation provided within this repository. 
+## Installation Instructions
+1. Clone the repository: `git clone https://github.com/Aadarsh-Praveen/VabGen-Rx.git`
+2. Navigate to the project directory: `cd VabGen-Rx`
+3. Install dependencies: `npm install`
+4. To start the frontend: `npm run dev`
+5. To start the backend, navigate to the backend directory and run: `node server.js`
 
-### License
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Development Workflow
+- Feature branches are created from `dev` for each new feature or bug fix.
+- Once the feature is complete, a pull request is made to merge into `dev`.
+- Code reviews and testing are conducted before merging.
 
-### Current Date and Time
-**Last Updated:** 2026-02-26 20:40:51 (UTC)
+## Developer Team
+- **Bharathi172**: Frontend Development
+- **Aadarsh**: Backend Development
+- **Praveen**: Database Management
+- **Team Member 4**: DevOps and Deployment
+
+For any queries or contributions, please feel free to reach out!  
