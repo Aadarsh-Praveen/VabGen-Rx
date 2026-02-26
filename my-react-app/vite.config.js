@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  appType: 'spa',
   server: {
     proxy: {
       '/api': {
@@ -10,6 +11,5 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
-    historyApiFallback: true,
   },
 });

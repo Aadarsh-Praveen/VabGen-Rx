@@ -146,6 +146,110 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Get OP diagnosis by OP_No ──────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/op-diagnosis/')) {
+    const opNo = decodeURIComponent(req.url.split('/api/op-diagnosis/')[1]);
+    if (!opNo) { sendJSON(res, 400, { message: 'Invalid OP number' }); return; }
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('opNo', sql.VarChar, opNo)
+        .query(`
+          SELECT OP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
+                 Drugs_Prescribed, Drug_Drug_Interactions,
+                 Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
+          FROM dbo.op_diagnosis WHERE OP_No = @opNo
+        `);
+      if (result.recordset.length > 0) {
+        sendJSON(res, 200, { diagnosis: result.recordset[0] });
+      } else {
+        sendJSON(res, 404, { message: 'Diagnosis not found' });
+      }
+    } catch (err) {
+      console.error('❌ op-diagnosis error:', err.message);
+      sendJSON(res, 500, { message: err.message });
+    }
+    return;
+  }
+
+  // ── Save OP diagnosis ───────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-diagnosis') {
+    const { opNo, primary, secondary, notes } = await getBody(req);
+    if (!opNo) { sendJSON(res, 400, { message: 'Invalid OP number' }); return; }
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('opNo',      sql.VarChar, opNo)
+        .input('primary',   sql.VarChar, primary   || '')
+        .input('secondary', sql.VarChar, secondary || '')
+        .input('notes',     sql.VarChar, notes     || '')
+        .query(`
+          UPDATE dbo.op_diagnosis
+          SET Diagnosis            = @primary,
+              Secondary_Diagnosis  = @secondary,
+              Clinical_Notes       = @notes
+          WHERE OP_No = @opNo
+        `);
+      sendJSON(res, 200, { message: 'Diagnosis saved' });
+    } catch (err) {
+      console.error('❌ save op-diagnosis error:', err.message);
+      sendJSON(res, 500, { message: err.message });
+    }
+    return;
+  }
+
+  // ── Get IP diagnosis by IP_No ──────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/ip-diagnosis/')) {
+    const ipNo = decodeURIComponent(req.url.split('/api/ip-diagnosis/')[1]);
+    if (!ipNo) { sendJSON(res, 400, { message: 'Invalid IP number' }); return; }
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('ipNo', sql.VarChar, ipNo)
+        .query(`
+          SELECT IP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
+                 Drugs_Prescribed, Drug_Drug_Interactions,
+                 Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
+          FROM dbo.ip_diagnosis WHERE IP_No = @ipNo
+        `);
+      if (result.recordset.length > 0) {
+        sendJSON(res, 200, { diagnosis: result.recordset[0] });
+      } else {
+        sendJSON(res, 404, { message: 'Diagnosis not found' });
+      }
+    } catch (err) {
+      console.error('❌ ip-diagnosis error:', err.message);
+      sendJSON(res, 500, { message: err.message });
+    }
+    return;
+  }
+
+  // ── Save IP diagnosis ───────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-diagnosis') {
+    const { ipNo, primary, secondary, notes } = await getBody(req);
+    if (!ipNo) { sendJSON(res, 400, { message: 'Invalid IP number' }); return; }
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('ipNo',      sql.VarChar, ipNo)
+        .input('primary',   sql.VarChar, primary   || '')
+        .input('secondary', sql.VarChar, secondary || '')
+        .input('notes',     sql.VarChar, notes     || '')
+        .query(`
+          UPDATE dbo.ip_diagnosis
+          SET Diagnosis            = @primary,
+              Secondary_Diagnosis  = @secondary,
+              Clinical_Notes       = @notes
+          WHERE IP_No = @ipNo
+        `);
+      sendJSON(res, 200, { message: 'Diagnosis saved' });
+    } catch (err) {
+      console.error('❌ save ip-diagnosis error:', err.message);
+      sendJSON(res, 500, { message: err.message });
+    }
+    return;
+  }
+
   // ── Get outpatient lab results by OP_No (/api/op-lab/) ──────
   if (req.method === 'GET' && req.url.startsWith('/api/op-lab/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-lab/')[1]);
