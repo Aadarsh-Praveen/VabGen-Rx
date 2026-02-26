@@ -446,3 +446,152 @@
 [data-theme="dark"] .pt-long-text   { color: #ccc; }
 [data-theme="dark"] .pt-ip          { background: #2a2a40; }
 [data-theme="dark"] .pt-dept        { background: #2a2a40; color: #ccc; }
+
+/* ── In/Out Patient Toggle ──────────────────────────────────── */
+.pt-type-toggle {
+  display: flex;
+  gap: 0.5rem;
+  background: #f0f0f8;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.pt-type-btn {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.pt-type-btn.active {
+  background: #fff;
+  color: #1a73e8;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.pt-type-btn:hover:not(.active) {
+  color: #555;
+}
+
+/* ── Filter Icon Button ─────────────────────────────────────── */
+.pt-filter-wrap {
+  position: relative;
+}
+
+.pt-filter-icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  border: 1.5px solid #e0e3ef;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.pt-filter-icon-btn:hover,
+.pt-filter-icon-btn.active {
+  border-color: #1a73e8;
+  color: #1a73e8;
+  background: #f0f5ff;
+}
+
+.pt-filter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1a73e8;
+  position: absolute;
+  top: -3px;
+  right: -3px;
+}
+
+/* ── Filter Dropdown ────────────────────────────────────────── */
+.pt-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #fff;
+  border: 1.5px solid #e0e3ef;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 200px;
+  z-index: 100;
+  padding: 8px;
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pt-filter-heading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #aaa;
+  padding: 4px 8px 8px;
+  margin: 0;
+}
+
+.pt-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.875rem;
+  color: #444;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-weight: 500;
+}
+
+.pt-filter-option:hover { background: #f0f5ff; color: #1a73e8; }
+.pt-filter-option.active { background: #e8f0fe; color: #1a73e8; font-weight: 700; }
+
+.pt-filter-check {
+  color: #1a73e8;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* ── Active Filter Chip ─────────────────────────────────────── */
+.pt-active-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #e8f0fe;
+  color: #1a73e8;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+}
+
+.pt-active-filter button {
+  background: none;
+  border: none;
+  color: #1a73e8;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  line-height: 1;
+}
