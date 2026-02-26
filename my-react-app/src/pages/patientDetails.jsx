@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Nav from "../components/nav";
+import DiagnosisTab from "../components/diagnosis";
 import "./patientDetails.css";
 
 // ── Reusable sub-components ────────────────────────────────────
@@ -26,22 +27,21 @@ const PatientInfoTab = ({ p, isOutpatient }) => {
   return (
     <div className="pd-tab-content">
       <Section title="👤 Demographics">
-        <Row label="Full Name"           value={p.Name} />
-        <Row label="Age"                 value={`${p.Age} years`} />
-        <Row label="Sex"                 value={p.Sex === "M" ? "Male" : "Female"} />
-        <Row label="Race"                value={p.Race} />
-        <Row label="Ethnicity"           value={p.Ethnicity} />
-        <Row label="Preferred Language"  value={p.Preferred_Language} />
-        <Row label="Occupation"          value={p.Occupation} />
-        <Row label="Weight"              value={p.Weight_kg ? `${p.Weight_kg} kg` : null} />
-        <Row label="Height"              value={p.Height_cm ? `${p.Height_cm} cm` : null} />
-        <Row label="BMI"                 value={p.BMI} />
-        <Row label="Insurance Type"      value={p.Insurance_Type} />
+        <Row label="Full Name"          value={p.Name} />
+        <Row label="Age"                value={`${p.Age} years`} />
+        <Row label="Sex"                value={p.Sex === "M" ? "Male" : "Female"} />
+        <Row label="Race"               value={p.Race} />
+        <Row label="Ethnicity"          value={p.Ethnicity} />
+        <Row label="Preferred Language" value={p.Preferred_Language} />
+        <Row label="Occupation"         value={p.Occupation} />
+        <Row label="Weight"             value={p.Weight_kg ? `${p.Weight_kg} kg` : null} />
+        <Row label="Height"             value={p.Height_cm ? `${p.Height_cm} cm` : null} />
+        <Row label="BMI"                value={p.BMI} />
+        <Row label="Insurance Type"     value={p.Insurance_Type} />
       </Section>
 
       <Section title="🏥 Visit Info">
-        <Row label={isOutpatient ? "OP Number" : "IP Number"}
-             value={isOutpatient ? p.OP_No : p.IP_No} />
+        <Row label={isOutpatient ? "OP Number" : "IP Number"} value={isOutpatient ? p.OP_No : p.IP_No} />
         <Row label="Department"              value={p.Dept} />
         <Row label="Date of Admission"       value={doa} />
         {!isOutpatient && <Row label="Date of Discharge" value={dod} />}
@@ -60,7 +60,7 @@ const PatientInfoTab = ({ p, isOutpatient }) => {
       </Section>
     </div>
   );
-};
+};    
 
 // ── Tab 2: Lab Results ─────────────────────────────────────────
 const LabResultsTab = ({ p, isOutpatient }) => {
@@ -69,7 +69,6 @@ const LabResultsTab = ({ p, isOutpatient }) => {
   const [error, setError]     = useState(null);
 
   const patientNo = isOutpatient ? p.OP_No : p.IP_No;
-  console.log("🧪 LabResultsTab — patientNo:", patientNo, "| isOutpatient:", isOutpatient, "| p:", p);
 
   useEffect(() => {
     const fetchLab = async () => {
@@ -90,33 +89,27 @@ const LabResultsTab = ({ p, isOutpatient }) => {
     fetchLab();
   }, [patientNo]);
 
-  if (loading) return (
-    <div className="pd-state"><div className="pd-spinner" /><p>Loading lab results...</p></div>
-  );
-  if (error) return <div className="pd-state pd-error">⚠️ {error}</div>;
-  if (!lab)  return <div className="pd-state">No lab results found for this patient.</div>;
+  if (loading) return <div className="pd-state"><div className="pd-spinner" /><p>Loading lab results...</p></div>;
+  if (error)   return <div className="pd-state pd-error">⚠️ {error}</div>;
+  if (!lab)    return <div className="pd-state">No lab results found for this patient.</div>;
 
   return (
     <div className="pd-tab-content">
-
-      {/* Vitals — both IP and OP */}
       <Section title="❤️ Vitals">
-        {isOutpatient && <Row label="BP"              value={lab.BP_Systolic && lab.BP_Diastolic ? `${lab.BP_Systolic}/${lab.BP_Diastolic} mmHg` : null} />}
-        <Row label="Pulse (bpm)"   value={lab.Pulse} />
+        {isOutpatient && <Row label="BP" value={lab.BP_Systolic && lab.BP_Diastolic ? `${lab.BP_Systolic}/${lab.BP_Diastolic} mmHg` : null} />}
+        <Row label="Pulse (bpm)" value={lab.Pulse} />
         {isOutpatient && <Row label="Temperature (°C)" value={lab.Temperature} />}
         {isOutpatient && <Row label="SpO2 (%)"          value={lab.SpO2} />}
       </Section>
 
-      {/* Haematology — OP only */}
       {isOutpatient && (
         <Section title="🧪 Haematology">
-          <Row label="Hb (g/dl)"          value={lab.Hb} />
-          <Row label="WBC (×10³/μL)"       value={lab.WBC} />
-          <Row label="Platelet Count"      value={lab.Platelet_Count} />
+          <Row label="Hb (g/dl)"      value={lab.Hb} />
+          <Row label="WBC (×10³/μL)"  value={lab.WBC} />
+          <Row label="Platelet Count" value={lab.Platelet_Count} />
         </Section>
       )}
 
-      {/* Blood Sugar — OP only */}
       {isOutpatient && (
         <Section title="🩸 Blood Sugar">
           <Row label="RBS (mg/dl)"  value={lab.RBS} />
@@ -125,36 +118,31 @@ const LabResultsTab = ({ p, isOutpatient }) => {
         </Section>
       )}
 
-      {/* Renal Function */}
       <Section title="🫘 Renal Function">
         <Row label="Urea (mg/dl)"          value={lab.Urea} />
         <Row label="Creatinine (mg/dl)"    value={lab.Creatinine} />
         <Row label="eGFR (mL/min/1.73m²)"  value={lab.eGFR_mL_min_1_73m2} />
       </Section>
 
-      {/* Electrolytes */}
       <Section title="⚡ Electrolytes">
         <Row label="Sodium"    value={lab.Sodium} />
         <Row label="Potassium" value={lab.Potassium} />
         <Row label="Chloride"  value={lab.Chloride} />
       </Section>
 
-      {/* Liver Function */}
       <Section title="🫀 Liver Function">
-        {isOutpatient && <Row label="SGOT (U/L)"  value={lab.SGOT} />}
-        {isOutpatient && <Row label="SGPT (U/L)"  value={lab.SGPT} />}
-        {isOutpatient && <Row label="ALP (U/L)"   value={lab.ALP} />}
+        {isOutpatient && <Row label="SGOT (U/L)" value={lab.SGOT} />}
+        {isOutpatient && <Row label="SGPT (U/L)" value={lab.SGPT} />}
+        {isOutpatient && <Row label="ALP (U/L)"  value={lab.ALP} />}
         <Row label="Total Bilirubin" value={lab.Total_Bilirubin} />
       </Section>
 
-      {/* Lipid Profile — OP only */}
       {isOutpatient && (
         <Section title="💊 Lipid Profile">
           <Row label="Result" value={lab.Lipid_Profile} />
         </Section>
       )}
 
-      {/* Imaging — OP only */}
       {isOutpatient && (
         <Section title="🖼️ Imaging & Special Tests">
           <Row label="ECG"        value={lab.ECG} />
@@ -165,7 +153,6 @@ const LabResultsTab = ({ p, isOutpatient }) => {
         </Section>
       )}
 
-      {/* Thyroid */}
       <Section title="🦋 Thyroid">
         <Row label="Free T3" value={lab.FreeT3} />
         <Row label="Free T4" value={lab.FreeT4} />
@@ -179,84 +166,6 @@ const LabResultsTab = ({ p, isOutpatient }) => {
   );
 };
 
-// ── Tab 3: Diagnosis & Prescription ───────────────────────────
-const DiagnosisTab = ({ p }) => {
-  const [diagnosis, setDiagnosis] = useState({
-    primary: "", secondary: "", icd_code: "", notes: "",
-  });
-
-  return (
-    <div className="pd-tab-content">
-      <Section title="🩺 Diagnosis">
-        <div className="pd-referral-form">
-          <div className="pd-form-grid">
-            <div className="pd-form-group">
-              <label>Primary Diagnosis</label>
-              <input
-                value={diagnosis.primary}
-                onChange={e => setDiagnosis(d => ({ ...d, primary: e.target.value }))}
-                placeholder="e.g. Type 2 Diabetes Mellitus"
-              />
-            </div>
-            <div className="pd-form-group">
-              <label>ICD-10 Code</label>
-              <input
-                value={diagnosis.icd_code}
-                onChange={e => setDiagnosis(d => ({ ...d, icd_code: e.target.value }))}
-                placeholder="e.g. E11.9"
-              />
-            </div>
-          </div>
-          <div className="pd-form-group pd-form-full">
-            <label>Secondary Diagnosis</label>
-            <input
-              value={diagnosis.secondary}
-              onChange={e => setDiagnosis(d => ({ ...d, secondary: e.target.value }))}
-              placeholder="e.g. Hypertension, CKD Stage 3"
-            />
-          </div>
-          <div className="pd-form-group pd-form-full">
-            <label>Clinical Notes</label>
-            <textarea
-              rows={3}
-              value={diagnosis.notes}
-              onChange={e => setDiagnosis(d => ({ ...d, notes: e.target.value }))}
-              placeholder="Additional clinical observations or notes..."
-            />
-          </div>
-        </div>
-      </Section>
-
-      <Section title="💉 Drugs Prescribed">
-        {p.Drugs_Prescribed
-          ? <p className="pd-long-text">{p.Drugs_Prescribed}</p>
-          : <p className="pd-long-text pd-muted">No prescription data available yet.</p>
-        }
-      </Section>
-
-      <Section title="⚠️ Clinical Alerts">
-        <div className="pd-alert pd-alert-red">
-          <span className="pd-alert-label">💊 Drug–Drug Interactions</span>
-          <p>{p.Drug_Drug_Interactions || "None recorded"}</p>
-        </div>
-        <div className="pd-alert pd-alert-orange">
-          <span className="pd-alert-label">🏥 Drug–Disease Alerts</span>
-          <p>{p.Drug_Disease_Alerts || "None recorded"}</p>
-        </div>
-        <div className="pd-alert pd-alert-yellow">
-          <span className="pd-alert-label">🍽️ Drug–Food Alerts</span>
-          <p>{p.Drug_Food_Alerts || "None recorded"}</p>
-        </div>
-      </Section>
-
-      <Section title="📋 Dose & Interventions">
-        <Row label="Dose Adjustment Notes" value={p.Dose_Adjustment_Notes} />
-        <Row label="Interventions Made"    value={p.Interventions_Made} />
-      </Section>
-    </div>
-  );
-};
-
 // ── Tab 4: Referral ────────────────────────────────────────────
 const ReferralTab = ({ p, isOutpatient }) => {
   const [referral, setReferral] = useState({
@@ -264,14 +173,12 @@ const ReferralTab = ({ p, isOutpatient }) => {
     reason: "", notes: "", date: new Date().toISOString().split("T")[0],
   });
   const [printed, setPrinted] = useState(false);
-
   const patientNo = p.IP_No || p.OP_No;
 
   return (
     <div className="pd-tab-content">
       <Section title="📨 Referral Form">
         <div className="pd-referral-form" id="referral-print">
-
           <div className="pd-print-header">
             <h2>Patient Referral Letter</h2>
             <p>
@@ -286,26 +193,19 @@ const ReferralTab = ({ p, isOutpatient }) => {
           <div className="pd-form-grid">
             <div className="pd-form-group">
               <label>Refer To Department</label>
-              <input
-                value={referral.to_dept}
+              <input value={referral.to_dept}
                 onChange={e => setReferral(r => ({ ...r, to_dept: e.target.value }))}
-                placeholder="e.g. Cardiology"
-              />
+                placeholder="e.g. Cardiology" />
             </div>
             <div className="pd-form-group">
               <label>Refer To Doctor</label>
-              <input
-                value={referral.to_doctor}
+              <input value={referral.to_doctor}
                 onChange={e => setReferral(r => ({ ...r, to_doctor: e.target.value }))}
-                placeholder="e.g. Dr. Smith"
-              />
+                placeholder="e.g. Dr. Smith" />
             </div>
             <div className="pd-form-group">
               <label>Urgency</label>
-              <select
-                value={referral.urgency}
-                onChange={e => setReferral(r => ({ ...r, urgency: e.target.value }))}
-              >
+              <select value={referral.urgency} onChange={e => setReferral(r => ({ ...r, urgency: e.target.value }))}>
                 <option>Routine</option>
                 <option>Urgent</option>
                 <option>Emergency</option>
@@ -313,32 +213,23 @@ const ReferralTab = ({ p, isOutpatient }) => {
             </div>
             <div className="pd-form-group">
               <label>Referral Date</label>
-              <input
-                type="date"
-                value={referral.date}
-                onChange={e => setReferral(r => ({ ...r, date: e.target.value }))}
-              />
+              <input type="date" value={referral.date}
+                onChange={e => setReferral(r => ({ ...r, date: e.target.value }))} />
             </div>
           </div>
 
           <div className="pd-form-group pd-form-full">
             <label>Reason for Referral</label>
-            <textarea
-              rows={3}
-              value={referral.reason}
+            <textarea rows={3} value={referral.reason}
               onChange={e => setReferral(r => ({ ...r, reason: e.target.value }))}
-              placeholder="Describe the clinical reason for referral..."
-            />
+              placeholder="Describe the clinical reason for referral..." />
           </div>
 
           <div className="pd-form-group pd-form-full">
             <label>Additional Notes</label>
-            <textarea
-              rows={3}
-              value={referral.notes}
+            <textarea rows={3} value={referral.notes}
               onChange={e => setReferral(r => ({ ...r, notes: e.target.value }))}
-              placeholder="Any additional notes or instructions..."
-            />
+              placeholder="Any additional notes or instructions..." />
           </div>
 
           <div className="pd-print-body">
@@ -380,18 +271,11 @@ const PatientDetail = ({ user }) => {
         const endpoint = isOutpatient
           ? `/api/outpatients/${encodeURIComponent(patientNo)}`
           : `/api/patients/${encodeURIComponent(patientNo)}`;
-
-        console.log("🔍 Fetching:", endpoint); // ← debug line
-
         const res  = await fetch(endpoint);
         const data = await res.json();
-
-        console.log("📦 Response:", res.status, data); // ← debug line
-
         if (res.ok) setPatient(data.patient);
         else setError(data.message);
-      } catch (err) {
-        console.error("❌ Fetch error:", err);
+      } catch {
         setError("Could not connect to server.");
       } finally {
         setLoading(false);
@@ -416,14 +300,11 @@ const PatientDetail = ({ user }) => {
           ← Back to Patients
         </button>
 
-        {loading && (
-          <div className="pd-state"><div className="pd-spinner" /><p>Loading patient...</p></div>
-        )}
-        {error && <div className="pd-state pd-error">⚠️ {error}</div>}
+        {loading && <div className="pd-state"><div className="pd-spinner" /><p>Loading patient...</p></div>}
+        {error   && <div className="pd-state pd-error">⚠️ {error}</div>}
 
         {patient && (
           <>
-            {/* Hero Card */}
             <div className="pd-hero">
               <div className="pd-hero-avatar">{patient.Name?.charAt(0)}</div>
               <div className="pd-hero-info">
@@ -439,20 +320,16 @@ const PatientDetail = ({ user }) => {
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="pd-tabs">
               {tabs.map(t => (
-                <button
-                  key={t.key}
+                <button key={t.key}
                   className={`pd-tab-btn${activeTab === t.key ? " active" : ""}`}
-                  onClick={() => setActiveTab(t.key)}
-                >
+                  onClick={() => setActiveTab(t.key)}>
                   {t.label}
                 </button>
               ))}
             </div>
 
-            {/* Tab Content */}
             {activeTab === "info"      && <PatientInfoTab p={patient} isOutpatient={isOutpatient} />}
             {activeTab === "lab"       && <LabResultsTab  p={patient} isOutpatient={isOutpatient} />}
             {activeTab === "diagnosis" && <DiagnosisTab   p={patient} />}
