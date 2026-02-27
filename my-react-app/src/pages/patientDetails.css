@@ -1,13 +1,21 @@
 /* ── Layout ─────────────────────────────────────────────────── */
-.pd-layout { display: flex; min-height: 100vh; background: var(--bg, #f4f6fb); }
+.pd-layout {
+  display: flex;
+  min-height: 100vh;
+  width: 100vw;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: var(--bg, #f4f6fb);
+}
 
 .pd-main {
   flex: 1;
   margin-left: 220px;
   padding: 2rem 2.5rem;
   min-height: 100vh;
+  width: calc(100vw - 220px);
+  max-width: calc(100vw - 220px);
   box-sizing: border-box;
-  max-width: 1000px;
 }
 
 /* ── Back Button ────────────────────────────────────────────── */
@@ -145,6 +153,7 @@
 }
 
 /* ── Dark Mode ──────────────────────────────────────────────── */
+[data-theme="dark"] .pd-layout     { background: #0f0f1a; }
 [data-theme="dark"] .pd-main       { background: #0f0f1a; }
 [data-theme="dark"] .pd-section    { background: #1a1a2e; border-color: #2a2a40; }
 [data-theme="dark"] .pd-section-title { background: #16162a; }
@@ -157,287 +166,3 @@
 [data-theme="dark"] .pd-form-group textarea { background: #1a1a2e; color: #f0f0ff; border-color: #2a2a40; }
 [data-theme="dark"] .pd-tabs       { background: #16162a; }
 [data-theme="dark"] .pd-tab-btn.active { background: #1a1a2e; }
-
-/* ════════════════════════════════════════════════════════════
-   DIAGNOSIS & PRESCRIPTION TAB
-   ════════════════════════════════════════════════════════════ */
-.diag-wrap { display: flex; flex-direction: column; gap: 1rem; }
-
-/* ── Shared Card ────────────────────────────────────────────── */
-.diag-card {
-  background: #fff; border: 1.5px solid #f0f0f8;
-  border-radius: 12px; overflow: hidden;
-  box-shadow: 0 1px 6px rgba(108,99,255,0.05);
-}
-.diag-card-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0.65rem 1.1rem; background: #f8f7ff;
-  border-bottom: 1px solid #eeebff;
-}
-.diag-card-title {
-  font-size: 0.8rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em; color: #1a73e8;
-  display: flex; align-items: center; gap: 8px;
-}
-.diag-card-body { padding: 1rem 1.1rem; }
-
-/* ── Two-column grid ────────────────────────────────────────── */
-.diag-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-@media (max-width: 768px) { .diag-grid-2 { grid-template-columns: 1fr; } }
-
-/* ── Diagnosis fields ───────────────────────────────────────── */
-.diag-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.85rem; }
-@media (max-width: 600px) { .diag-row-2 { grid-template-columns: 1fr; } }
-.diag-field { display: flex; flex-direction: column; gap: 0.3rem; }
-.diag-lbl { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; }
-.diag-inp, .diag-ta {
-  background: #f8f7ff; border: 1.5px solid #e0e3ef;
-  border-radius: 8px; padding: 0.55rem 0.8rem;
-  font-size: 0.875rem; color: #1a1a2e; font-family: inherit;
-  outline: none; transition: border 0.2s; width: 100%;
-}
-.diag-inp:focus, .diag-ta:focus { border-color: #1a73e8; }
-.diag-ta { resize: vertical; }
-
-/* ── Medication table ───────────────────────────────────────── */
-.diag-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-.diag-table th {
-  text-align: left; font-size: 0.68rem; font-weight: 700; color: #888;
-  text-transform: uppercase; letter-spacing: 0.08em;
-  padding: 0.6rem 0.7rem; background: #f8f7ff; white-space: nowrap;
-}
-.diag-table td { padding: 0.65rem 0.7rem; border-top: 1px solid #f0f0f8; vertical-align: middle; }
-.diag-row-critical td { background: #fff5f5; }
-.diag-sno { color: #bbb; font-weight: 700; text-align: center; width: 36px; }
-.diag-med-name { font-weight: 600; white-space: nowrap; }
-.diag-med-red { color: #e05252 !important; }
-.diag-text-red { color: #e05252; }
-.diag-generic { font-size: 0.75rem; color: #888; font-style: italic; }
-.diag-mono { font-family: monospace; font-size: 0.78rem; }
-.diag-days { font-size: 0.75rem; color: #888; }
-.diag-route {
-  background: #f0f0f8; border: 1px solid #e0e3ef;
-  border-radius: 4px; padding: 2px 7px;
-  font-size: 0.68rem; font-weight: 700; color: #7c5bf7;
-}
-.diag-freq {
-  background: #eff6ff; border: 1px solid #bfdbfe;
-  border-radius: 4px; padding: 2px 7px;
-  font-size: 0.68rem; font-weight: 700; color: #1a73e8;
-}
-
-/* ── Action menu ────────────────────────────────────────────── */
-.diag-menu-btn {
-  background: #f0f0f8; border: 1px solid #e0e3ef;
-  border-radius: 6px; width: 26px; height: 26px;
-  cursor: pointer; color: #888; font-size: 14px;
-  display: flex; align-items: center; justify-content: center; transition: all 0.12s;
-}
-.diag-menu-btn:hover { color: #1a1a2e; border-color: #1a73e8; }
-.diag-menu-warn { color: #e05252 !important; border-color: #fca5a5 !important; background: #fff5f5 !important; }
-.diag-dropdown {
-  position: absolute; right: 0; top: 30px; z-index: 50;
-  background: #fff; border: 1.5px solid #e0e3ef;
-  border-radius: 8px; min-width: 150px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12); overflow: hidden;
-}
-.diag-drop-item { padding: 8px 14px; font-size: 0.8rem; cursor: pointer; color: #1a1a2e; transition: background 0.1s; }
-.diag-drop-item:hover { background: #f8f7ff; }
-.diag-drop-warn { color: #e05252; }
-.diag-add-row { display: flex; border-top: 1px solid #f0f0f8; }
-.diag-add-btn { flex: 1; text-align: center; padding: 10px; color: #1a73e8; font-size: 0.8rem; cursor: pointer; border-right: 1px solid #f0f0f8; }
-.diag-add-btn:hover { background: #eff6ff; }
-.diag-search-btn { flex: 1; text-align: center; padding: 10px; color: #888; font-size: 0.8rem; cursor: pointer; }
-.diag-search-btn:hover { background: #f8f7ff; color: #1a1a2e; }
-
-/* ── Prescriber notes ───────────────────────────────────────── */
-.diag-note-item { margin-bottom: 0.85rem; }
-.diag-note-name { font-weight: 700; font-size: 0.875rem; color: #1a1a2e; }
-.diag-note-text { font-size: 0.8rem; color: #555; line-height: 1.55; margin: 4px 0; }
-.diag-note-meta { font-size: 0.7rem; color: #aaa; }
-.diag-divider { border: none; border-top: 1px solid #f0f0f8; margin: 0.75rem 0; }
-.diag-note-inp {
-  width: 100%; background: #f8f7ff; border: 1.5px solid #e0e3ef;
-  border-radius: 8px; padding: 0.5rem 0.8rem;
-  color: #1a1a2e; font-size: 0.8rem; font-family: inherit; outline: none; margin-top: 0.75rem;
-}
-.diag-note-inp:focus { border-color: #1a73e8; }
-.diag-save-btn {
-  margin-top: 8px; padding: 6px 14px; background: #f0f0f8;
-  border: 1.5px solid #e0e3ef; color: #1a1a2e;
-  border-radius: 8px; font-size: 0.8rem; cursor: pointer;
-}
-.diag-save-btn:hover { border-color: #1a73e8; color: #1a73e8; }
-
-/* ── Interaction ────────────────────────────────────────────── */
-.diag-int-header {
-  background: #fff5f5; border-bottom: 1px solid #fca5a5;
-  padding: 0.65rem 1.1rem 0;
-  display: flex; flex-direction: column; gap: 0;
-}
-.diag-int-tabs { display: flex; gap: 0; margin-top: 10px; }
-.diag-int-tab {
-  flex: 1; padding: 7px 10px; font-size: 0.75rem; font-weight: 700;
-  background: transparent; border: none; cursor: pointer;
-  color: #888; border-bottom: 2px solid transparent; transition: all 0.15s;
-}
-.diag-int-tab.active { color: #e05252; border-bottom-color: #e05252; background: #fff0f0; }
-.diag-int-tab:hover:not(.active) { color: #1a1a2e; }
-.diag-badge-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
-.diag-badge { padding: 2px 9px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; border: 1px solid; }
-.diag-badge-red    { background: #fff0f0; color: #e05252; border-color: #fca5a5; }
-.diag-badge-orange { background: #fff7ed; color: #f59e0b; border-color: #fcd34d; }
-.diag-badge-gray   { background: #f0f0f8; color: #888;    border-color: #e0e3ef; }
-.diag-int-title { font-size: 0.9rem; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
-.diag-int-desc  { font-size: 0.8rem; color: #555; margin-bottom: 10px; line-height: 1.5; }
-.diag-rec-box {
-  background: #f0fdf4; border: 1px solid #86efac;
-  border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-}
-.diag-rec-label { font-size: 0.68rem; font-weight: 700; color: #16a34a; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
-.diag-rec-text  { font-size: 0.8rem; color: #166534; line-height: 1.5; }
-.diag-rec-note  { font-size: 0.75rem; color: #e05252; margin-top: 5px; }
-.diag-btn-dark {
-  padding: 5px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
-  background: #f0f0f8; border: 1.5px solid #e0e3ef; color: #1a1a2e; cursor: pointer;
-}
-.diag-btn-warn {
-  padding: 5px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
-  background: #fff7ed; border: 1.5px solid #fcd34d; color: #f59e0b; cursor: pointer;
-}
-
-/* ── Dosing ─────────────────────────────────────────────────── */
-.diag-dose-item { border-radius: 8px; padding: 10px 14px; border-left: 3px solid; }
-.diag-dose-critical { background: #fff5f5; border-color: #e05252; }
-.diag-dose-warning  { background: #fff7ed; border-color: #f59e0b; }
-.diag-dose-info     { background: #eff6ff; border-color: #1a73e8; }
-.diag-dose-neutral  { background: #f0fdf4; border-color: #16a34a; }
-.diag-dose-tag { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
-.diag-dose-critical .diag-dose-tag { color: #e05252; }
-.diag-dose-warning  .diag-dose-tag { color: #f59e0b; }
-.diag-dose-info     .diag-dose-tag { color: #1a73e8; }
-.diag-dose-neutral  .diag-dose-tag { color: #16a34a; }
-.diag-dose-text { font-size: 0.8rem; color: #444; line-height: 1.55; }
-.diag-dose-text strong { color: #1a1a2e; }
-.diag-review-btn {
-  width: 100%; padding: 9px; background: #1a73e8; color: #fff;
-  border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-top: 4px;
-}
-.diag-review-btn:hover { background: #1558b0; }
-
-/* ── Counselling ────────────────────────────────────────────── */
-.diag-counsel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.65rem 1.1rem; background: #f8f7ff; border-bottom: 1px solid #eeebff;
-}
-.diag-points-badge {
-  background: #f0fdf4; color: #16a34a; border: 1px solid #86efac;
-  border-radius: 20px; padding: 2px 8px; font-size: 0.68rem; font-weight: 700; margin-left: 8px;
-}
-.diag-preview-btn {
-  background: #f0f0f8; border: 1.5px solid #e0e3ef; color: #1a73e8;
-  border-radius: 8px; padding: 5px 12px; font-size: 0.75rem; cursor: pointer;
-}
-.diag-preview-btn:hover { background: #eff6ff; }
-.diag-counsel-tabs {
-  display: flex; gap: 0; padding: 0 1.1rem; border-bottom: 1px solid #eeebff;
-}
-.diag-ctab {
-  padding: 9px 18px; font-size: 0.8rem; font-weight: 600;
-  background: transparent; border: none; cursor: pointer;
-  color: #888; border-bottom: 2px solid transparent; transition: all 0.15s;
-}
-.diag-ctab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
-.diag-ctab:hover:not(.active) { color: #1a1a2e; }
-.diag-counsel-item {
-  background: #f8f7ff; border: 1px solid #eeebff; border-radius: 10px; padding: 10px 14px;
-}
-.diag-counsel-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-.diag-counsel-icon { font-size: 1rem; }
-.diag-counsel-title { font-weight: 700; font-size: 0.875rem; }
-.diag-counsel-desc { font-size: 0.8rem; color: #555; line-height: 1.5; margin-bottom: 8px; padding-left: 26px; }
-.diag-counsel-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-left: 26px; }
-.diag-badge-approved {
-  background: #f0fdf4; color: #16a34a; border: 1px solid #86efac;
-  border-radius: 4px; padding: 2px 8px; font-size: 0.68rem; font-weight: 700;
-}
-.diag-badge-pending {
-  background: #fff7ed; color: #f59e0b; border: 1px solid #fcd34d;
-  border-radius: 4px; padding: 2px 8px; font-size: 0.68rem; font-weight: 700;
-}
-.diag-action-btn {
-  padding: 3px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 600;
-  cursor: pointer; border: 1px solid #e0e3ef; background: #fff; color: #888; transition: all 0.12s;
-}
-.diag-action-btn:hover { color: #1a1a2e; border-color: #1a73e8; }
-.diag-action-approve { color: #16a34a !important; border-color: #86efac !important; background: #f0fdf4 !important; }
-.diag-add-counsel {
-  width: 100%; padding: 9px; border: 1.5px dashed #e0e3ef;
-  background: transparent; color: #888; border-radius: 8px;
-  font-size: 0.8rem; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-}
-.diag-add-counsel:hover { color: #1a73e8; border-color: #1a73e8; }
-
-/* ── OOS Finder ─────────────────────────────────────────────── */
-.diag-oos-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.65rem 1.1rem; background: #f8f7ff; border-bottom: 1px solid #eeebff;
-}
-.diag-oos-close { background: none; border: none; color: #888; font-size: 1.3rem; cursor: pointer; line-height: 1; }
-.diag-oos-close:hover { color: #1a1a2e; }
-.diag-oos-inp {
-  flex: 1; background: #f8f7ff; border: 1.5px solid #e0e3ef;
-  border-radius: 8px; padding: 0.55rem 0.8rem;
-  color: #1a1a2e; font-size: 0.8rem; font-family: inherit; outline: none;
-}
-.diag-oos-inp:focus { border-color: #1a73e8; }
-.diag-oos-search-btn {
-  background: #1a73e8; color: #fff; border: none;
-  border-radius: 8px; padding: 0.55rem 1rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;
-}
-.diag-oos-banner {
-  background: #fff5f5; border: 1px solid #fca5a5;
-  border-radius: 8px; padding: 10px 14px;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-}
-.diag-oos-drug-name { font-weight: 700; color: #e05252; font-size: 0.9rem; }
-.diag-oos-detail    { color: #888; font-size: 0.8rem; }
-.diag-oos-stock-badge {
-  background: #fff0f0; color: #e05252; border: 1px solid #fca5a5;
-  border-radius: 20px; padding: 2px 10px; font-size: 0.72rem; font-weight: 700; margin-left: auto;
-}
-.diag-lowest-badge {
-  background: #f0fdf4; color: #16a34a; border: 1px solid #86efac;
-  border-radius: 20px; padding: 2px 8px; font-size: 0.68rem; font-weight: 600; margin-left: 6px;
-}
-.diag-oos-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-.diag-oos-table th {
-  text-align: left; font-size: 0.68rem; font-weight: 700; color: #888;
-  text-transform: uppercase; letter-spacing: 0.08em; padding: 8px 10px; background: #f8f7ff;
-}
-.diag-oos-table td { padding: 10px; border-top: 1px solid #f0f0f8; vertical-align: middle; }
-.diag-oos-table tr:first-child td { border-top: none; }
-.diag-switch-btn {
-  background: #1a73e8; color: #fff; border: none;
-  border-radius: 7px; padding: 6px 14px; font-size: 0.75rem;
-  font-weight: 600; cursor: pointer; transition: background 0.13s; white-space: nowrap;
-}
-.diag-switch-btn:hover:not([disabled]) { background: #1558b0; }
-
-/* ── Dark mode ──────────────────────────────────────────────── */
-[data-theme="dark"] .diag-card          { background: #1a1a2e; border-color: #2a2a40; }
-[data-theme="dark"] .diag-card-header   { background: #16162a; }
-[data-theme="dark"] .diag-inp,
-[data-theme="dark"] .diag-ta            { background: #16162a; color: #e0e0f0; border-color: #2a2a40; }
-[data-theme="dark"] .diag-table th      { background: #16162a; }
-[data-theme="dark"] .diag-table td      { border-color: #2a2a40; color: #e0e0f0; }
-[data-theme="dark"] .diag-row-critical td { background: #2a1a1a; }
-[data-theme="dark"] .diag-counsel-item  { background: #16162a; border-color: #2a2a40; }
-[data-theme="dark"] .diag-note-inp      { background: #16162a; color: #e0e0f0; border-color: #2a2a40; }
-[data-theme="dark"] .diag-int-header    { background: #2a1a1a; border-color: #7f1d1d; }
-[data-theme="dark"] .diag-oos-banner    { background: #2a1a1a; }
-[data-theme="dark"] .diag-oos-inp       { background: #16162a; color: #e0e0f0; border-color: #2a2a40; }
-[data-theme="dark"] .diag-dropdown      { background: #1a1a2e; border-color: #2a2a40; }
-[data-theme="dark"] .diag-drop-item     { color: #e0e0f0; }
-[data-theme="dark"] .diag-drop-item:hover { background: #16162a; }
