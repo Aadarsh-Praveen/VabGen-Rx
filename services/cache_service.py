@@ -1,10 +1,13 @@
 """
-Azure SQL Cache Service — MedGuard AI
+Azure SQL Cache Service — VabGenRx
 Caches drug-drug, drug-disease, and drug-food results
 to avoid redundant PubMed/FDA/OpenAI calls.
+
+Uses shared persistent connection from db_connection.py
+to avoid Login timeout errors from creating new connections
+on every cache call.
 """
 
-import pyodbc
 import json
 import os
 from datetime import datetime
@@ -17,28 +20,17 @@ CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", 30))
 
 
 class AzureSQLCacheService:
-    """
-    Persistent cache backed by Azure SQL Database.
-    Tables must exist — run setup_database.py first.
-    """
 
     def __init__(self):
-        self.conn_str = (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-            f"SERVER={os.getenv('AZURE_SQL_SERVER')};"
-            f"DATABASE={os.getenv('AZURE_SQL_DATABASE')};"
-            f"UID={os.getenv('AZURE_SQL_USERNAME')};"
-            f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
-        )
         self.available = self._test_connection()
 
-    # ── Connection ────────────────────────────────────────────────────────────
+    # ── Connection — uses shared persistent connection ────────────────────────
 
     def _test_connection(self) -> bool:
         try:
-            conn = pyodbc.connect(self.conn_str, timeout=5)
-            conn.close()
-            print("✅ Azure SQL Cache connected")
+            from services.db_connection import get_connection
+            conn = get_connection()  # already prints ✅ on first connect only
+            conn.cursor().execute("SELECT 1")
             return True
         except Exception as e:
             print(f"⚠️  Azure SQL Cache unavailable: {e}")
@@ -46,7 +38,24 @@ class AzureSQLCacheService:
             return False
 
     def _conn(self):
-        return pyodbc.connect(self.conn_str)
+        """
+        Returns the shared persistent connection.
+        Falls back to a fresh pyodbc connection if shared connection fails.
+        """
+        try:
+            from services.db_connection import get_connection
+            return get_connection()
+        except Exception:
+            # Fallback — direct connection
+            import pyodbc
+            conn_str = (
+                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+                f"SERVER={os.getenv('AZURE_SQL_SERVER')};"
+                f"DATABASE={os.getenv('AZURE_SQL_DATABASE')};"
+                f"UID={os.getenv('AZURE_SQL_USERNAME')};"
+                f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
+            )
+            return pyodbc.connect(conn_str, timeout=10)
 
     # ── Drug-Drug Cache ───────────────────────────────────────────────────────
 
@@ -56,7 +65,7 @@ class AzureSQLCacheService:
         d1, d2 = sorted([drug1.lower(), drug2.lower()])
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 SELECT full_result, cached_at, access_count
                 FROM interaction_cache
@@ -72,11 +81,9 @@ class AzureSQLCacheService:
                     WHERE drug1 = ? AND drug2 = ?
                 """, d1, d2)
                 conn.commit()
-                conn.close()
                 age = (datetime.now() - row.cached_at).days
                 print(f"      💾 Cache HIT: {d1}+{d2} (cached {age}d ago, {row.access_count} uses)")
                 return json.loads(row.full_result)
-            conn.close()
             print(f"      ❌ Cache MISS: {d1}+{d2}")
             return None
         except Exception as e:
@@ -89,7 +96,7 @@ class AzureSQLCacheService:
         d1, d2 = sorted([drug1.lower(), drug2.lower()])
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 MERGE interaction_cache AS t
                 USING (SELECT ? AS drug1, ? AS drug2) AS s
@@ -120,7 +127,6 @@ class AzureSQLCacheService:
                 json.dumps(result)
             )
             conn.commit()
-            conn.close()
             print(f"      💾 Saved drug-drug cache: {d1}+{d2}")
         except Exception as e:
             print(f"      ⚠️  Cache save error: {e}")
@@ -133,7 +139,7 @@ class AzureSQLCacheService:
         d, dis = drug.lower(), disease.lower()
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 SELECT full_result, cached_at, access_count
                 FROM disease_cache
@@ -144,15 +150,14 @@ class AzureSQLCacheService:
             if row:
                 cur.execute("""
                     UPDATE disease_cache
-                    SET access_count = access_count + 1, last_accessed = GETDATE()
+                    SET access_count = access_count + 1,
+                        last_accessed = GETDATE()
                     WHERE drug = ? AND disease = ?
                 """, d, dis)
                 conn.commit()
-                conn.close()
                 age = (datetime.now() - row.cached_at).days
                 print(f"      💾 Cache HIT: {d}+{dis} (cached {age}d ago)")
                 return json.loads(row.full_result)
-            conn.close()
             print(f"      ❌ Cache MISS: {d}+{dis}")
             return None
         except Exception as e:
@@ -165,18 +170,18 @@ class AzureSQLCacheService:
         d, dis = drug.lower(), disease.lower()
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 MERGE disease_cache AS t
                 USING (SELECT ? AS drug, ? AS disease) AS s
                 ON t.drug = s.drug AND t.disease = s.disease
                 WHEN MATCHED THEN UPDATE SET
-                    full_result    = ?,
-                    severity       = ?,
-                    confidence     = ?,
-                    pubmed_papers  = ?,
+                    full_result     = ?,
+                    severity        = ?,
+                    confidence      = ?,
+                    pubmed_papers   = ?,
                     contraindicated = ?,
-                    cached_at      = GETDATE()
+                    cached_at       = GETDATE()
                 WHEN NOT MATCHED THEN INSERT
                     (drug, disease, contraindicated, severity, confidence,
                      pubmed_papers, full_result)
@@ -196,7 +201,6 @@ class AzureSQLCacheService:
                 json.dumps(result)
             )
             conn.commit()
-            conn.close()
             print(f"      💾 Saved drug-disease cache: {d}+{dis}")
         except Exception as e:
             print(f"      ⚠️  Cache save error: {e}")
@@ -209,7 +213,7 @@ class AzureSQLCacheService:
         d = drug.lower()
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 SELECT full_result, cached_at, access_count
                 FROM food_cache
@@ -220,15 +224,14 @@ class AzureSQLCacheService:
             if row:
                 cur.execute("""
                     UPDATE food_cache
-                    SET access_count = access_count + 1, last_accessed = GETDATE()
+                    SET access_count  = access_count + 1,
+                        last_accessed = GETDATE()
                     WHERE drug = ?
                 """, d)
                 conn.commit()
-                conn.close()
                 age = (datetime.now() - row.cached_at).days
                 print(f"      💾 Cache HIT: {d} food (cached {age}d ago)")
                 return json.loads(row.full_result)
-            conn.close()
             print(f"      ❌ Cache MISS: {d} food")
             return None
         except Exception as e:
@@ -241,7 +244,7 @@ class AzureSQLCacheService:
         d = drug.lower()
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 MERGE food_cache AS t
                 USING (SELECT ? AS drug) AS s
@@ -254,8 +257,8 @@ class AzureSQLCacheService:
                     pubmed_papers     = ?,
                     cached_at         = GETDATE()
                 WHEN NOT MATCHED THEN INSERT
-                    (drug, foods_to_avoid, foods_to_separate, foods_to_monitor,
-                     pubmed_papers, full_result)
+                    (drug, foods_to_avoid, foods_to_separate,
+                     foods_to_monitor, pubmed_papers, full_result)
                 VALUES (?, ?, ?, ?, ?, ?);
             """,
                 d,
@@ -272,7 +275,6 @@ class AzureSQLCacheService:
                 json.dumps(result)
             )
             conn.commit()
-            conn.close()
             print(f"      💾 Saved food cache: {d}")
         except Exception as e:
             print(f"      ⚠️  Cache save error: {e}")
@@ -281,21 +283,19 @@ class AzureSQLCacheService:
 
     def log_analysis(self, session_id: str, medications: list,
                      diseases: list, results: Dict):
-        """Log each full prescription analysis run."""
         if not self.available:
             return
         try:
-            ddi = results.get('drug_drug', [])
-            severe = sum(1 for r in ddi if r.get('severity') == 'severe')
+            ddi      = results.get('drug_drug', [])
+            severe   = sum(1 for r in ddi if r.get('severity') == 'severe')
             moderate = sum(1 for r in ddi if r.get('severity') == 'moderate')
             food_papers = sum(r.get('pubmed_count', 0) for r in results.get('drug_food', []))
             ddi_papers  = sum(r.get('pubmed_papers', 0) for r in ddi)
             dis_papers  = sum(r.get('pubmed_count', 0) for r in results.get('drug_disease', []))
-
             risk = 'HIGH' if severe > 0 else 'MODERATE' if moderate > 0 else 'LOW'
 
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
             cur.execute("""
                 INSERT INTO analysis_log
                     (session_id, medications, diseases, risk_level,
@@ -309,7 +309,6 @@ class AzureSQLCacheService:
                 ddi_papers + dis_papers + food_papers
             )
             conn.commit()
-            conn.close()
             print(f"   📊 Analysis logged (session: {session_id}, risk: {risk})")
         except Exception as e:
             print(f"   ⚠️  Log error: {e}")
@@ -321,26 +320,22 @@ class AzureSQLCacheService:
             return {'cache_location': 'Azure SQL (not connected)'}
         try:
             conn = self._conn()
-            cur = conn.cursor()
+            cur  = conn.cursor()
 
             cur.execute("SELECT COUNT(*), SUM(access_count) FROM interaction_cache")
-            ddi_row = cur.fetchone()
-
+            ddi_row  = cur.fetchone()
             cur.execute("SELECT COUNT(*), SUM(access_count) FROM disease_cache")
-            dis_row = cur.fetchone()
-
+            dis_row  = cur.fetchone()
             cur.execute("SELECT COUNT(*) FROM food_cache")
             food_row = cur.fetchone()
-
             cur.execute("SELECT COUNT(*) FROM analysis_log")
-            log_row = cur.fetchone()
+            log_row  = cur.fetchone()
 
-            conn.close()
             return {
-                'drug_drug_cached':    ddi_row[0] or 0,
-                'drug_disease_cached': dis_row[0] or 0,
+                'drug_drug_cached':    ddi_row[0]  or 0,
+                'drug_disease_cached': dis_row[0]  or 0,
                 'food_cached':         food_row[0] or 0,
-                'total_analyses':      log_row[0] or 0,
+                'total_analyses':      log_row[0]  or 0,
                 'total_cache_hits':    (ddi_row[1] or 0) + (dis_row[1] or 0),
                 'cache_location':      'Azure SQL Database'
             }
