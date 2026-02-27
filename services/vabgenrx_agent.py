@@ -1,17 +1,21 @@
 '''
-BEFORE COUNSELLING
-
 """
 VabGenRx — Azure AI Agent Service
 Clinical Intelligence Platform — Microsoft Agent Framework
 
 Uses azure-ai-agents v1.1.0
 Run: python services/vabgenrx_agent.py
+
+Architecture — 3 focused runs to avoid Azure agent step limits:
+  Run 1a — Drug-Drug + Drug-Food
+  Run 1b — Drug-Disease (separate budget so all pairs are covered)
+  Run 2  — Counseling + Dosing
 """
 
 import os
 import sys
 import json
+import itertools
 from typing import Dict, List
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,372 +29,40 @@ from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
 from azure.identity import DefaultAzureCredential
 from azure.core.rest import HttpRequest
 
+# ── Module-level service instances (created once, reused on every tool call) ──
+_drug_counseling_service      = None
+_condition_counseling_service = None
+_dosing_service               = None
 
-# ── Tool Functions ─────────────────────────────────────────────────────────────
-# IMPORTANT: Keep signatures simple — agent must match these exactly
-
-def search_pubmed(drug1: str, drug2: str = "", disease: str = "") -> str:
-    """
-    Search PubMed medical research database.
-    For drug-drug: provide drug1 and drug2.
-    For drug-disease: provide drug1 and disease.
-    For food interactions: provide only drug1.
-    """
-    from services.pubmed_service import PubMedService
-    pubmed = PubMedService()
-    if drug2:
-        result = pubmed.search_drug_interaction(drug1, drug2)
-    elif disease:
-        result = pubmed.search_disease_contraindication(drug1, disease)
-    else:
-        result = pubmed.search_all_food_interactions_for_drug(drug1, max_results=5)
-    return json.dumps({
-        'paper_count': result.get('count', 0),
-        'pmids':       result.get('pmids', [])[:5],
-        'abstracts':   [a['text'][:400] for a in result.get('abstracts', [])[:2]]
-    })
+# ── Module-level result collectors ────────────────────────────────────────────
+# Store full tool results here so agent truncation doesn't lose data
+_dosing_results               = {}
+_drug_counseling_results      = {}
+_condition_counseling_results = {}
 
 
-def search_fda_events(drug1: str, drug2: str) -> str:
-    """
-    Search FDA adverse event database for a drug pair.
-    Requires both drug1 and drug2.
-    """
-    from services.fda_service import FDAService
-    result = FDAService().search_adverse_events(drug1, drug2)
-    return json.dumps({
-        'total_reports':   result.get('total_reports', 0),
-        'serious_reports': result.get('serious_reports', 0),
-        'severity_ratio':  result.get('severity_ratio', 0)
-    })
+def _get_drug_counseling_service():
+    global _drug_counseling_service
+    if _drug_counseling_service is None:
+        from services.counselling_service import DrugCounselingService
+        _drug_counseling_service = DrugCounselingService()
+    return _drug_counseling_service
 
 
-def get_fda_label(drug_name: str) -> str:
-    """
-    Get FDA official drug label for a single drug.
-    Returns contraindications and warnings.
-    """
-    from services.fda_service import FDAService
-    result = FDAService().get_drug_contraindications(drug_name)
-    return json.dumps({
-        'found':             result.get('found', False),
-        'contraindications': result.get('contraindications', '')[:500],
-        'warnings':          result.get('warnings', '')[:300],
-    })
+def _get_condition_counseling_service():
+    global _condition_counseling_service
+    if _condition_counseling_service is None:
+        from services.condition_service import ConditionCounselingService
+        _condition_counseling_service = ConditionCounselingService()
+    return _condition_counseling_service
 
 
-def check_cache(cache_type: str, drug1: str, drug2: str = "") -> str:
-    """
-    Check Azure SQL cache for a previous result.
-    cache_type must be one of: drug_drug, drug_disease, food
-    drug2 is the second drug (for drug_drug) or the disease name (for drug_disease).
-    For food cache_type, only drug1 is needed.
-    """
-    from services.cache_service import AzureSQLCacheService
-    cache = AzureSQLCacheService()
-    if cache_type == 'drug_drug' and drug2:
-        result = cache.get_drug_drug(drug1, drug2)
-    elif cache_type == 'drug_disease' and drug2:
-        result = cache.get_drug_disease(drug1, drug2)
-    elif cache_type == 'food':
-        result = cache.get_food(drug1)
-    else:
-        result = None
-    return json.dumps({'cache_hit': result is not None, 'cached_data': result})
-
-
-def save_cache(cache_type: str, drug1: str, analysis_json: str, drug2: str = "") -> str:
-    """
-    Save an analysis result to Azure SQL cache.
-    cache_type: drug_drug, drug_disease, or food
-    analysis_json: the JSON string of the analysis result
-    """
-    from services.cache_service import AzureSQLCacheService
-    cache = AzureSQLCacheService()
-    try:
-        result = json.loads(analysis_json)
-        if cache_type == 'drug_drug' and drug2:
-            cache.save_drug_drug(drug1, drug2, result)
-        elif cache_type == 'drug_disease' and drug2:
-            cache.save_drug_disease(drug1, drug2, result)
-        elif cache_type == 'food':
-            cache.save_food(drug1, result)
-        return json.dumps({'saved': True})
-    except Exception as e:
-        return json.dumps({'saved': False, 'error': str(e)})
-
-
-# ── Agent Service ─────────────────────────────────────────────────────────────
-
-class VabGenRxAgentService:
-
-    def __init__(self):
-        endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-        if not endpoint:
-            raise ValueError("AZURE_AI_PROJECT_ENDPOINT not set in .env")
-
-        self.client   = AgentsClient(endpoint=endpoint, credential=DefaultAzureCredential())
-        self.model    = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-        self.endpoint = endpoint.rstrip('/')
-
-        print("✅ VabGenRx Agent Service initialized")
-        print(f"   Endpoint: {endpoint}")
-        print(f"   Model:    {self.model}")
-
-    def _build_toolset(self) -> ToolSet:
-        """Register all tools with clear names the agent can call."""
-        functions = FunctionTool(functions={
-            search_pubmed,
-            search_fda_events,
-            get_fda_label,
-            check_cache,
-            save_cache,
-        })
-        toolset = ToolSet()
-        toolset.add(functions)
-        return toolset
-
-    def _get_messages(self, thread_id: str) -> list:
-        """Fetch thread messages using confirmed API version 2025-05-01."""
-        url = f"{self.endpoint}/threads/{thread_id}/messages?api-version=2025-05-01"
-        try:
-            req      = HttpRequest(method="GET", url=url)
-            response = self.client.send_request(req)
-            data     = response.json()
-            if "data" in data:
-                print(f"   ✅ Messages fetched ({len(data['data'])} found)")
-                return data["data"]
-            else:
-                print(f"   ⚠️  Unexpected response: {list(data.keys())}")
-                return []
-        except Exception as e:
-            print(f"   ⚠️  Failed to fetch messages: {e}")
-            return []
-
-    def analyze(self, medications: List[str],
-                diseases: List[str] = None,
-                foods: List[str] = None) -> Dict:
-
-        diseases = diseases or []
-        foods    = foods    or []
-
-        print(f"\n🤖 Starting VabGenRx Agent Analysis...")
-        print(f"   Medications: {', '.join(medications)}")
-        if diseases:
-            print(f"   Conditions:  {', '.join(diseases)}")
-
-        toolset = self._build_toolset()
-
-        agent = self.client.create_agent(
-            model        = self.model,
-            name         = "VabGenRx-Safety-Agent",
-            instructions = """
-You are VabGenRx, a clinical pharmacology agent. Analyze medication safety.
-
-AVAILABLE TOOLS (use EXACTLY these names and arguments):
-- check_cache(cache_type, drug1, drug2="")     ← ALWAYS call first
-- search_pubmed(drug1, drug2="", disease="")   ← for evidence
-- search_fda_events(drug1, drug2)              ← for adverse events
-- get_fda_label(drug_name)                     ← for official label
-- save_cache(cache_type, drug1, analysis_json, drug2="")  ← save new results
-
-WORKFLOW for each drug pair (e.g. aspirin + warfarin):
-1. check_cache(cache_type="drug_drug", drug1="aspirin", drug2="warfarin")
-2. If cache_hit=false: search_pubmed(drug1="aspirin", drug2="warfarin")
-3. If cache_hit=false: search_fda_events(drug1="aspirin", drug2="warfarin")
-4. If cache_hit=false: save_cache(cache_type="drug_drug", drug1="aspirin", drug2="warfarin", analysis_json="...")
-
-WORKFLOW for each drug+disease (e.g. aspirin + cold):
-1. check_cache(cache_type="drug_disease", drug1="aspirin", drug2="cold")
-2. If cache_hit=false: search_pubmed(drug1="aspirin", disease="cold")
-3. If cache_hit=false: get_fda_label(drug_name="aspirin")
-
-WORKFLOW for food interactions (e.g. warfarin food):
-1. check_cache(cache_type="food", drug1="warfarin")
-2. If cache_hit=false: search_pubmed(drug1="warfarin")
-
-After all checks, return ONLY this JSON structure:
-{
-  "drug_drug": [
-    {
-      "drug1": "aspirin",
-      "drug2": "warfarin",
-      "severity": "severe",
-      "confidence": 0.95,
-      "mechanism": "...",
-      "clinical_effects": "...",
-      "recommendation": "...",
-      "pubmed_papers": 0,
-      "fda_reports": 16448,
-      "from_cache": true
-    }
-  ],
-  "drug_disease": [
-    {
-      "drug": "aspirin",
-      "disease": "cold",
-      "contraindicated": false,
-      "severity": "minor",
-      "confidence": 0.90,
-      "clinical_evidence": "...",
-      "recommendation": "...",
-      "alternative_drugs": ["acetaminophen"],
-      "from_cache": true
-    }
-  ],
-  "drug_food": [
-    {
-      "drug": "warfarin",
-      "foods_to_avoid": ["spinach", "cranberry juice"],
-      "foods_to_separate": [],
-      "foods_to_monitor": ["ginger"],
-      "mechanism": "...",
-      "from_cache": true
-    }
-  ],
-  "risk_summary": {
-    "level": "HIGH",
-    "severe_count": 1,
-    "moderate_count": 0,
-    "contraindicated_count": 0
-  }
-}
-""",
-            toolset=toolset,
-        )
-
-        print("   🔄 Agent running (calling tools autonomously)...")
-
-        try:
-            ctx = self.client.enable_auto_function_calls(toolset)
-
-            if ctx is not None:
-                with ctx:
-                    run = self.client.create_thread_and_process_run(
-                        agent_id = agent.id,
-                        thread   = {
-                            "messages": [{
-                                "role":    "user",
-                                "content": (
-                                    f"Analyze medication safety.\n"
-                                    f"MEDICATIONS: {', '.join(medications)}\n"
-                                    f"PATIENT CONDITIONS: {', '.join(diseases) if diseases else 'None'}\n"
-                                    f"FOODS: {', '.join(foods) if foods else 'General food interactions'}\n"
-                                    f"Follow your workflow. Return JSON only."
-                                )
-                            }]
-                        }
-                    )
-            else:
-                run = self.client.create_thread_and_process_run(
-                    agent_id = agent.id,
-                    thread   = {
-                        "messages": [{
-                            "role":    "user",
-                            "content": (
-                                f"Analyze medication safety.\n"
-                                f"MEDICATIONS: {', '.join(medications)}\n"
-                                f"PATIENT CONDITIONS: {', '.join(diseases) if diseases else 'None'}\n"
-                                f"FOODS: {', '.join(foods) if foods else 'General food interactions'}\n"
-                                f"Follow your workflow. Return JSON only."
-                            )
-                        }]
-                    },
-                    toolset = toolset
-                )
-
-            print(f"   ✅ Run status: {run.status}")
-            self._last_run = run
-
-            result = {"status": str(run.status), "raw": ""}
-
-            if run.status == RunStatus.COMPLETED:
-                messages_data = self._get_messages(run.thread_id)
-                for msg in messages_data:
-                    if msg.get("role") == "assistant":
-                        for block in msg.get("content", []):
-                            if block.get("type") == "text":
-                                raw = block["text"]["value"]
-                                result["raw"] = raw
-                                try:
-                                    start = raw.find('{')
-                                    end   = raw.rfind('}') + 1
-                                    if start >= 0:
-                                        result["analysis"] = json.loads(raw[start:end])
-                                        print("   ✅ JSON parsed successfully")
-                                except Exception as e:
-                                    result["parse_error"] = str(e)
-                                break
-                        break
-            else:
-                result["error"] = f"Run ended with status: {run.status}"
-
-        finally:
-            self.client.delete_agent(agent.id)
-
-        return result
-
-
-# ── CLI Test ──────────────────────────────────────────────────────────────────
-
-def main():
-    print("=" * 60)
-    print("VABGENRX — AZURE AI AGENT SERVICE TEST")
-    print("=" * 60)
-
-    try:
-        service = VabGenRxAgentService()
-    except ValueError as e:
-        print(f"\n❌ {e}")
-        return
-
-    result = service.analyze(
-        medications = ["aspirin", "warfarin"],
-        diseases    = ["cold"],
-        foods       = ["dairy"]
-    )
-
-    print("\n📊 AGENT RESULT:")
-    if "analysis" in result:
-        print(json.dumps(result["analysis"], indent=2))
-    else:
-        print("Raw:", result.get("raw", "No response"))
-        if "error" in result:
-            print("Error:", result["error"])
-        if "parse_error" in result:
-            print("Parse error:", result["parse_error"])
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-
-
-
-"""
-VabGenRx — Azure AI Agent Service
-Clinical Intelligence Platform — Microsoft Agent Framework
-
-Uses azure-ai-agents v1.1.0
-Run: python services/vabgenrx_agent.py
-"""
-
-import os
-import sys
-import json
-from typing import Dict, List
-
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.getcwd())
-
-from dotenv import load_dotenv
-load_dotenv()
-
-from azure.ai.agents import AgentsClient
-from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
-from azure.identity import DefaultAzureCredential
-from azure.core.rest import HttpRequest
+def _get_dosing_service():
+    global _dosing_service
+    if _dosing_service is None:
+        from services.dosing_service import DosingService
+        _dosing_service = DosingService()
+    return _dosing_service
 
 
 # ── Tool Functions ─────────────────────────────────────────────────────────────
@@ -421,6 +93,7 @@ def search_fda_events(drug1: str, drug2: str) -> str:
     """
     Search FDA adverse event database for a drug pair.
     Requires both drug1 and drug2.
+    ONLY use for drug-drug pairs — never for drug-disease.
     """
     from services.fda_service import FDAService
     result = FDAService().search_adverse_events(drug1, drug2)
@@ -435,6 +108,7 @@ def get_fda_label(drug_name: str) -> str:
     """
     Get FDA official drug label for a single drug.
     Returns contraindications and warnings.
+    Used for drug-drug and drug-disease safety analysis.
     """
     from services.fda_service import FDAService
     result = FDAService().get_drug_contraindications(drug_name)
@@ -449,7 +123,7 @@ def check_cache(cache_type: str, drug1: str, drug2: str = "") -> str:
     """
     Check Azure SQL cache for a previous result.
     cache_type must be one of: drug_drug, drug_disease, food
-    drug2 is the second drug (for drug_drug) or the disease name (for drug_disease).
+    drug2 is the second drug (for drug_drug) or disease name (for drug_disease).
     For food cache_type, only drug1 is needed.
     """
     from services.cache_service import AzureSQLCacheService
@@ -487,47 +161,124 @@ def save_cache(cache_type: str, drug1: str, analysis_json: str, drug2: str = "")
 
 
 def get_drug_counseling(drug: str, age: int, sex: str,
-                        dose: str = "", conditions: str = "") -> str:
+                        dose: str = "",
+                        conditions: str = "",
+                        patient_profile_json: str = "{}") -> str:
     """
     Get patient-specific drug counseling points.
-    Filters by patient age and sex — no irrelevant warnings.
+    Filters by age, sex, and confirmed habits — no irrelevant warnings.
+
     drug: drug name
     age: patient age as integer
     sex: male | female | other
     dose: optional dose string e.g. "10mg daily"
     conditions: comma-separated conditions e.g. "diabetes,hypertension"
+    patient_profile_json: JSON string of confirmed patient habits e.g.
+        '{"drinks_alcohol": true, "smokes": true, "has_kidney_disease": false}'
     """
-    from services.counselling_service import DrugCounselingService
-    service    = DrugCounselingService()
-    cond_list  = [c.strip() for c in conditions.split(',') if c.strip()] if conditions else []
-    result     = service.get_drug_counseling(
-        drug       = drug,
-        age        = age,
-        sex        = sex,
-        dose       = dose,
-        conditions = cond_list
+    service   = _get_drug_counseling_service()
+    cond_list = [c.strip() for c in conditions.split(',') if c.strip()] if conditions else []
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Drug counseling profile for {drug}: {patient_profile}")
+    if not patient_profile:
+        print(f"   ⚠️  Warning: empty patient_profile for {drug} "
+              f"— habit-based filtering will be skipped")
+
+    result = service.get_drug_counseling(
+        drug            = drug,
+        age             = age,
+        sex             = sex,
+        dose            = dose,
+        conditions      = cond_list,
+        patient_profile = patient_profile
     )
+
+    # Store full result so agent truncation doesn't lose data
+    _drug_counseling_results[drug.lower()] = result
     return json.dumps(result)
 
 
 def get_condition_counseling(condition: str, age: int, sex: str,
-                             medications: str = "") -> str:
+                             medications: str = "",
+                             patient_profile_json: str = "{}") -> str:
     """
     Get lifestyle, diet, exercise and safety counseling for a condition.
+    Only counsels on confirmed patient habits — never assumes.
+
     condition: disease/condition name
     age: patient age as integer
     sex: male | female | other
     medications: comma-separated medications e.g. "warfarin,aspirin"
+    patient_profile_json: JSON string of confirmed patient habits e.g.
+        '{"smokes": true, "sedentary": true, "has_mobility_issues": false}'
     """
-    from services.condition_service import ConditionCounselingService
-    service   = ConditionCounselingService()
+    service   = _get_condition_counseling_service()
     meds_list = [m.strip() for m in medications.split(',') if m.strip()] if medications else []
-    result    = service.get_condition_counseling(
-        condition   = condition,
-        age         = age,
-        sex         = sex,
-        medications = meds_list
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Condition counseling profile for {condition}: {patient_profile}")
+
+    result = service.get_condition_counseling(
+        condition       = condition,
+        age             = age,
+        sex             = sex,
+        medications     = meds_list,
+        patient_profile = patient_profile
     )
+
+    # Store full result so agent truncation doesn't lose data
+    _condition_counseling_results[condition.lower()] = result
+    return json.dumps(result)
+
+
+def get_dosing_recommendation(drug: str, age: int, sex: str,
+                              current_dose: str = "",
+                              conditions: str = "",
+                              patient_data_json: str = "{}") -> str:
+    """
+    Get FDA label-based dosing recommendation for a specific patient.
+    Always runs fresh — no cache — since patient labs change frequently.
+
+    drug: drug name
+    age: patient age as integer
+    sex: male | female | other
+    current_dose: current prescribed dose e.g. "1000mg bid"
+    conditions: comma-separated conditions e.g. "CKD stage 3,diabetes"
+    patient_data_json: JSON string of patient labs and investigations e.g.
+        '{"weight_kg":72,"egfr":38,"sodium":128,"potassium":5.6,
+          "other_investigations":{"eGFR_trend":"declining"}}'
+    """
+    service = _get_dosing_service()
+
+    try:
+        patient_data = json.loads(patient_data_json)
+    except Exception:
+        patient_data = {}
+
+    patient_data['age']          = age
+    patient_data['sex']          = sex
+    patient_data['current_dose'] = current_dose
+    patient_data['current_drug'] = drug
+    patient_data['conditions']   = [
+        c.strip() for c in conditions.split(',') if c.strip()
+    ] if conditions else []
+
+    result = service.get_dosing_recommendation(
+        drug         = drug,
+        patient_data = patient_data
+    )
+
+    # Store full result so agent truncation doesn't lose data
+    _dosing_results[drug.lower()] = result
     return json.dumps(result)
 
 
@@ -549,7 +300,8 @@ class VabGenRxAgentService:
         print(f"   Model:    {self.model}")
         print(f"   Tools:    search_pubmed, search_fda_events, get_fda_label,")
         print(f"             check_cache, save_cache,")
-        print(f"             get_drug_counseling, get_condition_counseling")
+        print(f"             get_drug_counseling, get_condition_counseling,")
+        print(f"             get_dosing_recommendation")
 
     def _build_toolset(self) -> ToolSet:
         """Register all tools the agent can call autonomously."""
@@ -561,10 +313,63 @@ class VabGenRxAgentService:
             save_cache,
             get_drug_counseling,
             get_condition_counseling,
+            get_dosing_recommendation,
         })
         toolset = ToolSet()
         toolset.add(functions)
         return toolset
+
+    def _run_agent(self, instructions: str, content: str,
+                   toolset: ToolSet) -> Dict:
+        """
+        Run a single focused agent with given instructions and content.
+        Returns parsed result dict.
+        Kept small to avoid hitting Azure agent step limits.
+        """
+        agent = self.client.create_agent(
+            model        = self.model,
+            name         = "VabGenRx-Agent",
+            instructions = instructions,
+            toolset      = toolset,
+        )
+        try:
+            ctx = self.client.enable_auto_function_calls(toolset)
+            if ctx is not None:
+                with ctx:
+                    run = self.client.create_thread_and_process_run(
+                        agent_id = agent.id,
+                        thread   = {"messages": [{"role": "user", "content": content}]}
+                    )
+            else:
+                run = self.client.create_thread_and_process_run(
+                    agent_id = agent.id,
+                    thread   = {"messages": [{"role": "user", "content": content}]},
+                    toolset  = toolset
+                )
+
+            print(f"   ✅ Run status: {run.status}")
+
+            if run.status == RunStatus.COMPLETED:
+                messages_data = self._get_messages(run.thread_id)
+                for msg in messages_data:
+                    if msg.get("role") == "assistant":
+                        for block in msg.get("content", []):
+                            if block.get("type") == "text":
+                                raw = block["text"]["value"]
+                                try:
+                                    start = raw.find('{')
+                                    end   = raw.rfind('}') + 1
+                                    if start >= 0:
+                                        return json.loads(raw[start:end])
+                                except Exception as e:
+                                    print(f"   ⚠️  JSON parse error: {e}")
+                                    return {}
+            else:
+                print(f"   ❌ Run failed: {run.status}")
+                return {}
+        finally:
+            self.client.delete_agent(agent.id)
+        return {}
 
     def _get_messages(self, thread_id: str) -> list:
         """Fetch thread messages using confirmed API version 2025-05-01."""
@@ -583,40 +388,98 @@ class VabGenRxAgentService:
             print(f"   ⚠️  Failed to fetch messages: {e}")
             return []
 
-    def analyze(self, medications: List[str],
-                diseases:    List[str] = None,
-                foods:       List[str] = None,
-                age:         int = 45,
-                sex:         str = "unknown",
-                dose_map:    Dict[str, str] = None) -> Dict:
+    def analyze(self,
+                medications:     List[str],
+                diseases:        List[str] = None,
+                foods:           List[str] = None,
+                age:             int = 45,
+                sex:             str = "unknown",
+                dose_map:        Dict[str, str] = None,
+                patient_profile: Dict = None,
+                patient_data:    Dict = None) -> Dict:
         """
-        Run the VabGenRx agent to analyze a complete prescription
-        including drug counseling and condition counseling.
+        Run the VabGenRx agent across 3 focused runs to avoid Azure step limits:
+          Run 1a — Drug-Drug + Drug-Food
+          Run 1b — Drug-Disease (separate budget so ALL pairs are covered)
+          Run 2  — Counseling + Dosing
+
+        patient_profile — confirmed lifestyle habits:
+        {
+            "drinks_alcohol": True/False,
+            "smokes": True/False,
+            "sedentary": True/False,
+            "has_mobility_issues": True/False,
+            "has_joint_pain": True/False,
+            "is_pregnant": True/False,
+            "has_kidney_disease": True/False,
+            "has_liver_disease": True/False
+        }
+
+        patient_data — labs and investigations for dosing:
+        {
+            "weight_kg": 72, "height_cm": 168, "bmi": 25.5,
+            "egfr": 38, "sodium": 128, "potassium": 5.6,
+            "bilirubin": 2.1, "tsh": 7.8, "pulse": 92,
+            "other_investigations": {"eGFR_trend": "declining"}
+        }
         """
-        diseases = diseases or []
-        foods    = foods    or []
-        dose_map = dose_map or {}
+        diseases        = diseases        or []
+        foods           = foods           or []
+        dose_map        = dose_map        or {}
+        patient_profile = patient_profile or {}
+        patient_data    = patient_data    or {}
+
+        patient_profile_json = json.dumps(patient_profile)
+        patient_data_json    = json.dumps(patient_data)
+
+        # Pre-compute counts for instructions and validation
+        n_meds       = len(medications)
+        n_diseases   = len(diseases)
+        n_ddi_pairs  = len(list(itertools.combinations(medications, 2)))
+        n_dd_pairs   = n_meds * n_diseases
+        meds_str     = ', '.join(medications)
+        diseases_str = ', '.join(diseases) if diseases else 'None'
+
+        # Explicit list of all drug-disease pairs — agent cannot miss any
+        dd_pairs_str = ', '.join(
+            f"{drug}+{disease}"
+            for drug in medications
+            for disease in diseases
+        )
 
         print(f"\n🤖 Starting VabGenRx Agent Analysis...")
-        print(f"   Medications: {', '.join(medications)}")
+        print(f"   Medications: {meds_str}")
         if diseases:
-            print(f"   Conditions:  {', '.join(diseases)}")
+            print(f"   Conditions:  {diseases_str}")
         if age and sex != "unknown":
             print(f"   Patient:     {age}yo {sex}")
+        if patient_profile:
+            print(f"   Profile:     {patient_profile_json}")
+        if patient_data:
+            print(f"   Labs:        eGFR={patient_data.get('egfr','?')}  "
+                  f"K+={patient_data.get('potassium','?')}  "
+                  f"TSH={patient_data.get('tsh','?')}")
+
+        # Clear collectors for this run
+        global _dosing_results, _drug_counseling_results, _condition_counseling_results
+        _dosing_results               = {}
+        _drug_counseling_results      = {}
+        _condition_counseling_results = {}
 
         toolset = self._build_toolset()
 
-        agent = self.client.create_agent(
-            model        = self.model,
-            name         = "VabGenRx-Safety-Agent",
-            instructions = f"""
-You are VabGenRx, a clinical pharmacology agent. Analyze medication safety
-AND generate patient counseling.
+        # ══════════════════════════════════════════════════════════════════
+        # RUN 1a — DRUG-DRUG + DRUG-FOOD
+        # ══════════════════════════════════════════════════════════════════
+        print(f"\n   🔬 Run 1a: Drug-Drug + Food "
+              f"({n_ddi_pairs} pairs, {n_meds} food checks)...")
 
-PATIENT CONTEXT:
-- Age: {age}
-- Sex: {sex}
-- Dose map: {json.dumps(dose_map)}
+        ddi_instructions = f"""
+You are VabGenRx, a clinical pharmacology safety agent.
+Analyze ONLY drug-drug interactions and drug-food interactions.
+Do NOT analyze drug-disease — that is handled separately.
+
+MEDICATIONS: {meds_str}
 
 AVAILABLE TOOLS:
 - check_cache(cache_type, drug1, drug2="")
@@ -624,155 +487,289 @@ AVAILABLE TOOLS:
 - search_fda_events(drug1, drug2)
 - get_fda_label(drug_name)
 - save_cache(cache_type, drug1, analysis_json, drug2="")
-- get_drug_counseling(drug, age, sex, dose="", conditions="")
-- get_condition_counseling(condition, age, sex, medications="")
 
-WORKFLOW:
+DRUG-DRUG: For every unique drug pair — ALL STEPS MANDATORY:
+Step 1: check_cache(cache_type="drug_drug", drug1=..., drug2=...)
+Step 2: ALWAYS call search_pubmed(drug1=..., drug2=...)
+Step 3: ALWAYS call search_fda_events(drug1=..., drug2=...)
+        ⚠️ search_fda_events takes ONLY drug1 and drug2 — NEVER pass disease
+Step 4: If cache_hit=false: synthesize result from evidence
+Step 5: If cache_hit=false: save_cache(cache_type="drug_drug", ...)
 
-PART 1 — Drug-Drug, Drug-Disease, Drug-Food:
-1. For every drug pair: check_cache first → if miss: search evidence → save_cache
-2. For every drug+disease: check_cache first → if miss: search evidence → save_cache
-3. For every drug food: check_cache first → if miss: search_pubmed → save_cache
+CONFIDENCE — NEVER set 0.0:
+- FDA > 1000 → 0.90–0.98 | FDA 100–1000 → 0.80–0.90
+- FDA 10–100 → 0.70–0.85 | No data → get_fda_label() then 0.65–0.75
 
-PART 2 — Counseling (use patient age={age}, sex={sex}):
-4. For every drug: get_drug_counseling(drug=drug, age={age}, sex="{sex}", dose=dose, conditions="comma-separated conditions")
-5. For every condition: get_condition_counseling(condition=condition, age={age}, sex="{sex}", medications="comma-separated meds")
+DRUG-FOOD: For every drug in [{meds_str}]:
+Step 1: check_cache(cache_type="food", drug1=drug)
+Step 2: If miss: search_pubmed(drug1=drug)
+Step 3: If miss: save_cache(cache_type="food", ...)
 
-SEVERITY: SEVERE | MODERATE | MINOR
-CONFIDENCE: 0.65-0.98
+Expected: {n_ddi_pairs} drug-drug, {n_meds} food.
 
 Return ONLY valid JSON:
 {{
   "drug_drug": [
     {{
-      "drug1": "...", "drug2": "...",
-      "severity": "severe/moderate/minor",
-      "confidence": 0.00,
-      "mechanism": "...",
-      "clinical_effects": "...",
-      "recommendation": "...",
-      "pubmed_papers": 0,
-      "fda_reports": 0,
-      "from_cache": true
-    }}
-  ],
-  "drug_disease": [
-    {{
-      "drug": "...", "disease": "...",
-      "contraindicated": false,
-      "severity": "...",
-      "confidence": 0.00,
-      "clinical_evidence": "...",
-      "recommendation": "...",
-      "alternative_drugs": [],
-      "from_cache": true
+      "drug1":"...","drug2":"...",
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "mechanism":"...","clinical_effects":"...","recommendation":"...",
+      "pubmed_papers":0,"fda_reports":0,"from_cache":true
     }}
   ],
   "drug_food": [
     {{
-      "drug": "...",
-      "foods_to_avoid": [],
-      "foods_to_separate": [],
-      "foods_to_monitor": [],
-      "mechanism": "...",
-      "from_cache": true
+      "drug":"...","foods_to_avoid":[],"foods_to_separate":[],
+      "foods_to_monitor":[],"mechanism":"...","from_cache":true
     }}
-  ],
+  ]
+}}
+"""
+
+        ddi_result = self._run_agent(
+            ddi_instructions,
+            f"Analyze drug-drug and food interactions:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"Expected: {n_ddi_pairs} drug-drug pairs, {n_meds} food checks.\n"
+            f"Return JSON only.",
+            toolset
+        )
+
+        # ══════════════════════════════════════════════════════════════════
+        # RUN 1b — DRUG-DISEASE ONLY
+        # Completely separate so all pairs get their own step budget
+        # ══════════════════════════════════════════════════════════════════
+        print(f"\n   🔬 Run 1b: Drug-Disease "
+              f"({n_dd_pairs} pairs: {dd_pairs_str})...")
+
+        disease_instructions = f"""
+You are VabGenRx, a clinical pharmacology safety agent.
+Analyze ONLY drug-disease contraindications — nothing else.
+
+MEDICATIONS: {meds_str}
+CONDITIONS:  {diseases_str}
+
+AVAILABLE TOOLS:
+- check_cache(cache_type, drug1, drug2="")
+- search_pubmed(drug1, drug2="", disease="")
+- get_fda_label(drug_name)
+- save_cache(cache_type, drug1, analysis_json, drug2="")
+
+⚠️ Do NOT call search_fda_events — it does not work for drug-disease.
+
+ALL {n_dd_pairs} PAIRS ARE MANDATORY: {dd_pairs_str}
+
+For EACH pair above:
+Step 1: check_cache(cache_type="drug_disease", drug1=<drug>, drug2=<condition>)
+Step 2: If miss: search_pubmed(drug1=<drug>, disease=<condition>)
+Step 3: If miss: get_fda_label(drug_name=<drug>)
+Step 4: If miss: save_cache(cache_type="drug_disease", drug1=<drug>,
+                             drug2=<condition>, analysis_json=...)
+
+VERIFY before returning: drug_disease array must have {n_dd_pairs} items.
+If any pair is missing — call the tools for it before returning.
+
+Return ONLY valid JSON:
+{{
+  "drug_disease": [
+    {{
+      "drug":"...","disease":"...",
+      "contraindicated":false,
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "clinical_evidence":"...","recommendation":"...",
+      "alternative_drugs":[],"from_cache":true
+    }}
+  ]
+}}
+"""
+
+        disease_result = self._run_agent(
+            disease_instructions,
+            f"Check ALL drug-disease contraindications:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"ALL {n_dd_pairs} pairs required: {dd_pairs_str}\n"
+            f"Return JSON only.",
+            toolset
+        )
+
+        # ══════════════════════════════════════════════════════════════════
+        # RUN 2 — COUNSELING + DOSING
+        # ══════════════════════════════════════════════════════════════════
+        print(f"\n   💊 Run 2: Counseling + Dosing...")
+
+        counseling_instructions = f"""
+You are VabGenRx, a clinical counseling and dosing agent.
+Generate patient-specific counseling and dosing recommendations.
+
+PATIENT CONTEXT:
+- Age: {age} | Sex: {sex}
+- Dose map: {json.dumps(dose_map)}
+- Patient profile (confirmed habits): {patient_profile_json}
+- Patient labs: {patient_data_json}
+
+AVAILABLE TOOLS:
+- get_drug_counseling(drug, age, sex, dose="", conditions="", patient_profile_json="{{}}")
+- get_condition_counseling(condition, age, sex, medications="", patient_profile_json="{{}}")
+- get_dosing_recommendation(drug, age, sex, current_dose="", conditions="", patient_data_json="{{}}")
+
+DRUG COUNSELING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_drug_counseling(
+    drug=<drug>, age={age}, sex="{sex}",
+    dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+CONDITION COUNSELING — {n_diseases} calls required: {diseases_str}
+For each condition:
+  get_condition_counseling(
+    condition=<condition>, age={age}, sex="{sex}",
+    medications="{meds_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+DOSING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_dosing_recommendation(
+    drug=<drug>, age={age}, sex="{sex}",
+    current_dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_data_json='{patient_data_json}'
+  )
+
+CRITICAL:
+- Pass patient_profile_json EXACTLY as shown — never pass {{}} empty
+- Pass patient_data_json EXACTLY as shown — never pass {{}} empty
+- Look up each drug's dose from dose map — pass exact value
+- If drug not in dose map, pass current_dose="" (empty string)
+
+Return ONLY valid JSON:
+{{
   "drug_counseling": [
     {{
-      "drug": "...",
-      "counseling_points": [
-        {{
-          "title": "...",
-          "detail": "...",
-          "severity": "high|medium|low",
-          "category": "..."
-        }}
-      ],
-      "key_monitoring": "...",
-      "patient_summary": "..."
+      "drug":"...","patient_context":"...",
+      "counseling_points":[{{"title":"...","detail":"...","severity":"...","category":"..."}}],
+      "key_monitoring":"...","patient_summary":"...","from_cache":true
     }}
   ],
   "condition_counseling": [
     {{
-      "condition": "...",
-      "exercise":  [{{"title": "...", "detail": "...", "frequency": "..."}}],
-      "lifestyle": [{{"title": "...", "detail": "..."}}],
-      "diet":      [{{"title": "...", "detail": "...", "foods_to_include": [], "foods_to_avoid": []}}],
-      "safety":    [{{"title": "...", "detail": "...", "urgency": "high|medium|low"}}],
-      "monitoring": "...",
-      "follow_up": "..."
+      "condition":"...","patient_context":"...",
+      "exercise":[{{"title":"...","detail":"...","frequency":"..."}}],
+      "lifestyle":[{{"title":"...","detail":"..."}}],
+      "diet":[{{"title":"...","detail":"...","nutrients_to_increase":[],"nutrients_to_reduce":[]}}],
+      "safety":[{{"title":"...","detail":"...","urgency":"high|medium|low"}}],
+      "monitoring":"...","follow_up":"...","from_cache":true
     }}
   ],
-  "risk_summary": {{
-    "level": "HIGH/MODERATE/LOW",
-    "severe_count": 0,
-    "moderate_count": 0,
-    "contraindicated_count": 0
-  }}
+  "dosing_recommendations": [
+    {{
+      "drug":"...","current_dose":"...","recommended_dose":"...",
+      "adjustment_required":true,
+      "adjustment_type":"renal|hepatic|age|weight|pregnancy|drug_level|none",
+      "urgency":"high|medium|low",
+      "adjustment_reason":"...","hold_threshold":"...",
+      "monitoring_required":"...","fda_label_basis":"...",
+      "evidence_tier":"...","evidence_confidence":"...",
+      "patient_flags_used":[],"clinical_note":"...","from_cache":false
+    }}
+  ]
 }}
-""",
-            toolset=toolset,
+"""
+
+        counseling_result = self._run_agent(
+            counseling_instructions,
+            f"Generate counseling and dosing:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"PATIENT:     {age}yo {sex}\n"
+            f"DOSES:       {json.dumps(dose_map)}\n"
+            f"PROFILE:     {patient_profile_json}\n"
+            f"LABS:        {patient_data_json}\n\n"
+            f"REQUIRED: {n_meds} drug counseling ({meds_str}), "
+            f"{n_diseases} condition counseling ({diseases_str}), "
+            f"{n_meds} dosing ({meds_str}).\n"
+            f"Return JSON only.",
+            toolset
         )
 
-        print("   🔄 Agent running (calling tools autonomously)...")
+        # ══════════════════════════════════════════════════════════════════
+        # MERGE — combine all 3 run results into one final output
+        # Always prefer full collected results over agent-assembled arrays
+        # ══════════════════════════════════════════════════════════════════
+        print(f"\n   🔀 Merging results...")
 
-        try:
-            ctx = self.client.enable_auto_function_calls(toolset)
+        all_ddi      = ddi_result.get("drug_drug", [])
+        all_dd       = disease_result.get("drug_disease", [])
+        severe_count = sum(1 for r in all_ddi if r.get("severity") == "severe")
+        mod_count    = sum(1 for r in all_ddi if r.get("severity") == "moderate")
+        contra_count = sum(1 for r in all_dd  if r.get("contraindicated"))
 
-            content = (
-                f"Analyze this prescription:\n"
-                f"MEDICATIONS: {', '.join(medications)}\n"
-                f"CONDITIONS:  {', '.join(diseases) if diseases else 'None'}\n"
-                f"FOODS:       {', '.join(foods) if foods else 'General'}\n"
-                f"PATIENT:     {age}yo {sex}\n"
-                f"DOSES:       {json.dumps(dose_map) if dose_map else 'standard'}\n\n"
-                f"Run BOTH parts: safety analysis AND counseling. Return JSON only."
-            )
+        final = {
+            "drug_drug":              all_ddi,
+            "drug_disease":           all_dd,
+            "drug_food":              ddi_result.get("drug_food", []),
+            "drug_counseling":        [],
+            "condition_counseling":   [],
+            "dosing_recommendations": [],
+            "risk_summary": {
+                "level": (
+                    "HIGH"     if severe_count > 0 or contra_count > 0 else
+                    "MODERATE" if mod_count > 0 else
+                    "LOW"
+                ),
+                "severe_count":                severe_count,
+                "moderate_count":              mod_count,
+                "contraindicated_count":       contra_count,
+                "dosing_adjustments_required": 0
+            }
+        }
 
-            if ctx is not None:
-                with ctx:
-                    run = self.client.create_thread_and_process_run(
-                        agent_id = agent.id,
-                        thread   = {"messages": [{"role": "user", "content": content}]}
-                    )
-            else:
-                run = self.client.create_thread_and_process_run(
-                    agent_id = agent.id,
-                    thread   = {"messages": [{"role": "user", "content": content}]},
-                    toolset  = toolset
-                )
+        # Drug counseling — always use full collected results
+        final["drug_counseling"] = (
+            [_drug_counseling_results[d.lower()]
+             for d in medications if d.lower() in _drug_counseling_results]
+            if _drug_counseling_results
+            else counseling_result.get("drug_counseling", [])
+        )
 
-            print(f"   ✅ Run status: {run.status}")
-            self._last_run = run
+        # Condition counseling — always use full collected results
+        final["condition_counseling"] = (
+            [_condition_counseling_results[d.lower()]
+             for d in diseases if d.lower() in _condition_counseling_results]
+            if _condition_counseling_results
+            else counseling_result.get("condition_counseling", [])
+        )
 
-            result = {"status": str(run.status), "raw": ""}
+        # Dosing — always use full collected results (all FDA fields present)
+        final["dosing_recommendations"] = (
+            [_dosing_results[d.lower()]
+             for d in medications if d.lower() in _dosing_results]
+            if _dosing_results
+            else counseling_result.get("dosing_recommendations", [])
+        )
 
-            if run.status == RunStatus.COMPLETED:
-                messages_data = self._get_messages(run.thread_id)
-                for msg in messages_data:
-                    if msg.get("role") == "assistant":
-                        for block in msg.get("content", []):
-                            if block.get("type") == "text":
-                                raw = block["text"]["value"]
-                                result["raw"] = raw
-                                try:
-                                    start = raw.find('{')
-                                    end   = raw.rfind('}') + 1
-                                    if start >= 0:
-                                        result["analysis"] = json.loads(raw[start:end])
-                                        print("   ✅ JSON parsed successfully")
-                                except Exception as e:
-                                    result["parse_error"] = str(e)
-                                break
-                        break
-            else:
-                result["error"] = f"Run ended with status: {run.status}"
+        # Update dosing adjustment count in risk summary
+        dosing_adjustments = sum(
+            1 for r in final["dosing_recommendations"]
+            if r.get("adjustment_required")
+        )
+        final["risk_summary"]["dosing_adjustments_required"] = dosing_adjustments
 
-        finally:
-            self.client.delete_agent(agent.id)
+        print(f"   📊 Final output counts:")
+        print(f"      drug_drug:             {len(final['drug_drug'])}")
+        print(f"      drug_disease:          {len(final['drug_disease'])} / {n_dd_pairs} expected")
+        print(f"      drug_food:             {len(final['drug_food'])}")
+        print(f"      drug_counseling:       {len(final['drug_counseling'])} / {n_meds} expected")
+        print(f"      condition_counseling:  {len(final['condition_counseling'])} / {n_diseases} expected")
+        print(f"      dosing_recommendations:{len(final['dosing_recommendations'])} / {n_meds} expected")
+        print(f"      dosing_adjustments:    {dosing_adjustments}")
 
-        return result
+        return {"status": "completed", "analysis": final}
 
 
 # ── CLI Test ──────────────────────────────────────────────────────────────────
@@ -789,12 +786,37 @@ def main():
         return
 
     result = service.analyze(
-        medications = ["warfarin", "aspirin"],
-        diseases    = ["diabetes", "hypertension"],
-        foods       = ["dairy"],
-        age         = 68,
+        medications = ["aspirin", "theophylline", "ciprofloxacin"],
+        diseases    = ["cold", "Atrial Fibrillation"],
+        age         = 72,
         sex         = "male",
-        dose_map    = {"warfarin": "10mg daily", "aspirin": "81mg daily"}
+        dose_map    = {
+            "warfarin":      "10mg daily",
+            "theophylline":  "200mg bid",
+            "ciprofloxacin": "500mg bid"
+        },
+        patient_profile = {
+            "drinks_alcohol":     True,
+            "smokes":             True,
+            "has_kidney_disease": True,
+            "has_liver_disease":  False,
+            "sedentary":          True
+        },
+        patient_data = {
+            "weight_kg":  80,
+            "height_cm":  170,
+            "bmi":        27.7,
+            "egfr":       38,
+            "sodium":     140,
+            "potassium":  4.9,
+            "bilirubin":  0.9,
+            "tsh":        2.0,
+            "pulse":      110,
+            "other_investigations": {
+                "CXR":          "infiltrates",
+                "presentation": "acute exacerbation"
+            }
+        }
     )
 
     print("\n📊 AGENT RESULT:")
@@ -804,8 +826,1841 @@ def main():
         print("Raw:", result.get("raw", "No response"))
         if "error" in result:
             print("Error:", result["error"])
-        if "parse_error" in result:
-            print("Parse error:", result["parse_error"])
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+"""
+VabGenRx — Multi-Agent Clinical Intelligence Platform
+Microsoft Agent Framework — azure-ai-agents v1.1.0
+
+Architecture:
+  VabGenRxSafetyAgent    — Drug-Drug + Drug-Food interactions
+  VabGenRxDiseaseAgent   — Drug-Disease contraindications
+  VabGenRxCounselingAgent — Patient counseling + FDA dosing
+  VabGenRxOrchestrator   — Coordinates all three agents, merges results
+
+Run: python services/vabgenrx_agent.py
+"""
+
+import os
+import sys
+import json
+import itertools
+from typing import Dict, List
+
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.getcwd())
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from azure.ai.agents import AgentsClient
+from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
+from azure.identity import DefaultAzureCredential
+from azure.core.rest import HttpRequest
+
+# ── Module-level service instances (created once, reused on every tool call) ──
+_drug_counseling_service      = None
+_condition_counseling_service = None
+_dosing_service               = None
+
+# ── Module-level result collectors ────────────────────────────────────────────
+# Store full tool results here so agent truncation doesn't lose data
+_dosing_results               = {}
+_drug_counseling_results      = {}
+_condition_counseling_results = {}
+
+
+def _get_drug_counseling_service():
+    global _drug_counseling_service
+    if _drug_counseling_service is None:
+        from services.counselling_service import DrugCounselingService
+        _drug_counseling_service = DrugCounselingService()
+    return _drug_counseling_service
+
+
+def _get_condition_counseling_service():
+    global _condition_counseling_service
+    if _condition_counseling_service is None:
+        from services.condition_service import ConditionCounselingService
+        _condition_counseling_service = ConditionCounselingService()
+    return _condition_counseling_service
+
+
+def _get_dosing_service():
+    global _dosing_service
+    if _dosing_service is None:
+        from services.dosing_service import DosingService
+        _dosing_service = DosingService()
+    return _dosing_service
+
+
+# ── Shared Tool Functions ──────────────────────────────────────────────────────
+# All three agents share the same toolset — each agent only uses
+# the tools relevant to its role (enforced via instructions).
+
+def search_pubmed(drug1: str, drug2: str = "", disease: str = "") -> str:
+    """
+    Search PubMed medical research database.
+    For drug-drug: provide drug1 and drug2.
+    For drug-disease: provide drug1 and disease.
+    For food interactions: provide only drug1.
+    """
+    from services.pubmed_service import PubMedService
+    pubmed = PubMedService()
+    if drug2:
+        result = pubmed.search_drug_interaction(drug1, drug2)
+    elif disease:
+        result = pubmed.search_disease_contraindication(drug1, disease)
+    else:
+        result = pubmed.search_all_food_interactions_for_drug(drug1, max_results=5)
+    return json.dumps({
+        'paper_count': result.get('count', 0),
+        'pmids':       result.get('pmids', [])[:5],
+        'abstracts':   [a['text'][:400] for a in result.get('abstracts', [])[:2]]
+    })
+
+
+def search_fda_events(drug1: str, drug2: str) -> str:
+    """
+    Search FDA adverse event database for a drug pair.
+    Requires both drug1 and drug2.
+    ONLY use for drug-drug pairs — never for drug-disease.
+    """
+    from services.fda_service import FDAService
+    result = FDAService().search_adverse_events(drug1, drug2)
+    return json.dumps({
+        'total_reports':   result.get('total_reports', 0),
+        'serious_reports': result.get('serious_reports', 0),
+        'severity_ratio':  result.get('severity_ratio', 0)
+    })
+
+
+def get_fda_label(drug_name: str) -> str:
+    """
+    Get FDA official drug label for a single drug.
+    Returns contraindications and warnings.
+    """
+    from services.fda_service import FDAService
+    result = FDAService().get_drug_contraindications(drug_name)
+    return json.dumps({
+        'found':             result.get('found', False),
+        'contraindications': result.get('contraindications', '')[:500],
+        'warnings':          result.get('warnings', '')[:300],
+    })
+
+
+def check_cache(cache_type: str, drug1: str, drug2: str = "") -> str:
+    """
+    Check Azure SQL cache for a previous result.
+    cache_type: drug_drug | drug_disease | food
+    drug2: second drug (drug_drug) or disease name (drug_disease).
+    For food, only drug1 is needed.
+    """
+    from services.cache_service import AzureSQLCacheService
+    cache = AzureSQLCacheService()
+    if cache_type == 'drug_drug' and drug2:
+        result = cache.get_drug_drug(drug1, drug2)
+    elif cache_type == 'drug_disease' and drug2:
+        result = cache.get_drug_disease(drug1, drug2)
+    elif cache_type == 'food':
+        result = cache.get_food(drug1)
+    else:
+        result = None
+    return json.dumps({'cache_hit': result is not None, 'cached_data': result})
+
+
+def save_cache(cache_type: str, drug1: str, analysis_json: str, drug2: str = "") -> str:
+    """
+    Save an analysis result to Azure SQL cache.
+    cache_type: drug_drug | drug_disease | food
+    """
+    from services.cache_service import AzureSQLCacheService
+    cache = AzureSQLCacheService()
+    try:
+        result = json.loads(analysis_json)
+        if cache_type == 'drug_drug' and drug2:
+            cache.save_drug_drug(drug1, drug2, result)
+        elif cache_type == 'drug_disease' and drug2:
+            cache.save_drug_disease(drug1, drug2, result)
+        elif cache_type == 'food':
+            cache.save_food(drug1, result)
+        return json.dumps({'saved': True})
+    except Exception as e:
+        return json.dumps({'saved': False, 'error': str(e)})
+
+
+def get_drug_counseling(drug: str, age: int, sex: str,
+                        dose: str = "",
+                        conditions: str = "",
+                        patient_profile_json: str = "{}") -> str:
+    """
+    Get patient-specific drug counseling points.
+    Filters by age, sex, and confirmed habits — no irrelevant warnings.
+    """
+    service   = _get_drug_counseling_service()
+    cond_list = [c.strip() for c in conditions.split(',') if c.strip()] if conditions else []
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Drug counseling profile for {drug}: {patient_profile}")
+    if not patient_profile:
+        print(f"   ⚠️  Warning: empty patient_profile for {drug} "
+              f"— habit-based filtering will be skipped")
+
+    result = service.get_drug_counseling(
+        drug            = drug,
+        age             = age,
+        sex             = sex,
+        dose            = dose,
+        conditions      = cond_list,
+        patient_profile = patient_profile
+    )
+    _drug_counseling_results[drug.lower()] = result
+    return json.dumps(result)
+
+
+def get_condition_counseling(condition: str, age: int, sex: str,
+                             medications: str = "",
+                             patient_profile_json: str = "{}") -> str:
+    """
+    Get lifestyle, diet, exercise and safety counseling for a condition.
+    Only counsels on confirmed patient habits — never assumes.
+    """
+    service   = _get_condition_counseling_service()
+    meds_list = [m.strip() for m in medications.split(',') if m.strip()] if medications else []
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Condition counseling profile for {condition}: {patient_profile}")
+
+    result = service.get_condition_counseling(
+        condition       = condition,
+        age             = age,
+        sex             = sex,
+        medications     = meds_list,
+        patient_profile = patient_profile
+    )
+    _condition_counseling_results[condition.lower()] = result
+    return json.dumps(result)
+
+
+def get_dosing_recommendation(drug: str, age: int, sex: str,
+                              current_dose: str = "",
+                              conditions: str = "",
+                              patient_data_json: str = "{}") -> str:
+    """
+    Get FDA label-based dosing recommendation for a specific patient.
+    Always runs fresh — no cache — since patient labs change frequently.
+    """
+    service = _get_dosing_service()
+
+    try:
+        patient_data = json.loads(patient_data_json)
+    except Exception:
+        patient_data = {}
+
+    patient_data['age']          = age
+    patient_data['sex']          = sex
+    patient_data['current_dose'] = current_dose
+    patient_data['current_drug'] = drug
+    patient_data['conditions']   = [
+        c.strip() for c in conditions.split(',') if c.strip()
+    ] if conditions else []
+
+    result = service.get_dosing_recommendation(
+        drug         = drug,
+        patient_data = patient_data
+    )
+    _dosing_results[drug.lower()] = result
+    return json.dumps(result)
+
+
+# ── Base Agent ────────────────────────────────────────────────────────────────
+
+class _BaseAgent:
+    """
+    Shared infrastructure for all VabGenRx specialist agents.
+    Handles agent creation, run execution, message fetching, and cleanup.
+    Each specialist agent inherits this and only defines its own
+    instructions and run content.
+    """
+
+    def __init__(self, client: AgentsClient, model: str, endpoint: str):
+        self.client   = client
+        self.model    = model
+        self.endpoint = endpoint
+
+    def _build_toolset(self) -> ToolSet:
+        functions = FunctionTool(functions={
+            search_pubmed,
+            search_fda_events,
+            get_fda_label,
+            check_cache,
+            save_cache,
+            get_drug_counseling,
+            get_condition_counseling,
+            get_dosing_recommendation,
+        })
+        toolset = ToolSet()
+        toolset.add(functions)
+        return toolset
+
+    def _run(self, name: str, instructions: str,
+             content: str, toolset: ToolSet) -> Dict:
+        """
+        Create an agent, run it, parse the JSON response, delete the agent.
+        Returns parsed dict or empty dict on failure.
+        """
+        agent = self.client.create_agent(
+            model        = self.model,
+            name         = name,
+            instructions = instructions,
+            toolset      = toolset,
+        )
+        try:
+            ctx = self.client.enable_auto_function_calls(toolset)
+            if ctx is not None:
+                with ctx:
+                    run = self.client.create_thread_and_process_run(
+                        agent_id = agent.id,
+                        thread   = {"messages": [{"role": "user", "content": content}]}
+                    )
+            else:
+                run = self.client.create_thread_and_process_run(
+                    agent_id = agent.id,
+                    thread   = {"messages": [{"role": "user", "content": content}]},
+                    toolset  = toolset
+                )
+
+            print(f"   ✅ {name} status: {run.status}")
+
+            if run.status == RunStatus.COMPLETED:
+                messages_data = self._get_messages(run.thread_id)
+                for msg in messages_data:
+                    if msg.get("role") == "assistant":
+                        for block in msg.get("content", []):
+                            if block.get("type") == "text":
+                                raw = block["text"]["value"]
+                                try:
+                                    start = raw.find('{')
+                                    end   = raw.rfind('}') + 1
+                                    if start >= 0:
+                                        return json.loads(raw[start:end])
+                                except Exception as e:
+                                    print(f"   ⚠️  {name} JSON parse error: {e}")
+                                    return {}
+            else:
+                print(f"   ❌ {name} run failed: {run.status}")
+                return {}
+
+        finally:
+            self.client.delete_agent(agent.id)
+
+        return {}
+
+    def _get_messages(self, thread_id: str) -> list:
+        url = f"{self.endpoint}/threads/{thread_id}/messages?api-version=2025-05-01"
+        try:
+            req      = HttpRequest(method="GET", url=url)
+            response = self.client.send_request(req)
+            data     = response.json()
+            if "data" in data:
+                return data["data"]
+            return []
+        except Exception as e:
+            print(f"   ⚠️  Failed to fetch messages: {e}")
+            return []
+
+
+# ── Specialist Agent 1 — Safety (Drug-Drug + Drug-Food) ───────────────────────
+
+class VabGenRxSafetyAgent(_BaseAgent):
+    """
+    Specialist agent for drug-drug interactions and drug-food interactions.
+    Searches PubMed + FDA adverse events for every drug pair.
+    Checks and saves Azure SQL cache.
+    Does NOT handle drug-disease — that is VabGenRxDiseaseAgent's role.
+    """
+
+    def analyze(self, medications: List[str], n_ddi_pairs: int,
+                meds_str: str, toolset: ToolSet) -> Dict:
+
+        print(f"\n   🔬 VabGenRxSafetyAgent: Drug-Drug + Food "
+              f"({n_ddi_pairs} pairs, {len(medications)} food checks)...")
+
+        instructions = f"""
+You are VabGenRxSafetyAgent, a clinical pharmacology safety specialist.
+Analyze ONLY drug-drug interactions and drug-food interactions.
+Do NOT analyze drug-disease — that is handled by a separate agent.
+
+MEDICATIONS: {meds_str}
+
+AVAILABLE TOOLS:
+- check_cache(cache_type, drug1, drug2="")
+- search_pubmed(drug1, drug2="", disease="")
+- search_fda_events(drug1, drug2)
+- get_fda_label(drug_name)
+- save_cache(cache_type, drug1, analysis_json, drug2="")
+
+DRUG-DRUG — ALL STEPS MANDATORY for every unique pair:
+Step 1: check_cache(cache_type="drug_drug", drug1=..., drug2=...)
+Step 2: ALWAYS call search_pubmed(drug1=..., drug2=...)
+Step 3: ALWAYS call search_fda_events(drug1=..., drug2=...)
+        ⚠️ search_fda_events takes ONLY drug1 and drug2 — NEVER pass disease
+Step 4: If cache_hit=false: synthesize result from evidence
+Step 5: If cache_hit=false: save_cache(cache_type="drug_drug", ...)
+
+CONFIDENCE — NEVER set 0.0:
+- FDA > 1000 → 0.90–0.98 | FDA 100–1000 → 0.80–0.90
+- FDA 10–100 → 0.70–0.85 | No data → get_fda_label() then 0.65–0.75
+
+DRUG-FOOD — for every drug in [{meds_str}]:
+Step 1: check_cache(cache_type="food", drug1=drug)
+Step 2: If miss: search_pubmed(drug1=drug)
+Step 3: If miss: save_cache(cache_type="food", ...)
+
+Expected: {n_ddi_pairs} drug-drug results, {len(medications)} food results.
+
+Return ONLY valid JSON:
+{{
+  "drug_drug": [
+    {{
+      "drug1":"...","drug2":"...",
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "mechanism":"...","clinical_effects":"...","recommendation":"...",
+      "pubmed_papers":0,"fda_reports":0,"from_cache":true
+    }}
+  ],
+  "drug_food": [
+    {{
+      "drug":"...","foods_to_avoid":[],"foods_to_separate":[],
+      "foods_to_monitor":[],"mechanism":"...","from_cache":true
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Analyze drug-drug and food interactions:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"Expected: {n_ddi_pairs} drug-drug pairs, {len(medications)} food checks.\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxSafetyAgent", instructions, content, toolset)
+
+
+# ── Specialist Agent 2 — Disease (Drug-Disease Contraindications) ─────────────
+
+class VabGenRxDiseaseAgent(_BaseAgent):
+    """
+    Specialist agent for drug-disease contraindications.
+    Gets its own Azure agent step budget — ensures ALL drug-disease
+    pairs are checked without competing with safety or counseling work.
+    Does NOT call search_fda_events (only works for drug pairs).
+    """
+
+    def analyze(self, medications: List[str], diseases: List[str],
+                n_dd_pairs: int, meds_str: str, diseases_str: str,
+                dd_pairs_str: str, toolset: ToolSet) -> Dict:
+
+        print(f"\n   🔬 VabGenRxDiseaseAgent: Drug-Disease "
+              f"({n_dd_pairs} pairs: {dd_pairs_str})...")
+
+        instructions = f"""
+You are VabGenRxDiseaseAgent, a clinical pharmacology disease contraindication specialist.
+Analyze ONLY drug-disease contraindications — nothing else.
+
+MEDICATIONS: {meds_str}
+CONDITIONS:  {diseases_str}
+
+AVAILABLE TOOLS:
+- check_cache(cache_type, drug1, drug2="")
+- search_pubmed(drug1, drug2="", disease="")
+- get_fda_label(drug_name)
+- save_cache(cache_type, drug1, analysis_json, drug2="")
+
+⚠️ Do NOT call search_fda_events — it does not work for drug-disease.
+
+ALL {n_dd_pairs} PAIRS ARE MANDATORY: {dd_pairs_str}
+
+For EACH pair:
+Step 1: check_cache(cache_type="drug_disease", drug1=<drug>, drug2=<condition>)
+Step 2: If miss: search_pubmed(drug1=<drug>, disease=<condition>)
+Step 3: If miss: get_fda_label(drug_name=<drug>)
+Step 4: If miss: save_cache(cache_type="drug_disease", drug1=<drug>,
+                             drug2=<condition>, analysis_json=...)
+
+VERIFY before returning: drug_disease array must have {n_dd_pairs} items.
+If any pair is missing — call the tools for it before returning.
+
+Return ONLY valid JSON:
+{{
+  "drug_disease": [
+    {{
+      "drug":"...","disease":"...",
+      "contraindicated":false,
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "clinical_evidence":"...","recommendation":"...",
+      "alternative_drugs":[],"from_cache":true
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Check ALL drug-disease contraindications:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"ALL {n_dd_pairs} pairs required: {dd_pairs_str}\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxDiseaseAgent", instructions, content, toolset)
+
+
+# ── Specialist Agent 3 — Counseling + Dosing ─────────────────────────────────
+
+class VabGenRxCounselingAgent(_BaseAgent):
+    """
+    Specialist agent for patient-specific counseling and FDA-based dosing.
+    Calls get_drug_counseling, get_condition_counseling, get_dosing_recommendation.
+    Results are also captured in module-level collectors as a safety net
+    against agent truncation.
+    """
+
+    def analyze(self, medications: List[str], diseases: List[str],
+                age: int, sex: str, dose_map: Dict,
+                patient_profile_json: str, patient_data_json: str,
+                n_meds: int, n_diseases: int,
+                meds_str: str, diseases_str: str,
+                toolset: ToolSet) -> Dict:
+
+        print(f"\n   💊 VabGenRxCounselingAgent: Counseling + Dosing "
+              f"({n_meds} drugs, {n_diseases} conditions)...")
+
+        instructions = f"""
+You are VabGenRxCounselingAgent, a clinical counseling and dosing specialist.
+Generate patient-specific counseling and dosing recommendations.
+
+PATIENT CONTEXT:
+- Age: {age} | Sex: {sex}
+- Dose map: {json.dumps(dose_map)}
+- Patient profile (confirmed habits): {patient_profile_json}
+- Patient labs: {patient_data_json}
+
+AVAILABLE TOOLS:
+- get_drug_counseling(drug, age, sex, dose="", conditions="", patient_profile_json="{{}}")
+- get_condition_counseling(condition, age, sex, medications="", patient_profile_json="{{}}")
+- get_dosing_recommendation(drug, age, sex, current_dose="", conditions="", patient_data_json="{{}}")
+
+DRUG COUNSELING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_drug_counseling(
+    drug=<drug>, age={age}, sex="{sex}",
+    dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+CONDITION COUNSELING — {n_diseases} calls required: {diseases_str}
+For each condition:
+  get_condition_counseling(
+    condition=<condition>, age={age}, sex="{sex}",
+    medications="{meds_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+DOSING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_dosing_recommendation(
+    drug=<drug>, age={age}, sex="{sex}",
+    current_dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_data_json='{patient_data_json}'
+  )
+
+CRITICAL:
+- Pass patient_profile_json EXACTLY as shown — never pass {{}} empty
+- Pass patient_data_json EXACTLY as shown — never pass {{}} empty
+- Look up each drug's dose from dose map — pass exact value
+- If drug not in dose map, pass current_dose="" (empty string)
+
+Return ONLY valid JSON:
+{{
+  "drug_counseling": [
+    {{
+      "drug":"...","patient_context":"...",
+      "counseling_points":[{{"title":"...","detail":"...","severity":"...","category":"..."}}],
+      "key_monitoring":"...","patient_summary":"...","from_cache":true
+    }}
+  ],
+  "condition_counseling": [
+    {{
+      "condition":"...","patient_context":"...",
+      "exercise":[{{"title":"...","detail":"...","frequency":"..."}}],
+      "lifestyle":[{{"title":"...","detail":"..."}}],
+      "diet":[{{"title":"...","detail":"...","nutrients_to_increase":[],"nutrients_to_reduce":[]}}],
+      "safety":[{{"title":"...","detail":"...","urgency":"high|medium|low"}}],
+      "monitoring":"...","follow_up":"...","from_cache":true
+    }}
+  ],
+  "dosing_recommendations": [
+    {{
+      "drug":"...","current_dose":"...","recommended_dose":"...",
+      "adjustment_required":true,
+      "adjustment_type":"renal|hepatic|age|weight|pregnancy|drug_level|none",
+      "urgency":"high|medium|low",
+      "adjustment_reason":"...","hold_threshold":"...",
+      "monitoring_required":"...","fda_label_basis":"...",
+      "evidence_tier":"...","evidence_confidence":"...",
+      "patient_flags_used":[],"clinical_note":"...","from_cache":false
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Generate counseling and dosing:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"PATIENT:     {age}yo {sex}\n"
+            f"DOSES:       {json.dumps(dose_map)}\n"
+            f"PROFILE:     {patient_profile_json}\n"
+            f"LABS:        {patient_data_json}\n\n"
+            f"REQUIRED: {n_meds} drug counseling ({meds_str}), "
+            f"{n_diseases} condition counseling ({diseases_str}), "
+            f"{n_meds} dosing ({meds_str}).\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxCounselingAgent", instructions, content, toolset)
+
+
+# ── Orchestrator ──────────────────────────────────────────────────────────────
+
+class VabGenRxOrchestrator:
+    """
+    Coordinates the three VabGenRx specialist agents and merges their results.
+
+    Execution order:
+      1. VabGenRxSafetyAgent    — Drug-Drug + Drug-Food
+      2. VabGenRxDiseaseAgent   — Drug-Disease contraindications
+      3. VabGenRxCounselingAgent — Patient counseling + FDA dosing
+
+    Each agent runs sequentially with its own Azure agent instance and
+    dedicated step budget. Results are merged into a single output dict.
+    """
+
+    def __init__(self):
+        endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
+        if not endpoint:
+            raise ValueError("AZURE_AI_PROJECT_ENDPOINT not set in .env")
+
+        self.client   = AgentsClient(endpoint=endpoint, credential=DefaultAzureCredential())
+        self.model    = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+        self.endpoint = endpoint.rstrip('/')
+
+        # Instantiate all three specialist agents with shared client
+        self.safety_agent    = VabGenRxSafetyAgent(self.client, self.model, self.endpoint)
+        self.disease_agent   = VabGenRxDiseaseAgent(self.client, self.model, self.endpoint)
+        self.counseling_agent = VabGenRxCounselingAgent(self.client, self.model, self.endpoint)
+
+        print("✅ VabGenRx Multi-Agent System initialized")
+        print(f"   Endpoint  : {endpoint}")
+        print(f"   Model     : {self.model}")
+        print(f"   Agents    : VabGenRxSafetyAgent | VabGenRxDiseaseAgent | VabGenRxCounselingAgent")
+        print(f"   Orchestrator: VabGenRxOrchestrator")
+
+    def analyze(self,
+                medications:     List[str],
+                diseases:        List[str] = None,
+                foods:           List[str] = None,
+                age:             int = 45,
+                sex:             str = "unknown",
+                dose_map:        Dict[str, str] = None,
+                patient_profile: Dict = None,
+                patient_data:    Dict = None) -> Dict:
+        """
+        Orchestrate all three specialist agents and return merged results.
+
+        patient_profile — confirmed lifestyle habits:
+        {
+            "drinks_alcohol": True/False,
+            "smokes": True/False,
+            "sedentary": True/False,
+            "has_mobility_issues": True/False,
+            "has_joint_pain": True/False,
+            "is_pregnant": True/False,
+            "has_kidney_disease": True/False,
+            "has_liver_disease": True/False
+        }
+
+        patient_data — labs and investigations for dosing:
+        {
+            "weight_kg": 72, "height_cm": 168, "bmi": 25.5,
+            "egfr": 38, "sodium": 128, "potassium": 5.6,
+            "bilirubin": 2.1, "tsh": 7.8, "pulse": 92,
+            "other_investigations": {"eGFR_trend": "declining"}
+        }
+        """
+        diseases        = diseases        or []
+        foods           = foods           or []
+        dose_map        = dose_map        or {}
+        patient_profile = patient_profile or {}
+        patient_data    = patient_data    or {}
+
+        patient_profile_json = json.dumps(patient_profile)
+        patient_data_json    = json.dumps(patient_data)
+
+        # Pre-compute counts used across all three agents
+        n_meds       = len(medications)
+        n_diseases   = len(diseases)
+        n_ddi_pairs  = len(list(itertools.combinations(medications, 2)))
+        n_dd_pairs   = n_meds * n_diseases
+        meds_str     = ', '.join(medications)
+        diseases_str = ', '.join(diseases) if diseases else 'None'
+
+        # Explicit list of all drug-disease pairs so disease agent can't miss any
+        dd_pairs_str = ', '.join(
+            f"{drug}+{disease}"
+            for drug in medications
+            for disease in diseases
+        )
+
+        print(f"\n🤖 VabGenRx Orchestrator — Starting Analysis...")
+        print(f"   Medications : {meds_str}")
+        print(f"   Conditions  : {diseases_str}")
+        print(f"   Patient     : {age}yo {sex}")
+        print(f"   Profile     : {patient_profile_json}")
+        print(f"   Labs        : eGFR={patient_data.get('egfr','?')}  "
+              f"K+={patient_data.get('potassium','?')}  "
+              f"TSH={patient_data.get('tsh','?')}")
+
+        # Clear module-level collectors for this run
+        global _dosing_results, _drug_counseling_results, _condition_counseling_results
+        _dosing_results               = {}
+        _drug_counseling_results      = {}
+        _condition_counseling_results = {}
+
+        # Build one shared toolset — all agents use the same tool registry
+        toolset = self.safety_agent._build_toolset()
+
+        # ── Agent 1: Safety ───────────────────────────────────────────────────
+        safety_result = self.safety_agent.analyze(
+            medications  = medications,
+            n_ddi_pairs  = n_ddi_pairs,
+            meds_str     = meds_str,
+            toolset      = toolset
+        )
+
+        # ── Agent 2: Disease ──────────────────────────────────────────────────
+        disease_result = self.disease_agent.analyze(
+            medications  = medications,
+            diseases     = diseases,
+            n_dd_pairs   = n_dd_pairs,
+            meds_str     = meds_str,
+            diseases_str = diseases_str,
+            dd_pairs_str = dd_pairs_str,
+            toolset      = toolset
+        )
+
+        # ── Agent 3: Counseling ───────────────────────────────────────────────
+        counseling_result = self.counseling_agent.analyze(
+            medications          = medications,
+            diseases             = diseases,
+            age                  = age,
+            sex                  = sex,
+            dose_map             = dose_map,
+            patient_profile_json = patient_profile_json,
+            patient_data_json    = patient_data_json,
+            n_meds               = n_meds,
+            n_diseases           = n_diseases,
+            meds_str             = meds_str,
+            diseases_str         = diseases_str,
+            toolset              = toolset
+        )
+
+        # ── Merge — combine all three results ─────────────────────────────────
+        print(f"\n   🔀 Orchestrator merging results from all 3 agents...")
+
+        all_ddi      = safety_result.get("drug_drug", [])
+        all_dd       = disease_result.get("drug_disease", [])
+        severe_count = sum(1 for r in all_ddi if r.get("severity") == "severe")
+        mod_count    = sum(1 for r in all_ddi if r.get("severity") == "moderate")
+        contra_count = sum(1 for r in all_dd  if r.get("contraindicated"))
+
+        final = {
+            "drug_drug":              all_ddi,
+            "drug_disease":           all_dd,
+            "drug_food":              safety_result.get("drug_food", []),
+            "drug_counseling":        [],
+            "condition_counseling":   [],
+            "dosing_recommendations": [],
+            "risk_summary": {
+                "level": (
+                    "HIGH"     if severe_count > 0 or contra_count > 0 else
+                    "MODERATE" if mod_count > 0 else
+                    "LOW"
+                ),
+                "severe_count":                severe_count,
+                "moderate_count":              mod_count,
+                "contraindicated_count":       contra_count,
+                "dosing_adjustments_required": 0
+            }
+        }
+
+        # Drug counseling — prefer full collected results over agent-assembled
+        final["drug_counseling"] = (
+            [_drug_counseling_results[d.lower()]
+             for d in medications if d.lower() in _drug_counseling_results]
+            if _drug_counseling_results
+            else counseling_result.get("drug_counseling", [])
+        )
+
+        # Condition counseling — prefer full collected results
+        final["condition_counseling"] = (
+            [_condition_counseling_results[d.lower()]
+             for d in diseases if d.lower() in _condition_counseling_results]
+            if _condition_counseling_results
+            else counseling_result.get("condition_counseling", [])
+        )
+
+        # Dosing — prefer full collected results (all FDA fields intact)
+        final["dosing_recommendations"] = (
+            [_dosing_results[d.lower()]
+             for d in medications if d.lower() in _dosing_results]
+            if _dosing_results
+            else counseling_result.get("dosing_recommendations", [])
+        )
+
+        # Update dosing adjustment count in risk summary
+        dosing_adjustments = sum(
+            1 for r in final["dosing_recommendations"]
+            if r.get("adjustment_required")
+        )
+        final["risk_summary"]["dosing_adjustments_required"] = dosing_adjustments
+
+        print(f"\n   📊 Orchestrator — Final output counts:")
+        print(f"      drug_drug:             {len(final['drug_drug'])}")
+        print(f"      drug_disease:          {len(final['drug_disease'])} / {n_dd_pairs} expected")
+        print(f"      drug_food:             {len(final['drug_food'])}")
+        print(f"      drug_counseling:       {len(final['drug_counseling'])} / {n_meds} expected")
+        print(f"      condition_counseling:  {len(final['condition_counseling'])} / {n_diseases} expected")
+        print(f"      dosing_recommendations:{len(final['dosing_recommendations'])} / {n_meds} expected")
+        print(f"      dosing_adjustments:    {dosing_adjustments}")
+        print(f"      risk_level:            {final['risk_summary']['level']}")
+
+        return {"status": "completed", "analysis": final}
+
+
+# ── Backward Compatibility Alias ──────────────────────────────────────────────
+# If any other file in the project imports VabGenRxAgentService,
+# it will still work without any changes.
+VabGenRxAgentService = VabGenRxOrchestrator
+
+
+# ── CLI Test ──────────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 60)
+    print("VABGENRX — MULTI-AGENT SYSTEM TEST")
+    print("=" * 60)
+
+    try:
+        orchestrator = VabGenRxOrchestrator()
+    except ValueError as e:
+        print(f"\n❌ {e}")
+        return
+
+    result = orchestrator.analyze(
+        medications = ["azacitidine", "tacrolimus", "beclomethasone"],
+        diseases    = ["cancer", "multiple myeloma"],
+        age         = 32,
+        sex         = "male",
+        dose_map    = {
+            "azacitidine": "100mg od",
+            "tacrolimus":  "0.5mg bd",
+            "beclomethasone": "40mcg"
+        },
+        patient_profile = {
+            "drinks_alcohol":     True,
+            "smokes":             True,
+            "has_kidney_disease": True,
+            "has_liver_disease":  False,
+            "sedentary":          True
+        },
+        patient_data = {
+            "weight_kg":  80,
+            "height_cm":  170,
+            "bmi":        27.7,
+            "egfr":       38,
+            "sodium":     140,
+            "potassium":  4.9,
+            "bilirubin":  0.9,
+            "tsh":        2.0,
+            "pulse":      110,
+            "other_investigations": {
+                "CXR":          "infiltrates",
+                "presentation": "acute exacerbation"
+            }
+        }
+    )
+
+    print("\n📊 ORCHESTRATOR RESULT:")
+    if "analysis" in result:
+        print(json.dumps(result["analysis"], indent=2))
+    else:
+        print("Error:", result.get("error", "No response"))
+
+
+if __name__ == "__main__":
+    main()'''
+
+
+
+
+"""
+VabGenRx — Multi-Agent Clinical Intelligence Platform
+Microsoft Agent Framework — azure-ai-agents v1.1.0
+
+Architecture:
+  VabGenRxSafetyAgent    — Drug-Drug + Drug-Food interactions
+  VabGenRxDiseaseAgent   — Drug-Disease contraindications
+  VabGenRxCounselingAgent — Patient counseling + FDA dosing
+  VabGenRxOrchestrator   — Coordinates all three agents, merges results
+
+Run: python services/vabgenrx_agent.py
+"""
+
+import os
+import sys
+import json
+import itertools
+from typing import Dict, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.getcwd())
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from azure.ai.agents import AgentsClient
+from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
+from azure.identity import DefaultAzureCredential
+from azure.core.rest import HttpRequest
+
+# ── Module-level service instances (created once, reused on every tool call) ──
+_drug_counseling_service      = None
+_condition_counseling_service = None
+_dosing_service               = None
+
+# ── Module-level result collectors ────────────────────────────────────────────
+# Store full tool results here so agent truncation doesn't lose data
+_dosing_results               = {}
+_drug_counseling_results      = {}
+_condition_counseling_results = {}
+
+
+def _get_drug_counseling_service():
+    global _drug_counseling_service
+    if _drug_counseling_service is None:
+        from services.counselling_service import DrugCounselingService
+        _drug_counseling_service = DrugCounselingService()
+    return _drug_counseling_service
+
+
+def _get_condition_counseling_service():
+    global _condition_counseling_service
+    if _condition_counseling_service is None:
+        from services.condition_service import ConditionCounselingService
+        _condition_counseling_service = ConditionCounselingService()
+    return _condition_counseling_service
+
+
+def _get_dosing_service():
+    global _dosing_service
+    if _dosing_service is None:
+        from services.dosing_service import DosingService
+        _dosing_service = DosingService()
+    return _dosing_service
+
+
+# ── Shared Tool Functions ──────────────────────────────────────────────────────
+# All three agents share the same toolset — each agent only uses
+# the tools relevant to its role (enforced via instructions).
+
+def search_pubmed(drug1: str, drug2: str = "", disease: str = "") -> str:
+    """
+    Search PubMed medical research database.
+    For drug-drug: provide drug1 and drug2.
+    For drug-disease: provide drug1 and disease.
+    For food interactions: provide only drug1.
+    """
+    from services.pubmed_service import PubMedService
+    pubmed = PubMedService()
+    if drug2:
+        result = pubmed.search_drug_interaction(drug1, drug2)
+    elif disease:
+        result = pubmed.search_disease_contraindication(drug1, disease)
+    else:
+        result = pubmed.search_all_food_interactions_for_drug(drug1, max_results=5)
+    return json.dumps({
+        'paper_count': result.get('count', 0),
+        'pmids':       result.get('pmids', [])[:5],
+        'abstracts':   [a['text'][:400] for a in result.get('abstracts', [])[:2]]
+    })
+
+
+def search_fda_events(drug1: str, drug2: str) -> str:
+    """
+    Search FDA adverse event database for a drug pair.
+    Requires both drug1 and drug2.
+    ONLY use for drug-drug pairs — never for drug-disease.
+    """
+    from services.fda_service import FDAService
+    result = FDAService().search_adverse_events(drug1, drug2)
+    return json.dumps({
+        'total_reports':   result.get('total_reports', 0),
+        'serious_reports': result.get('serious_reports', 0),
+        'severity_ratio':  result.get('severity_ratio', 0)
+    })
+
+
+def get_fda_label(drug_name: str) -> str:
+    """
+    Get FDA official drug label for a single drug.
+    Returns contraindications and warnings.
+    """
+    from services.fda_service import FDAService
+    result = FDAService().get_drug_contraindications(drug_name)
+    return json.dumps({
+        'found':             result.get('found', False),
+        'contraindications': result.get('contraindications', '')[:500],
+        'warnings':          result.get('warnings', '')[:300],
+    })
+
+
+def check_cache(cache_type: str, drug1: str, drug2: str = "") -> str:
+    """
+    Check Azure SQL cache for a previous result.
+    cache_type: drug_drug | drug_disease | food
+    drug2: second drug (drug_drug) or disease name (drug_disease).
+    For food, only drug1 is needed.
+    """
+    from services.cache_service import AzureSQLCacheService
+    cache = AzureSQLCacheService()
+    if cache_type == 'drug_drug' and drug2:
+        result = cache.get_drug_drug(drug1, drug2)
+    elif cache_type == 'drug_disease' and drug2:
+        result = cache.get_drug_disease(drug1, drug2)
+    elif cache_type == 'food':
+        result = cache.get_food(drug1)
+    else:
+        result = None
+    return json.dumps({'cache_hit': result is not None, 'cached_data': result})
+
+
+def save_cache(cache_type: str, drug1: str, analysis_json: str, drug2: str = "") -> str:
+    """
+    Save an analysis result to Azure SQL cache.
+    cache_type: drug_drug | drug_disease | food
+    """
+    from services.cache_service import AzureSQLCacheService
+    cache = AzureSQLCacheService()
+    try:
+        result = json.loads(analysis_json)
+        if cache_type == 'drug_drug' and drug2:
+            cache.save_drug_drug(drug1, drug2, result)
+        elif cache_type == 'drug_disease' and drug2:
+            cache.save_drug_disease(drug1, drug2, result)
+        elif cache_type == 'food':
+            cache.save_food(drug1, result)
+        return json.dumps({'saved': True})
+    except Exception as e:
+        return json.dumps({'saved': False, 'error': str(e)})
+
+
+def get_drug_counseling(drug: str, age: int, sex: str,
+                        dose: str = "",
+                        conditions: str = "",
+                        patient_profile_json: str = "{}") -> str:
+    """
+    Get patient-specific drug counseling points.
+    Filters by age, sex, and confirmed habits — no irrelevant warnings.
+    """
+    service   = _get_drug_counseling_service()
+    cond_list = [c.strip() for c in conditions.split(',') if c.strip()] if conditions else []
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Drug counseling profile for {drug}: {patient_profile}")
+    if not patient_profile:
+        print(f"   ⚠️  Warning: empty patient_profile for {drug} "
+              f"— habit-based filtering will be skipped")
+
+    result = service.get_drug_counseling(
+        drug            = drug,
+        age             = age,
+        sex             = sex,
+        dose            = dose,
+        conditions      = cond_list,
+        patient_profile = patient_profile
+    )
+    _drug_counseling_results[drug.lower()] = result
+    return json.dumps(result)
+
+
+def get_condition_counseling(condition: str, age: int, sex: str,
+                             medications: str = "",
+                             patient_profile_json: str = "{}") -> str:
+    """
+    Get lifestyle, diet, exercise and safety counseling for a condition.
+    Only counsels on confirmed patient habits — never assumes.
+    """
+    service   = _get_condition_counseling_service()
+    meds_list = [m.strip() for m in medications.split(',') if m.strip()] if medications else []
+
+    try:
+        patient_profile = json.loads(patient_profile_json)
+    except Exception:
+        patient_profile = {}
+
+    print(f"   🧪 Condition counseling profile for {condition}: {patient_profile}")
+
+    result = service.get_condition_counseling(
+        condition       = condition,
+        age             = age,
+        sex             = sex,
+        medications     = meds_list,
+        patient_profile = patient_profile
+    )
+    _condition_counseling_results[condition.lower()] = result
+    return json.dumps(result)
+
+
+def get_dosing_recommendation(drug: str, age: int, sex: str,
+                              current_dose: str = "",
+                              conditions: str = "",
+                              patient_data_json: str = "{}") -> str:
+    """
+    Get FDA label-based dosing recommendation for a specific patient.
+    Always runs fresh — no cache — since patient labs change frequently.
+    """
+    service = _get_dosing_service()
+
+    try:
+        patient_data = json.loads(patient_data_json)
+    except Exception:
+        patient_data = {}
+
+    patient_data['age']          = age
+    patient_data['sex']          = sex
+    patient_data['current_dose'] = current_dose
+    patient_data['current_drug'] = drug
+    patient_data['conditions']   = [
+        c.strip() for c in conditions.split(',') if c.strip()
+    ] if conditions else []
+
+    result = service.get_dosing_recommendation(
+        drug         = drug,
+        patient_data = patient_data
+    )
+    _dosing_results[drug.lower()] = result
+    return json.dumps(result)
+
+
+# ── Base Agent ────────────────────────────────────────────────────────────────
+
+class _BaseAgent:
+    """
+    Shared infrastructure for all VabGenRx specialist agents.
+    Handles agent creation, run execution, message fetching, and cleanup.
+    Each specialist agent inherits this and only defines its own
+    instructions and run content.
+    """
+
+    def __init__(self, client: AgentsClient, model: str, endpoint: str):
+        self.client   = client
+        self.model    = model
+        self.endpoint = endpoint
+
+    def _build_toolset(self) -> ToolSet:
+        functions = FunctionTool(functions={
+            search_pubmed,
+            search_fda_events,
+            get_fda_label,
+            check_cache,
+            save_cache,
+            get_drug_counseling,
+            get_condition_counseling,
+            get_dosing_recommendation,
+        })
+        toolset = ToolSet()
+        toolset.add(functions)
+        return toolset
+
+    def _run(self, name: str, instructions: str,
+             content: str, toolset: ToolSet) -> Dict:
+        """
+        Create an agent, run it, parse the JSON response, delete the agent.
+        Returns parsed dict or empty dict on failure.
+        """
+        agent = self.client.create_agent(
+            model        = self.model,
+            name         = name,
+            instructions = instructions,
+            toolset      = toolset,
+        )
+        try:
+            ctx = self.client.enable_auto_function_calls(toolset)
+            if ctx is not None:
+                with ctx:
+                    run = self.client.create_thread_and_process_run(
+                        agent_id = agent.id,
+                        thread   = {"messages": [{"role": "user", "content": content}]}
+                    )
+            else:
+                run = self.client.create_thread_and_process_run(
+                    agent_id = agent.id,
+                    thread   = {"messages": [{"role": "user", "content": content}]},
+                    toolset  = toolset
+                )
+
+            print(f"   ✅ {name} status: {run.status}")
+
+            if run.status == RunStatus.COMPLETED:
+                messages_data = self._get_messages(run.thread_id)
+                for msg in messages_data:
+                    if msg.get("role") == "assistant":
+                        for block in msg.get("content", []):
+                            if block.get("type") == "text":
+                                raw = block["text"]["value"]
+                                try:
+                                    start = raw.find('{')
+                                    end   = raw.rfind('}') + 1
+                                    if start >= 0:
+                                        return json.loads(raw[start:end])
+                                except Exception as e:
+                                    print(f"   ⚠️  {name} JSON parse error: {e}")
+                                    return {}
+            else:
+                print(f"   ❌ {name} run failed: {run.status}")
+                return {}
+
+        finally:
+            self.client.delete_agent(agent.id)
+
+        return {}
+
+    def _get_messages(self, thread_id: str) -> list:
+        url = f"{self.endpoint}/threads/{thread_id}/messages?api-version=2025-05-01"
+        try:
+            req      = HttpRequest(method="GET", url=url)
+            response = self.client.send_request(req)
+            data     = response.json()
+            if "data" in data:
+                return data["data"]
+            return []
+        except Exception as e:
+            print(f"   ⚠️  Failed to fetch messages: {e}")
+            return []
+
+
+# ── Specialist Agent 1 — Safety (Drug-Drug + Drug-Food) ───────────────────────
+
+class VabGenRxSafetyAgent(_BaseAgent):
+    """
+    Specialist agent for drug-drug interactions and drug-food interactions.
+    Searches PubMed + FDA adverse events for every drug pair.
+    Checks and saves Azure SQL cache.
+    Does NOT handle drug-disease — that is VabGenRxDiseaseAgent's role.
+    """
+
+    def analyze(self, medications: List[str], n_ddi_pairs: int,
+                meds_str: str, toolset: ToolSet) -> Dict:
+
+        print(f"\n   🔬 VabGenRxSafetyAgent: Drug-Drug + Food "
+              f"({n_ddi_pairs} pairs, {len(medications)} food checks)...")
+
+        instructions = f"""
+You are VabGenRxSafetyAgent, a clinical pharmacology safety specialist.
+Analyze ONLY drug-drug interactions and drug-food interactions.
+Do NOT analyze drug-disease — that is handled by a separate agent.
+
+MEDICATIONS: {meds_str}
+
+AVAILABLE TOOLS:
+- check_cache(cache_type, drug1, drug2="")
+- search_pubmed(drug1, drug2="", disease="")
+- search_fda_events(drug1, drug2)
+- get_fda_label(drug_name)
+- save_cache(cache_type, drug1, analysis_json, drug2="")
+
+DRUG-DRUG — ALL STEPS MANDATORY for every unique pair:
+Step 1: check_cache(cache_type="drug_drug", drug1=..., drug2=...)
+Step 2: ALWAYS call search_pubmed(drug1=..., drug2=...)
+Step 3: ALWAYS call search_fda_events(drug1=..., drug2=...)
+        ⚠️ search_fda_events takes ONLY drug1 and drug2 — NEVER pass disease
+Step 4: If cache_hit=false: synthesize result from evidence
+Step 5: If cache_hit=false: save_cache(cache_type="drug_drug", ...)
+
+CONFIDENCE — NEVER set 0.0:
+- FDA > 1000 → 0.90–0.98 | FDA 100–1000 → 0.80–0.90
+- FDA 10–100 → 0.70–0.85 | No data → get_fda_label() then 0.65–0.75
+
+DRUG-FOOD — for every drug in [{meds_str}]:
+Step 1: check_cache(cache_type="food", drug1=drug)
+Step 2: If miss: search_pubmed(drug1=drug)
+Step 3: If miss: save_cache(cache_type="food", ...)
+
+Expected: {n_ddi_pairs} drug-drug results, {len(medications)} food results.
+
+Return ONLY valid JSON:
+{{
+  "drug_drug": [
+    {{
+      "drug1":"...","drug2":"...",
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "mechanism":"...","clinical_effects":"...","recommendation":"...",
+      "pubmed_papers":0,"fda_reports":0,"from_cache":true
+    }}
+  ],
+  "drug_food": [
+    {{
+      "drug":"...","foods_to_avoid":[],"foods_to_separate":[],
+      "foods_to_monitor":[],"mechanism":"...","from_cache":true
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Analyze drug-drug and food interactions:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"Expected: {n_ddi_pairs} drug-drug pairs, {len(medications)} food checks.\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxSafetyAgent", instructions, content, toolset)
+
+
+# ── Specialist Agent 2 — Disease (Drug-Disease Contraindications) ─────────────
+
+class VabGenRxDiseaseAgent(_BaseAgent):
+    """
+    Specialist agent for drug-disease contraindications.
+    Gets its own Azure agent step budget — ensures ALL drug-disease
+    pairs are checked without competing with safety or counseling work.
+    Does NOT call search_fda_events (only works for drug pairs).
+    """
+
+    def analyze(self, medications: List[str], diseases: List[str],
+                n_dd_pairs: int, meds_str: str, diseases_str: str,
+                dd_pairs_str: str, toolset: ToolSet) -> Dict:
+
+        print(f"\n   🔬 VabGenRxDiseaseAgent: Drug-Disease "
+              f"({n_dd_pairs} pairs: {dd_pairs_str})...")
+
+        instructions = f"""
+You are VabGenRxDiseaseAgent, a clinical pharmacology disease contraindication specialist.
+Analyze ONLY drug-disease contraindications — nothing else.
+
+MEDICATIONS: {meds_str}
+CONDITIONS:  {diseases_str}
+
+AVAILABLE TOOLS:
+- check_cache(cache_type, drug1, drug2="")
+- search_pubmed(drug1, drug2="", disease="")
+- get_fda_label(drug_name)
+- save_cache(cache_type, drug1, analysis_json, drug2="")
+
+⚠️ Do NOT call search_fda_events — it does not work for drug-disease.
+
+ALL {n_dd_pairs} PAIRS ARE MANDATORY: {dd_pairs_str}
+
+For EACH pair:
+Step 1: check_cache(cache_type="drug_disease", drug1=<drug>, drug2=<condition>)
+Step 2: If miss: search_pubmed(drug1=<drug>, disease=<condition>)
+Step 3: If miss: get_fda_label(drug_name=<drug>)
+Step 4: If miss: save_cache(cache_type="drug_disease", drug1=<drug>,
+                             drug2=<condition>, analysis_json=...)
+
+VERIFY before returning: drug_disease array must have {n_dd_pairs} items.
+If any pair is missing — call the tools for it before returning.
+
+Return ONLY valid JSON:
+{{
+  "drug_disease": [
+    {{
+      "drug":"...","disease":"...",
+      "contraindicated":false,
+      "severity":"severe|moderate|minor","confidence":0.00,
+      "evidence_tier_info":{{}},
+      "clinical_evidence":"...","recommendation":"...",
+      "alternative_drugs":[],"from_cache":true
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Check ALL drug-disease contraindications:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"ALL {n_dd_pairs} pairs required: {dd_pairs_str}\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxDiseaseAgent", instructions, content, toolset)
+
+
+# ── Specialist Agent 3 — Counseling + Dosing ─────────────────────────────────
+
+class VabGenRxCounselingAgent(_BaseAgent):
+    """
+    Specialist agent for patient-specific counseling and FDA-based dosing.
+    Calls get_drug_counseling, get_condition_counseling, get_dosing_recommendation.
+    Results are also captured in module-level collectors as a safety net
+    against agent truncation.
+    """
+
+    def analyze(self, medications: List[str], diseases: List[str],
+                age: int, sex: str, dose_map: Dict,
+                patient_profile_json: str, patient_data_json: str,
+                n_meds: int, n_diseases: int,
+                meds_str: str, diseases_str: str,
+                toolset: ToolSet) -> Dict:
+
+        print(f"\n   💊 VabGenRxCounselingAgent: Counseling + Dosing "
+              f"({n_meds} drugs, {n_diseases} conditions)...")
+
+        instructions = f"""
+You are VabGenRxCounselingAgent, a clinical counseling and dosing specialist.
+Generate patient-specific counseling and dosing recommendations.
+
+PATIENT CONTEXT:
+- Age: {age} | Sex: {sex}
+- Dose map: {json.dumps(dose_map)}
+- Patient profile (confirmed habits): {patient_profile_json}
+- Patient labs: {patient_data_json}
+
+AVAILABLE TOOLS:
+- get_drug_counseling(drug, age, sex, dose="", conditions="", patient_profile_json="{{}}")
+- get_condition_counseling(condition, age, sex, medications="", patient_profile_json="{{}}")
+- get_dosing_recommendation(drug, age, sex, current_dose="", conditions="", patient_data_json="{{}}")
+
+DRUG COUNSELING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_drug_counseling(
+    drug=<drug>, age={age}, sex="{sex}",
+    dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+CONDITION COUNSELING — {n_diseases} calls required: {diseases_str}
+For each condition:
+  get_condition_counseling(
+    condition=<condition>, age={age}, sex="{sex}",
+    medications="{meds_str}",
+    patient_profile_json='{patient_profile_json}'
+  )
+
+DOSING — {n_meds} calls required: {meds_str}
+For each drug:
+  get_dosing_recommendation(
+    drug=<drug>, age={age}, sex="{sex}",
+    current_dose=<from dose map>,
+    conditions="{diseases_str}",
+    patient_data_json='{patient_data_json}'
+  )
+
+CRITICAL:
+- Pass patient_profile_json EXACTLY as shown — never pass {{}} empty
+- Pass patient_data_json EXACTLY as shown — never pass {{}} empty
+- Look up each drug's dose from dose map — pass exact value
+- If drug not in dose map, pass current_dose="" (empty string)
+
+Return ONLY valid JSON:
+{{
+  "drug_counseling": [
+    {{
+      "drug":"...","patient_context":"...",
+      "counseling_points":[{{"title":"...","detail":"...","severity":"...","category":"..."}}],
+      "key_monitoring":"...","patient_summary":"...","from_cache":true
+    }}
+  ],
+  "condition_counseling": [
+    {{
+      "condition":"...","patient_context":"...",
+      "exercise":[{{"title":"...","detail":"...","frequency":"..."}}],
+      "lifestyle":[{{"title":"...","detail":"..."}}],
+      "diet":[{{"title":"...","detail":"...","nutrients_to_increase":[],"nutrients_to_reduce":[]}}],
+      "safety":[{{"title":"...","detail":"...","urgency":"high|medium|low"}}],
+      "monitoring":"...","follow_up":"...","from_cache":true
+    }}
+  ],
+  "dosing_recommendations": [
+    {{
+      "drug":"...","current_dose":"...","recommended_dose":"...",
+      "adjustment_required":true,
+      "adjustment_type":"renal|hepatic|age|weight|pregnancy|drug_level|none",
+      "urgency":"high|medium|low",
+      "adjustment_reason":"...","hold_threshold":"...",
+      "monitoring_required":"...","fda_label_basis":"...",
+      "evidence_tier":"...","evidence_confidence":"...",
+      "patient_flags_used":[],"clinical_note":"...","from_cache":false
+    }}
+  ]
+}}
+"""
+
+        content = (
+            f"Generate counseling and dosing:\n"
+            f"MEDICATIONS: {meds_str}\n"
+            f"CONDITIONS:  {diseases_str}\n"
+            f"PATIENT:     {age}yo {sex}\n"
+            f"DOSES:       {json.dumps(dose_map)}\n"
+            f"PROFILE:     {patient_profile_json}\n"
+            f"LABS:        {patient_data_json}\n\n"
+            f"REQUIRED: {n_meds} drug counseling ({meds_str}), "
+            f"{n_diseases} condition counseling ({diseases_str}), "
+            f"{n_meds} dosing ({meds_str}).\n"
+            f"Return JSON only."
+        )
+
+        return self._run("VabGenRxCounselingAgent", instructions, content, toolset)
+
+
+# ── Orchestrator ──────────────────────────────────────────────────────────────
+
+class VabGenRxOrchestrator:
+    """
+    Coordinates the three VabGenRx specialist agents and merges their results.
+
+    Execution order:
+      1. VabGenRxSafetyAgent    — Drug-Drug + Drug-Food
+      2. VabGenRxDiseaseAgent   — Drug-Disease contraindications
+      3. VabGenRxCounselingAgent — Patient counseling + FDA dosing
+
+    Each agent runs sequentially with its own Azure agent instance and
+    dedicated step budget. Results are merged into a single output dict.
+    """
+
+    def __init__(self):
+        endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
+        if not endpoint:
+            raise ValueError("AZURE_AI_PROJECT_ENDPOINT not set in .env")
+
+        self.client   = AgentsClient(endpoint=endpoint, credential=DefaultAzureCredential())
+        self.model    = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+        self.endpoint = endpoint.rstrip('/')
+
+        # Instantiate all three specialist agents with shared client
+        self.safety_agent    = VabGenRxSafetyAgent(self.client, self.model, self.endpoint)
+        self.disease_agent   = VabGenRxDiseaseAgent(self.client, self.model, self.endpoint)
+        self.counseling_agent = VabGenRxCounselingAgent(self.client, self.model, self.endpoint)
+
+        print("✅ VabGenRx Multi-Agent System initialized")
+        print(f"   Endpoint  : {endpoint}")
+        print(f"   Model     : {self.model}")
+        print(f"   Agents    : VabGenRxSafetyAgent | VabGenRxDiseaseAgent | VabGenRxCounselingAgent")
+        print(f"   Orchestrator: VabGenRxOrchestrator")
+
+    def analyze(self,
+                medications:     List[str],
+                diseases:        List[str] = None,
+                foods:           List[str] = None,
+                age:             int = 45,
+                sex:             str = "unknown",
+                dose_map:        Dict[str, str] = None,
+                patient_profile: Dict = None,
+                patient_data:    Dict = None) -> Dict:
+        """
+        Orchestrate all three specialist agents and return merged results.
+
+        patient_profile — confirmed lifestyle habits:
+        {
+            "drinks_alcohol": True/False,
+            "smokes": True/False,
+            "sedentary": True/False,
+            "has_mobility_issues": True/False,
+            "has_joint_pain": True/False,
+            "is_pregnant": True/False,
+            "has_kidney_disease": True/False,
+            "has_liver_disease": True/False
+        }
+
+        patient_data — labs and investigations for dosing:
+        {
+            "weight_kg": 72, "height_cm": 168, "bmi": 25.5,
+            "egfr": 38, "sodium": 128, "potassium": 5.6,
+            "bilirubin": 2.1, "tsh": 7.8, "pulse": 92,
+            "other_investigations": {"eGFR_trend": "declining"}
+        }
+        """
+        diseases        = diseases        or []
+        foods           = foods           or []
+        dose_map        = dose_map        or {}
+        patient_profile = patient_profile or {}
+        patient_data    = patient_data    or {}
+
+        patient_profile_json = json.dumps(patient_profile)
+        patient_data_json    = json.dumps(patient_data)
+
+        # Pre-compute counts used across all three agents
+        n_meds       = len(medications)
+        n_diseases   = len(diseases)
+        n_ddi_pairs  = len(list(itertools.combinations(medications, 2)))
+        n_dd_pairs   = n_meds * n_diseases
+        meds_str     = ', '.join(medications)
+        diseases_str = ', '.join(diseases) if diseases else 'None'
+
+        # Explicit list of all drug-disease pairs so disease agent can't miss any
+        dd_pairs_str = ', '.join(
+            f"{drug}+{disease}"
+            for drug in medications
+            for disease in diseases
+        )
+
+        print(f"\n🤖 VabGenRx Orchestrator — Starting Analysis...")
+        print(f"   Medications : {meds_str}")
+        print(f"   Conditions  : {diseases_str}")
+        print(f"   Patient     : {age}yo {sex}")
+        print(f"   Profile     : {patient_profile_json}")
+        print(f"   Labs        : eGFR={patient_data.get('egfr','?')}  "
+              f"K+={patient_data.get('potassium','?')}  "
+              f"TSH={patient_data.get('tsh','?')}")
+
+        # Clear module-level collectors for this run
+        global _dosing_results, _drug_counseling_results, _condition_counseling_results
+        _dosing_results               = {}
+        _drug_counseling_results      = {}
+        _condition_counseling_results = {}
+
+        # Each agent needs its own toolset instance — ThreadPoolExecutor runs
+        # agents in separate threads, sharing one toolset causes race conditions
+        safety_toolset    = self.safety_agent._build_toolset()
+        disease_toolset   = self.disease_agent._build_toolset()
+        counseling_toolset = self.counseling_agent._build_toolset()
+
+        # ── Phase 1: Safety + Disease run IN PARALLEL ─────────────────────────
+        # These two agents are fully independent — neither needs the other's
+        # results. Running them simultaneously saves ~30-50s per analysis.
+        print(f"\n   ⚡ Phase 1 — Parallel: VabGenRxSafetyAgent + VabGenRxDiseaseAgent")
+
+        safety_result  = {}
+        disease_result = {}
+
+        def run_safety():
+            return self.safety_agent.analyze(
+                medications = medications,
+                n_ddi_pairs = n_ddi_pairs,
+                meds_str    = meds_str,
+                toolset     = safety_toolset
+            )
+
+        def run_disease():
+            return self.disease_agent.analyze(
+                medications  = medications,
+                diseases     = diseases,
+                n_dd_pairs   = n_dd_pairs,
+                meds_str     = meds_str,
+                diseases_str = diseases_str,
+                dd_pairs_str = dd_pairs_str,
+                toolset      = disease_toolset
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_safety  = executor.submit(run_safety)
+            future_disease = executor.submit(run_disease)
+
+            # as_completed yields each future as it finishes —
+            # so we log completion order in real time
+            for future in as_completed([future_safety, future_disease]):
+                if future is future_safety:
+                    safety_result = future.result()
+                    print(f"   ✅ VabGenRxSafetyAgent finished")
+                else:
+                    disease_result = future.result()
+                    print(f"   ✅ VabGenRxDiseaseAgent finished")
+
+        print(f"   ✅ Phase 1 complete — both safety agents done")
+
+        # ── Phase 2: Counseling runs AFTER Phase 1 ────────────────────────────
+        # VabGenRxCounselingAgent runs sequentially after Phase 1 because it
+        # needs the full patient picture (including interaction context) to
+        # generate accurate cross-aware counseling.
+        print(f"\n   ⚡ Phase 2 — Sequential: VabGenRxCounselingAgent")
+
+        counseling_result = self.counseling_agent.analyze(
+            medications          = medications,
+            diseases             = diseases,
+            age                  = age,
+            sex                  = sex,
+            dose_map             = dose_map,
+            patient_profile_json = patient_profile_json,
+            patient_data_json    = patient_data_json,
+            n_meds               = n_meds,
+            n_diseases           = n_diseases,
+            meds_str             = meds_str,
+            diseases_str         = diseases_str,
+            toolset              = counseling_toolset
+        )
+
+        # ── Merge — combine all three results ─────────────────────────────────
+        print(f"\n   🔀 Orchestrator merging results from all 3 agents...")
+
+        all_ddi      = safety_result.get("drug_drug", [])
+        all_dd       = disease_result.get("drug_disease", [])
+        severe_count = sum(1 for r in all_ddi if r.get("severity") == "severe")
+        mod_count    = sum(1 for r in all_ddi if r.get("severity") == "moderate")
+        contra_count = sum(1 for r in all_dd  if r.get("contraindicated"))
+
+        final = {
+            "drug_drug":              all_ddi,
+            "drug_disease":           all_dd,
+            "drug_food":              safety_result.get("drug_food", []),
+            "drug_counseling":        [],
+            "condition_counseling":   [],
+            "dosing_recommendations": [],
+            "risk_summary": {
+                "level": (
+                    "HIGH"     if severe_count > 0 or contra_count > 0 else
+                    "MODERATE" if mod_count > 0 else
+                    "LOW"
+                ),
+                "severe_count":                severe_count,
+                "moderate_count":              mod_count,
+                "contraindicated_count":       contra_count,
+                "dosing_adjustments_required": 0
+            }
+        }
+
+        # Drug counseling — prefer full collected results over agent-assembled
+        final["drug_counseling"] = (
+            [_drug_counseling_results[d.lower()]
+             for d in medications if d.lower() in _drug_counseling_results]
+            if _drug_counseling_results
+            else counseling_result.get("drug_counseling", [])
+        )
+
+        # Condition counseling — prefer full collected results
+        final["condition_counseling"] = (
+            [_condition_counseling_results[d.lower()]
+             for d in diseases if d.lower() in _condition_counseling_results]
+            if _condition_counseling_results
+            else counseling_result.get("condition_counseling", [])
+        )
+
+        # Dosing — prefer full collected results (all FDA fields intact)
+        final["dosing_recommendations"] = (
+            [_dosing_results[d.lower()]
+             for d in medications if d.lower() in _dosing_results]
+            if _dosing_results
+            else counseling_result.get("dosing_recommendations", [])
+        )
+
+        # Update dosing adjustment count in risk summary
+        dosing_adjustments = sum(
+            1 for r in final["dosing_recommendations"]
+            if r.get("adjustment_required")
+        )
+        final["risk_summary"]["dosing_adjustments_required"] = dosing_adjustments
+
+        print(f"\n   📊 Orchestrator — Final output counts:")
+        print(f"      drug_drug:             {len(final['drug_drug'])}")
+        print(f"      drug_disease:          {len(final['drug_disease'])} / {n_dd_pairs} expected")
+        print(f"      drug_food:             {len(final['drug_food'])}")
+        print(f"      drug_counseling:       {len(final['drug_counseling'])} / {n_meds} expected")
+        print(f"      condition_counseling:  {len(final['condition_counseling'])} / {n_diseases} expected")
+        print(f"      dosing_recommendations:{len(final['dosing_recommendations'])} / {n_meds} expected")
+        print(f"      dosing_adjustments:    {dosing_adjustments}")
+        print(f"      risk_level:            {final['risk_summary']['level']}")
+
+        return {"status": "completed", "analysis": final}
+
+
+# ── Backward Compatibility Alias ──────────────────────────────────────────────
+# If any other file in the project imports VabGenRxAgentService,
+# it will still work without any changes.
+VabGenRxAgentService = VabGenRxOrchestrator
+
+
+# ── CLI Test ──────────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 60)
+    print("VABGENRX — MULTI-AGENT SYSTEM TEST")
+    print("=" * 60)
+
+    try:
+        orchestrator = VabGenRxOrchestrator()
+    except ValueError as e:
+        print(f"\n❌ {e}")
+        return
+
+    result = orchestrator.analyze(
+        medications = ["beclomethasone", "carbamazepine", "beclofen"],
+        diseases    = ["seizure", "multiple sclerosis"],
+        age         = 12,
+        sex         = "male",
+        dose_map    = {
+            "beclomethasone": "80mcg",
+            "carbamazepine":  "200mg bd",
+            "beclofen": "10mg daily"
+        },
+        patient_profile = {
+            "drinks_alcohol":     True,
+            "smokes":             True,
+            "has_kidney_disease": True,
+            "has_liver_disease":  False,
+            "sedentary":          True
+        },
+        patient_data = {
+            "weight_kg":  80,
+            "height_cm":  170,
+            "bmi":        27.7,
+            "egfr":       38,
+            "sodium":     140,
+            "potassium":  4.9,
+            "bilirubin":  0.9,
+            "tsh":        2.0,
+            "pulse":      110,
+            "other_investigations": {
+                "CXR":          "infiltrates",
+                "presentation": "acute exacerbation"
+            }
+        }
+    )
+
+    print("\n📊 ORCHESTRATOR RESULT:")
+    if "analysis" in result:
+        print(json.dumps(result["analysis"], indent=2))
+    else:
+        print("Error:", result.get("error", "No response"))
 
 
 if __name__ == "__main__":

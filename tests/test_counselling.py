@@ -23,21 +23,20 @@ condition_service = ConditionCounselingService()
 # Medications: Warfarin, Aspirin, Metformin, Lisinopril
 
 PATIENT = {
-    "age":        68,
-    "sex":        "male",
-    "medications": ["warfarin", "aspirin"],
-    "conditions":  ["diabetes", "hypertension"],
+    "age":        36,
+    "sex":        "female",
+    "medications": ["propranolol"],
+    "conditions":  ["hypertension", "pregnancy"],
     "dose_map": {
-        "warfarin":   "10mg daily",
-        "aspirin":    "81mg daily"
+        "propranolol":   "40mg daily"
     },
     # Only confirmed habits — nothing assumed
     "patient_profile": {
         "drinks_alcohol":     False,   # confirmed does not drink
-        "smokes":             False,   # confirmed non-smoker
+        "smokes":             True,   # confirmed non-smoker
         "has_kidney_disease": False,
         "has_liver_disease":  False,
-        "sedentary":          True,    # confirmed not active
+        "sedentary":          False,    # confirmed not active
     }
 }
 
