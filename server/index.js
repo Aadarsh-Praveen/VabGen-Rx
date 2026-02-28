@@ -1,8 +1,12 @@
 require('dotenv').config();
 const http = require('http');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const { BlobServiceClient } = require('@azure/storage-blob');
 const { sql, poolPromise, patientsPoolPromise } = require('./db');
+
+const JWT_SECRET     = process.env.JWT_SECRET     || 'vabgenrx_secret';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -34,15 +38,37 @@ const sendJSON = (res, code, data) => {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   });
   res.end(JSON.stringify(data));
 };
 
+// ── JWT Middleware ───────────────────────────────────────────
+const verifyToken = (req) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+};
+
+// Public routes that don't need token
+const PUBLIC_ROUTES = [
+  { method: 'POST', url: '/api/signin'   },
+  { method: 'POST', url: '/api/register' },
+  { method: 'GET',  url: '/'             },
+];
+
+const isPublic = (method, url) =>
+  PUBLIC_ROUTES.some(r => r.method === method && r.url === url);
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
   console.log(`➡️  ${req.method} ${req.url}`);
@@ -50,6 +76,15 @@ const server = http.createServer(async (req, res) => {
   // ── Test ────────────────────────────────────────────────────
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200); res.end('Backend is running!'); return;
+  }
+
+  // ── JWT Guard — protect all non-public routes ────────────────
+  if (!isPublic(req.method, req.url)) {
+    const decoded = verifyToken(req);
+    if (!decoded) {
+      return sendJSON(res, 401, { message: 'Unauthorized: Invalid or expired token' });
+    }
+    req.user = decoded; // attach user info to request
   }
 
   // ── Upload image ────────────────────────────────────────────
@@ -91,17 +126,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Sign in ─────────────────────────────────────────────────
+  // ── Sign in — issues JWT ────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/signin') {
     const { email, password } = await getBody(req);
     try {
       const pool = await poolPromise;
       const result = await pool.request()
-        .input('email', sql.VarChar, email)
+        .input('email',    sql.VarChar, email)
         .input('password', sql.VarChar, password)
         .query('SELECT * FROM users WHERE email = @email AND password = @password');
       if (result.recordset.length > 0) {
-        sendJSON(res, 200, { message: 'Sign in successful', user: result.recordset[0] });
+        const user = result.recordset[0];
+        // ── Generate JWT token ──
+        const token = jwt.sign(
+          {
+            id:    user.id,
+            email: user.email,
+            name:  user.name,
+            role:  user.designation || 'doctor',
+          },
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRES_IN }
+        );
+        sendJSON(res, 200, {
+          message: 'Sign in successful',
+          token,
+          user,
+        });
       } else {
         sendJSON(res, 401, { message: 'Invalid email or password' });
       }
@@ -289,12 +340,10 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('ipNo', sql.VarChar, ipNo)
-        .query(`
-          SELECT IP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
+        .query(`SELECT IP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
             Drugs_Prescribed, Drug_Drug_Interactions,
             Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
-          FROM dbo.ip_diagnosis WHERE IP_No = @ipNo
-        `);
+          FROM dbo.ip_diagnosis WHERE IP_No = @ipNo`);
       if (result.recordset.length > 0) {
         sendJSON(res, 200, { diagnosis: result.recordset[0] });
       } else {
@@ -318,11 +367,9 @@ const server = http.createServer(async (req, res) => {
         .input('primary',   sql.VarChar, primary   || '')
         .input('secondary', sql.VarChar, secondary || '')
         .input('notes',     sql.VarChar, notes     || '')
-        .query(`
-          UPDATE dbo.ip_diagnosis
-          SET Diagnosis = @primary, Secondary_Diagnosis = @secondary, Clinical_Notes = @notes
-          WHERE IP_No = @ipNo
-        `);
+        .query(`UPDATE dbo.ip_diagnosis
+          SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
+          WHERE IP_No=@ipNo`);
       sendJSON(res, 200, { message: 'Diagnosis saved' });
     } catch (err) {
       console.error('❌ save ip-diagnosis error:', err.message);
@@ -339,12 +386,10 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('opNo', sql.VarChar, opNo)
-        .query(`
-          SELECT OP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
+        .query(`SELECT OP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
             Drugs_Prescribed, Drug_Drug_Interactions,
             Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
-          FROM dbo.op_diagnosis WHERE OP_No = @opNo
-        `);
+          FROM dbo.op_diagnosis WHERE OP_No = @opNo`);
       if (result.recordset.length > 0) {
         sendJSON(res, 200, { diagnosis: result.recordset[0] });
       } else {
@@ -368,11 +413,9 @@ const server = http.createServer(async (req, res) => {
         .input('primary',   sql.VarChar, primary   || '')
         .input('secondary', sql.VarChar, secondary || '')
         .input('notes',     sql.VarChar, notes     || '')
-        .query(`
-          UPDATE dbo.op_diagnosis
-          SET Diagnosis = @primary, Secondary_Diagnosis = @secondary, Clinical_Notes = @notes
-          WHERE OP_No = @opNo
-        `);
+        .query(`UPDATE dbo.op_diagnosis
+          SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
+          WHERE OP_No=@opNo`);
       sendJSON(res, 200, { message: 'Diagnosis saved' });
     } catch (err) {
       console.error('❌ save op-diagnosis error:', err.message);
@@ -389,11 +432,9 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('ipNo', sql.VarChar, ipNo)
-        .query(`
-          SELECT IP_No, Pulse, eGFR_mL_min_1_73m2, Sodium, Potassium, Chloride,
+        .query(`SELECT IP_No, Pulse, eGFR_mL_min_1_73m2, Sodium, Potassium, Chloride,
             Total_Bilirubin, FreeT3, FreeT4, TSH, Other_Investigations
-          FROM dbo.ip_lab_results WHERE IP_No = @ipNo
-        `);
+          FROM dbo.ip_lab_results WHERE IP_No = @ipNo`);
       if (result.recordset.length > 0) {
         sendJSON(res, 200, { lab: result.recordset[0] });
       } else {
@@ -414,16 +455,14 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('opNo', sql.VarChar, opNo)
-        .query(`
-          SELECT OP_No, BP_Systolic, BP_Diastolic, Pulse, Temperature, SpO2,
+        .query(`SELECT OP_No, BP_Systolic, BP_Diastolic, Pulse, Temperature, SpO2,
             Hb, WBC, Platelet_Count, RBS, FBS, PPBS,
             Urea, Creatinine, eGFR_mL_min_1_73m2,
             Sodium, Potassium, Chloride,
             SGOT, SGPT, ALP, Total_Bilirubin,
             Lipid_Profile, ECG, Xray, Ultrasound, CT, MRI,
             FreeT3, FreeT4, TSH, Other_Investigations
-          FROM dbo.op_lab_results WHERE OP_No = @opNo
-        `);
+          FROM dbo.op_lab_results WHERE OP_No = @opNo`);
       if (result.recordset.length > 0) {
         sendJSON(res, 200, { lab: result.recordset[0] });
       } else {
@@ -444,12 +483,10 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('q', sql.VarChar, `%${q}%`)
-        .query(`
-          SELECT TOP 20 ID, Brand_Name, Generic_Name, Strength, Route, Stocks, Cost_Per_30_USD
+        .query(`SELECT TOP 20 ID, Brand_Name, Generic_Name, Strength, Route, Stocks, Cost_Per_30_USD
           FROM dbo.drug_inventory
           WHERE Brand_Name LIKE @q OR Generic_Name LIKE @q
-          ORDER BY Generic_Name, Strength ASC
-        `);
+          ORDER BY Generic_Name, Strength ASC`);
       sendJSON(res, 200, { drugs: result.recordset });
     } catch (err) {
       console.error('❌ drug search error:', err.message);
@@ -458,7 +495,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── GET IP prescriptions ────────────────────────────────────
+  // ── IP Prescriptions ────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/ip-prescriptions/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/ip-prescriptions/')[1]);
     try {
@@ -468,69 +505,52 @@ const server = http.createServer(async (req, res) => {
         .query(`SELECT ID, IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
                 FROM dbo.ip_prescriptions WHERE IP_No = @ipNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── POST save IP prescription ───────────────────────────────
   if (req.method === 'POST' && req.url === '/api/ip-prescriptions') {
     const { ipNo, brand, generic, strength, route, frequency, days } = await getBody(req);
     if (!ipNo || !generic) return sendJSON(res, 400, { message: 'IP_No and Generic Name required.' });
     try {
       const pool = await patientsPoolPromise;
       await pool.request()
-        .input('ipNo',      sql.VarChar, ipNo)
-        .input('brand',     sql.VarChar, brand     || '')
-        .input('generic',   sql.VarChar, generic)
-        .input('strength',  sql.VarChar, strength  || '')
-        .input('route',     sql.VarChar, route     || '')
-        .input('frequency', sql.VarChar, frequency || '')
-        .input('days',      sql.VarChar, days      || '')
+        .input('ipNo', sql.VarChar, ipNo).input('brand', sql.VarChar, brand || '')
+        .input('generic', sql.VarChar, generic).input('strength', sql.VarChar, strength || '')
+        .input('route', sql.VarChar, route || '').input('frequency', sql.VarChar, frequency || '')
+        .input('days', sql.VarChar, days || '')
         .query(`INSERT INTO dbo.ip_prescriptions (IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
                 VALUES (@ipNo, @brand, @generic, @strength, @route, @frequency, @days)`);
       sendJSON(res, 201, { message: 'IP prescription saved.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Update IP prescription ──────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/ip-prescriptions/update') {
     const { id, route, frequency, days } = await getBody(req);
     try {
       const pool = await patientsPoolPromise;
       await pool.request()
-        .input('id',        sql.Int,     id)
-        .input('route',     sql.VarChar, route     || '')
-        .input('frequency', sql.VarChar, frequency || '')
-        .input('days',      sql.VarChar, days      || '')
+        .input('id', sql.Int, id).input('route', sql.VarChar, route || '')
+        .input('frequency', sql.VarChar, frequency || '').input('days', sql.VarChar, days || '')
         .query(`UPDATE dbo.ip_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
       sendJSON(res, 200, { message: 'Updated.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── DELETE IP prescription ──────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/ip-prescriptions/delete') {
     const { id } = await getBody(req);
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id', sql.Int, id)
+      await pool.request().input('id', sql.Int, id)
         .query(`DELETE FROM dbo.ip_prescriptions WHERE ID = @id`);
       sendJSON(res, 200, { message: 'Deleted.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── GET OP prescriptions ────────────────────────────────────
+  // ── OP Prescriptions ────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-prescriptions/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-prescriptions/')[1]);
     try {
@@ -540,201 +560,140 @@ const server = http.createServer(async (req, res) => {
         .query(`SELECT ID, OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
                 FROM dbo.op_prescriptions WHERE OP_No = @opNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── POST save OP prescription ───────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescriptions') {
     const { opNo, brand, generic, strength, route, frequency, days } = await getBody(req);
     if (!opNo || !generic) return sendJSON(res, 400, { message: 'OP_No and Generic Name required.' });
     try {
       const pool = await patientsPoolPromise;
       await pool.request()
-        .input('opNo',      sql.VarChar, opNo)
-        .input('brand',     sql.VarChar, brand     || '')
-        .input('generic',   sql.VarChar, generic)
-        .input('strength',  sql.VarChar, strength  || '')
-        .input('route',     sql.VarChar, route     || '')
-        .input('frequency', sql.VarChar, frequency || '')
-        .input('days',      sql.VarChar, days      || '')
+        .input('opNo', sql.VarChar, opNo).input('brand', sql.VarChar, brand || '')
+        .input('generic', sql.VarChar, generic).input('strength', sql.VarChar, strength || '')
+        .input('route', sql.VarChar, route || '').input('frequency', sql.VarChar, frequency || '')
+        .input('days', sql.VarChar, days || '')
         .query(`INSERT INTO dbo.op_prescriptions (OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
                 VALUES (@opNo, @brand, @generic, @strength, @route, @frequency, @days)`);
       sendJSON(res, 201, { message: 'OP prescription saved.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Update OP prescription ──────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescriptions/update') {
     const { id, route, frequency, days } = await getBody(req);
     try {
       const pool = await patientsPoolPromise;
       await pool.request()
-        .input('id',        sql.Int,     id)
-        .input('route',     sql.VarChar, route     || '')
-        .input('frequency', sql.VarChar, frequency || '')
-        .input('days',      sql.VarChar, days      || '')
+        .input('id', sql.Int, id).input('route', sql.VarChar, route || '')
+        .input('frequency', sql.VarChar, frequency || '').input('days', sql.VarChar, days || '')
         .query(`UPDATE dbo.op_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
       sendJSON(res, 200, { message: 'Updated.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── DELETE OP prescription ──────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescriptions/delete') {
     const { id } = await getBody(req);
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id', sql.Int, id)
+      await pool.request().input('id', sql.Int, id)
         .query(`DELETE FROM dbo.op_prescriptions WHERE ID = @id`);
       sendJSON(res, 200, { message: 'Deleted.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── GET IP prescription notes ───────────────────────────────
+  // ── IP Prescription Notes ───────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/ip-prescription-notes/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/ip-prescription-notes/')[1]);
     try {
       const pool = await patientsPoolPromise;
-      const result = await pool.request()
-        .input('ipNo', sql.VarChar, ipNo)
-        .query(`SELECT ID, IP_No, Notes, Added_On
-                FROM dbo.ip_prescription_notes
-                WHERE IP_No = @ipNo ORDER BY Added_On DESC`);
+      const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
+        .query(`SELECT ID, IP_No, Notes, Added_On FROM dbo.ip_prescription_notes WHERE IP_No=@ipNo ORDER BY Added_On DESC`);
       sendJSON(res, 200, { notes: result.recordset });
-    } catch (err) {
-      console.error('❌ ip-prescription-notes fetch error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── POST save IP prescription note ──────────────────────────
   if (req.method === 'POST' && req.url === '/api/ip-prescription-notes') {
     const { ipNo, notes } = await getBody(req);
     if (!ipNo || !notes) return sendJSON(res, 400, { message: 'IP_No and notes required.' });
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('ipNo',  sql.VarChar,  ipNo)
-        .input('notes', sql.NVarChar, notes)
+      await pool.request().input('ipNo', sql.VarChar, ipNo).input('notes', sql.NVarChar, notes)
         .query(`INSERT INTO dbo.ip_prescription_notes (IP_No, Notes) VALUES (@ipNo, @notes)`);
       sendJSON(res, 201, { message: 'IP note saved.' });
-    } catch (err) {
-      console.error('❌ ip-prescription-notes save error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── GET OP prescription notes ───────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-prescription-notes/update') {
+    const { id, notes } = await getBody(req);
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request().input('id', sql.Int, id).input('notes', sql.NVarChar, notes)
+        .query(`UPDATE dbo.ip_prescription_notes SET Notes=@notes WHERE ID=@id`);
+      sendJSON(res, 200, { message: 'Updated.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/ip-prescription-notes/delete') {
+    const { id } = await getBody(req);
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request().input('id', sql.Int, id)
+        .query(`DELETE FROM dbo.ip_prescription_notes WHERE ID=@id`);
+      sendJSON(res, 200, { message: 'Deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── OP Prescription Notes ───────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-prescription-notes/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-prescription-notes/')[1]);
     try {
       const pool = await patientsPoolPromise;
-      const result = await pool.request()
-        .input('opNo', sql.VarChar, opNo)
-        .query(`SELECT ID, OP_No, Notes, Added_On
-                FROM dbo.op_prescription_notes
-                WHERE OP_No = @opNo ORDER BY Added_On DESC`);
+      const result = await pool.request().input('opNo', sql.VarChar, opNo)
+        .query(`SELECT ID, OP_No, Notes, Added_On FROM dbo.op_prescription_notes WHERE OP_No=@opNo ORDER BY Added_On DESC`);
       sendJSON(res, 200, { notes: result.recordset });
-    } catch (err) {
-      console.error('❌ op-prescription-notes fetch error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── POST save OP prescription note ──────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescription-notes') {
     const { opNo, notes } = await getBody(req);
     if (!opNo || !notes) return sendJSON(res, 400, { message: 'OP_No and notes required.' });
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('opNo',  sql.VarChar,  opNo)
-        .input('notes', sql.NVarChar, notes)
+      await pool.request().input('opNo', sql.VarChar, opNo).input('notes', sql.NVarChar, notes)
         .query(`INSERT INTO dbo.op_prescription_notes (OP_No, Notes) VALUES (@opNo, @notes)`);
       sendJSON(res, 201, { message: 'OP note saved.' });
-    } catch (err) {
-      console.error('❌ op-prescription-notes save error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── UPDATE IP prescription note ─────────────────────────────
-  if (req.method === 'POST' && req.url === '/api/ip-prescription-notes/update') {
-    const { id, notes } = await getBody(req);
-    if (!id || !notes) return sendJSON(res, 400, { message: 'ID and notes required.' });
-    try {
-      const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id',    sql.Int,      id)
-        .input('notes', sql.NVarChar, notes)
-        .query(`UPDATE dbo.ip_prescription_notes SET Notes=@notes WHERE ID=@id`);
-      sendJSON(res, 200, { message: 'IP note updated.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
-    return;
-  }
-
-  // ── DELETE IP prescription note ─────────────────────────────
-  if (req.method === 'POST' && req.url === '/api/ip-prescription-notes/delete') {
-    const { id } = await getBody(req);
-    try {
-      const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id', sql.Int, id)
-        .query(`DELETE FROM dbo.ip_prescription_notes WHERE ID=@id`);
-      sendJSON(res, 200, { message: 'IP note deleted.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
-    return;
-  }
-
-  // ── UPDATE OP prescription note ─────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescription-notes/update') {
     const { id, notes } = await getBody(req);
-    if (!id || !notes) return sendJSON(res, 400, { message: 'ID and notes required.' });
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id',    sql.Int,      id)
-        .input('notes', sql.NVarChar, notes)
+      await pool.request().input('id', sql.Int, id).input('notes', sql.NVarChar, notes)
         .query(`UPDATE dbo.op_prescription_notes SET Notes=@notes WHERE ID=@id`);
-      sendJSON(res, 200, { message: 'OP note updated.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+      sendJSON(res, 200, { message: 'Updated.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── DELETE OP prescription note ─────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-prescription-notes/delete') {
     const { id } = await getBody(req);
     try {
       const pool = await patientsPoolPromise;
-      await pool.request()
-        .input('id', sql.Int, id)
+      await pool.request().input('id', sql.Int, id)
         .query(`DELETE FROM dbo.op_prescription_notes WHERE ID=@id`);
-      sendJSON(res, 200, { message: 'OP note deleted.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+      sendJSON(res, 200, { message: 'Deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 

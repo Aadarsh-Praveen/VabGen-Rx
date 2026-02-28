@@ -6,13 +6,13 @@ import "./login.css";
 const Login = ({ onLogin }) => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: "", password: "", remember: false });
-  const [showPwd, setShowPwd] = useState(false);
-  const [msg, setMsg] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [showPwd, setShowPwd]   = useState(false);
+  const [msg, setMsg]           = useState(null);
+  const [loading, setLoading]   = useState(false);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    setFormData(prev => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
@@ -27,14 +27,19 @@ const Login = ({ onLogin }) => {
 
     try {
       const res = await fetch("/api/signin", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email, password: formData.password }),
+        body:    JSON.stringify({ email: formData.email, password: formData.password }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
+        // ── Save JWT token to localStorage ──
+        if (data.token) {
+          localStorage.setItem("token", data.token);
+        }
+
         setMsg({ type: "success", text: `Welcome back to VabGen Rx, ${data.user.name}!` });
         onLogin(data.user);
         navigate("/dashboard");
@@ -75,6 +80,7 @@ const Login = ({ onLogin }) => {
           )}
 
           <form onSubmit={handleSubmit} noValidate>
+
             {/* Email */}
             <div className="form-group">
               <label className="form-label" htmlFor="email">Email Address</label>
@@ -108,7 +114,7 @@ const Login = ({ onLogin }) => {
               </div>
             </div>
 
-            {/* Remember & Forgot */}
+            {/* Remember me */}
             <div className="login-options">
               <label className="remember-label">
                 <input
@@ -125,8 +131,6 @@ const Login = ({ onLogin }) => {
               {loading ? "Signing in..." : "Sign In →"}
             </button>
           </form>
-
-      
         </div>
       </div>
     </div>

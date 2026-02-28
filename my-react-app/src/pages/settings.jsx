@@ -1,34 +1,32 @@
 import { useState, useEffect } from "react";
 import Nav from "../components/nav";
+import { apiFetch } from "../services/api";
 import "./settings.css";
 
 const Settings = ({ user, onUserUpdate }) => {
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile]     = useState(null);
+  const [loading, setLoading]     = useState(true);
   const [activeTab, setActiveTab] = useState("profile");
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+  const [theme, setTheme]         = useState(() => localStorage.getItem("theme") || "light");
 
-  // Address form
-  const [address, setAddress] = useState({ street: "", city: "", state: "", zip: "", country: "" });
-  const [addrMsg, setAddrMsg] = useState(null);
+  const [address, setAddress]       = useState({ street: "", city: "", state: "", zip: "", country: "" });
+  const [addrMsg, setAddrMsg]       = useState(null);
   const [addrLoading, setAddrLoading] = useState(false);
 
-  // Password form
-  const [pwdForm, setPwdForm] = useState({ current: "", newPwd: "", confirm: "" });
-  const [pwdMsg, setPwdMsg] = useState(null);
+  const [pwdForm, setPwdForm]   = useState({ current: "", newPwd: "", confirm: "" });
+  const [pwdMsg, setPwdMsg]     = useState(null);
   const [pwdLoading, setPwdLoading] = useState(false);
-  const [showPwd, setShowPwd] = useState({ current: false, newPwd: false, confirm: false });
+  const [showPwd, setShowPwd]   = useState({ current: false, newPwd: false, confirm: false });
 
   // ── Fetch profile ──────────────────────────────────────────
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.email) return;
       try {
-        const res = await fetch(`/api/profile?email=${encodeURIComponent(user.email)}`);
+        const res  = await apiFetch(`/api/profile?email=${encodeURIComponent(user.email)}`);
         const data = await res.json();
         if (res.ok) {
           setProfile(data.user);
-          // Pre-fill address if it exists
           if (data.user.address) {
             try {
               const parsed = typeof data.user.address === "string"
@@ -60,13 +58,12 @@ const Settings = ({ user, onUserUpdate }) => {
   // ── Save address ───────────────────────────────────────────
   const handleAddressSave = async (e) => {
     e.preventDefault();
-    setAddrLoading(true);
-    setAddrMsg(null);
+    setAddrLoading(true); setAddrMsg(null);
     try {
-      const res = await fetch("/api/profile/update-address", {
-        method: "POST",
+      const res  = await apiFetch("/api/profile/update-address", {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, address }),
+        body:    JSON.stringify({ email: user.email, address }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -98,10 +95,10 @@ const Settings = ({ user, onUserUpdate }) => {
     }
     setPwdLoading(true);
     try {
-      const res = await fetch("/api/profile/change-password", {
-        method: "POST",
+      const res  = await apiFetch("/api/profile/change-password", {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, currentPassword: pwdForm.current, newPassword: pwdForm.newPwd }),
+        body:    JSON.stringify({ email: user.email, currentPassword: pwdForm.current, newPassword: pwdForm.newPwd }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -119,18 +116,16 @@ const Settings = ({ user, onUserUpdate }) => {
 
   const displayUser = profile || user;
   const tabs = [
-    { id: "profile",    label: "My Profile",    icon: "👤" },
-    { id: "address",    label: "Address",        icon: "📍" },
-    { id: "password",   label: "Change Password",icon: "🔒" },
-    { id: "appearance", label: "Appearance",     icon: "🎨" },
+    { id: "profile",    label: "My Profile",     icon: "👤" },
+    { id: "address",    label: "Address",         icon: "📍" },
+    { id: "password",   label: "Change Password", icon: "🔒" },
+    { id: "appearance", label: "Appearance",      icon: "🎨" },
   ];
 
   return (
     <div className="dash-layout">
       <Nav user={user} />
       <main className="dash-main settings-main">
-
-        {/* Header */}
         <div className="dash-topbar">
           <div>
             <h1 className="dash-greeting">⚙️ Settings</h1>
@@ -139,29 +134,21 @@ const Settings = ({ user, onUserUpdate }) => {
         </div>
 
         <div className="settings-layout">
-          {/* Sidebar tabs */}
           <aside className="settings-sidebar">
             {tabs.map(t => (
-              <button
-                key={t.id}
-                className={`stab-btn${activeTab === t.id ? " active" : ""}`}
-                onClick={() => setActiveTab(t.id)}
-              >
+              <button key={t.id} className={`stab-btn${activeTab === t.id ? " active" : ""}`}
+                onClick={() => setActiveTab(t.id)}>
                 <span>{t.icon}</span> {t.label}
               </button>
             ))}
           </aside>
 
-          {/* Content */}
           <section className="settings-content">
 
-            {/* ── Profile Tab ── */}
             {activeTab === "profile" && (
               <div className="settings-card">
                 <h2 className="settings-card-title">My Profile</h2>
-                {loading ? (
-                  <p className="settings-loading">Loading profile…</p>
-                ) : (
+                {loading ? <p className="settings-loading">Loading profile…</p> : (
                   <>
                     <div className="profile-banner">
                       {displayUser?.image_url ? (
@@ -177,7 +164,6 @@ const Settings = ({ user, onUserUpdate }) => {
                         <span className="sp-badge">Active</span>
                       </div>
                     </div>
-
                     <div className="sp-grid">
                       {[
                         ["Hospital ID",   displayUser?.hospital_id],
@@ -201,7 +187,6 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Address Tab ── */}
             {activeTab === "address" && (
               <div className="settings-card">
                 <h2 className="settings-card-title">📍 Address Information</h2>
@@ -209,48 +194,28 @@ const Settings = ({ user, onUserUpdate }) => {
                 <form onSubmit={handleAddressSave} className="settings-form">
                   <div className="sf-group full">
                     <label>Street / House No.</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 42 Main Street, Apt 3B"
-                      value={address.street}
-                      onChange={e => setAddress(p => ({ ...p, street: e.target.value }))}
-                    />
+                    <input type="text" placeholder="e.g. 42 Main Street, Apt 3B"
+                      value={address.street} onChange={e => setAddress(p => ({ ...p, street: e.target.value }))} />
                   </div>
                   <div className="sf-group">
                     <label>City</label>
-                    <input
-                      type="text"
-                      placeholder="City"
-                      value={address.city}
-                      onChange={e => setAddress(p => ({ ...p, city: e.target.value }))}
-                    />
+                    <input type="text" placeholder="City"
+                      value={address.city} onChange={e => setAddress(p => ({ ...p, city: e.target.value }))} />
                   </div>
                   <div className="sf-group">
                     <label>State / Province</label>
-                    <input
-                      type="text"
-                      placeholder="State"
-                      value={address.state}
-                      onChange={e => setAddress(p => ({ ...p, state: e.target.value }))}
-                    />
+                    <input type="text" placeholder="State"
+                      value={address.state} onChange={e => setAddress(p => ({ ...p, state: e.target.value }))} />
                   </div>
                   <div className="sf-group">
                     <label>ZIP / Postal Code</label>
-                    <input
-                      type="text"
-                      placeholder="ZIP"
-                      value={address.zip}
-                      onChange={e => setAddress(p => ({ ...p, zip: e.target.value }))}
-                    />
+                    <input type="text" placeholder="ZIP"
+                      value={address.zip} onChange={e => setAddress(p => ({ ...p, zip: e.target.value }))} />
                   </div>
                   <div className="sf-group">
                     <label>Country</label>
-                    <input
-                      type="text"
-                      placeholder="Country"
-                      value={address.country}
-                      onChange={e => setAddress(p => ({ ...p, country: e.target.value }))}
-                    />
+                    <input type="text" placeholder="Country"
+                      value={address.country} onChange={e => setAddress(p => ({ ...p, country: e.target.value }))} />
                   </div>
                   {addrMsg && <p className={`sf-msg ${addrMsg.type}`}>{addrMsg.text}</p>}
                   <button type="submit" className="sf-save-btn" disabled={addrLoading}>
@@ -260,30 +225,23 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Password Tab ── */}
             {activeTab === "password" && (
               <div className="settings-card">
                 <h2 className="settings-card-title">🔒 Change Password</h2>
                 <p className="settings-card-sub">Keep your account secure with a strong password.</p>
                 <form onSubmit={handlePasswordSave} className="settings-form">
                   {[
-                    { key: "current", label: "Current Password",  placeholder: "Enter current password" },
-                    { key: "newPwd",  label: "New Password",       placeholder: "Min. 6 characters" },
-                    { key: "confirm", label: "Confirm New Password",placeholder: "Repeat new password" },
+                    { key: "current", label: "Current Password",   placeholder: "Enter current password" },
+                    { key: "newPwd",  label: "New Password",        placeholder: "Min. 6 characters" },
+                    { key: "confirm", label: "Confirm New Password", placeholder: "Repeat new password" },
                   ].map(({ key, label, placeholder }) => (
                     <div key={key} className="sf-group full">
                       <label>{label}</label>
                       <div className="sf-pwd-wrap">
-                        <input
-                          type={showPwd[key] ? "text" : "password"}
-                          placeholder={placeholder}
+                        <input type={showPwd[key] ? "text" : "password"} placeholder={placeholder}
                           value={pwdForm[key]}
-                          onChange={e => setPwdForm(p => ({ ...p, [key]: e.target.value }))}
-                        />
-                        <span
-                          className="sf-eye"
-                          onClick={() => setShowPwd(p => ({ ...p, [key]: !p[key] }))}
-                        >
+                          onChange={e => setPwdForm(p => ({ ...p, [key]: e.target.value }))} />
+                        <span className="sf-eye" onClick={() => setShowPwd(p => ({ ...p, [key]: !p[key] }))}>
                           {showPwd[key] ? "🙈" : "👁️"}
                         </span>
                       </div>
@@ -297,47 +255,26 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Appearance Tab ── */}
             {activeTab === "appearance" && (
               <div className="settings-card">
                 <h2 className="settings-card-title">🎨 Appearance</h2>
                 <p className="settings-card-sub">Choose how VabGen Rx looks for you.</p>
-
                 <div className="theme-options">
-                  {/* Light */}
-                  <div
-                    className={`theme-card${theme === "light" ? " selected" : ""}`}
-                    onClick={() => setTheme("light")}
-                  >
+                  <div className={`theme-card${theme === "light" ? " selected" : ""}`} onClick={() => setTheme("light")}>
                     <div className="theme-preview light-preview">
-                      <div className="tp-sidebar" />
-                      <div className="tp-body">
-                        <div className="tp-bar" />
-                        <div className="tp-bar short" />
-                      </div>
+                      <div className="tp-sidebar" /><div className="tp-body"><div className="tp-bar" /><div className="tp-bar short" /></div>
                     </div>
                     <p className="theme-label">☀️ Light Mode</p>
                     {theme === "light" && <span className="theme-check">✓ Active</span>}
                   </div>
-
-                  {/* Dark */}
-                  <div
-                    className={`theme-card${theme === "dark" ? " selected" : ""}`}
-                    onClick={() => setTheme("dark")}
-                  >
+                  <div className={`theme-card${theme === "dark" ? " selected" : ""}`} onClick={() => setTheme("dark")}>
                     <div className="theme-preview dark-preview">
-                      <div className="tp-sidebar" />
-                      <div className="tp-body">
-                        <div className="tp-bar" />
-                        <div className="tp-bar short" />
-                      </div>
+                      <div className="tp-sidebar" /><div className="tp-body"><div className="tp-bar" /><div className="tp-bar short" /></div>
                     </div>
                     <p className="theme-label">🌙 Dark Mode</p>
                     {theme === "dark" && <span className="theme-check">✓ Active</span>}
                   </div>
                 </div>
-
-                {/* Toggle switch */}
                 <div className="theme-toggle-row">
                   <span>Current: <strong>{theme === "light" ? "Light" : "Dark"} Mode</strong></span>
                   <label className="toggle-switch">
@@ -347,7 +284,6 @@ const Settings = ({ user, onUserUpdate }) => {
                 </div>
               </div>
             )}
-
           </section>
         </div>
       </main>
