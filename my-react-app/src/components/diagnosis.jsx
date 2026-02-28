@@ -52,7 +52,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? `/api/op-prescriptions/${encodeURIComponent(patientNo)}`
         : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`;
-      const res  = await fetch(ep);
+      const res  = await apiFetch(ep);
       const data = await res.json();
       if (res.ok) setMedications(data.prescriptions || []);
     } catch { setMedications([]); }
@@ -64,7 +64,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? `/api/op-prescription-notes/${encodeURIComponent(patientNo)}`
         : `/api/ip-prescription-notes/${encodeURIComponent(patientNo)}`;
-      const res  = await fetch(ep);
+      const res  = await apiFetch(ep);
       const data = await res.json();
       if (res.ok) setPrescriberNotes(data.notes || []);
     } catch { setPrescriberNotes([]); }
@@ -86,7 +86,7 @@ const DiagnosisTab = ({ p }) => {
       const labEndpoint = isOutpatient
         ? `/api/op-lab/${encodeURIComponent(patientNo)}`
         : `/api/lab/${encodeURIComponent(patientNo)}`;
-      const labRes  = await fetch(labEndpoint);
+      const labRes  = await apiFetch(labEndpoint);
       const labData = labRes.ok ? (await labRes.json()).lab : null;
 
       const conditions = [diag.primary, diag.secondary]
@@ -145,7 +145,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? "/api/op-prescription-notes/update"
         : "/api/ip-prescription-notes/update";
-      await fetch(ep, {
+      await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ id, notes: editNoteText.trim() }),
@@ -163,7 +163,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? "/api/op-prescription-notes/delete"
         : "/api/ip-prescription-notes/delete";
-      await fetch(ep, {
+      await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ id }),
@@ -182,7 +182,7 @@ const DiagnosisTab = ({ p }) => {
       const body = isOutpatient
         ? { opNo: patientNo, notes: noteText.trim() }
         : { ipNo: patientNo, notes: noteText.trim() };
-      const res = await fetch(ep, {
+      const res = await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(body),
@@ -207,7 +207,7 @@ const DiagnosisTab = ({ p }) => {
         const ep   = isOutpatient
           ? `/api/op-diagnosis/${encodeURIComponent(patientNo)}`
           : `/api/ip-diagnosis/${encodeURIComponent(patientNo)}`;
-        const res  = await fetch(ep);
+        const res  = await apiFetch(ep);
         const data = await res.json();
         if (res.ok && data.diagnosis) {
           setDiagnosis({
@@ -229,7 +229,7 @@ const DiagnosisTab = ({ p }) => {
       const body = isOutpatient
         ? { opNo: patientNo, primary: diagnosis.primary, secondary: diagnosis.secondary, notes: diagnosis.notes }
         : { ipNo: patientNo, primary: diagnosis.primary, secondary: diagnosis.secondary, notes: diagnosis.notes };
-      const res = await fetch(ep, {
+      const res = await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(body),
@@ -254,7 +254,7 @@ const DiagnosisTab = ({ p }) => {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res  = await fetch(`/api/drug-inventory/search?q=${encodeURIComponent(q.trim())}`);
+        const res  = await apiFetch(`/api/drug-inventory/search?q=${encodeURIComponent(q.trim())}`);
         const data = await res.json();
         if (res.ok) setSearchResults(data.drugs || []);
       } catch { setSearchResults([]); }
@@ -282,7 +282,7 @@ const DiagnosisTab = ({ p }) => {
       const body = isOutpatient
         ? { opNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days }
         : { ipNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days };
-      await fetch(ep, {
+      await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(body),
@@ -314,7 +314,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? "/api/op-prescriptions/update"
         : "/api/ip-prescriptions/update";
-      await fetch(ep, {
+      await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ id, route: editValues.route, frequency: editValues.frequency, days: editValues.days }),
@@ -336,7 +336,7 @@ const DiagnosisTab = ({ p }) => {
       const ep = isOutpatient
         ? "/api/op-prescriptions/delete"
         : "/api/ip-prescriptions/delete";
-      await fetch(ep, {
+      await apiFetch(ep, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ id }),

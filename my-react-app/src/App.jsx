@@ -17,10 +17,22 @@ const App = () => {
     }
   });
 
+  // ── Check token validity on app load ────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token && user) {
+      // No token but user exists — clear stale user
+      setUser(null);
+    }
+  }, []);
+
   // Save user to localStorage whenever it changes
   useEffect(() => {
     if (user) localStorage.setItem("user", JSON.stringify(user));
-    else localStorage.removeItem("user");
+    else {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token"); // clear token on logout too
+    }
   }, [user]);
 
   // Apply saved theme on load
@@ -32,6 +44,13 @@ const App = () => {
   const handleLogin = (loggedInUser) => setUser(loggedInUser);
   const handleUserUpdate = (updatedUser) => setUser(updatedUser);
 
+  // ── Logout — clears user + token ────────────────────────────
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+  };
+
   return (
     <BrowserRouter>
       <Routes>
@@ -39,13 +58,13 @@ const App = () => {
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route
           path="/dashboard"
-          element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />}
+          element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/settings"
           element={
             user
-              ? <Settings user={user} onUserUpdate={handleUserUpdate} />
+              ? <Settings user={user} onUserUpdate={handleUserUpdate} onLogout={handleLogout} />
               : <Navigate to="/login" replace />
           }
         />
@@ -54,7 +73,7 @@ const App = () => {
           path="/patients"
           element={
             user
-              ? <Patients user={user} />
+              ? <Patients user={user} onLogout={handleLogout} />
               : <Navigate to="/login" replace />
           }
         />
@@ -63,7 +82,7 @@ const App = () => {
           path="/patients/:id"
           element={
             user
-              ? <PatientDetails user={user} />
+              ? <PatientDetails user={user} onLogout={handleLogout} />
               : <Navigate to="/login" replace />
           }
         />
