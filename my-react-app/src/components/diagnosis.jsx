@@ -5,6 +5,7 @@ import {
   buildPatientProfile,
   buildPatientLabs,
 } from "../services/agentApi";
+import { apiFetch } from "../services/api";
 
 const DiagnosisTab = ({ p }) => {
   const isOutpatient = p.OP_No ? true : false;
