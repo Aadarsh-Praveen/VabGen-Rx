@@ -9,30 +9,38 @@ const baseConfig = {
     encrypt: true,
     trustServerCertificate: false,
   },
+  connectionTimeout: 15000,
+  requestTimeout: 15000,
 };
 
-// ── Pool 1: credentials DB (users table) ──────────────────────
-console.log('🔌 Connecting to: credentials @', process.env.DB_SERVER);
-const poolPromise = new sql.ConnectionPool({ ...baseConfig, database: 'credentials' })
-  .connect()
-  .then(pool => {
-    console.log('✅ Connected to credentials database');
-    return pool;
-  })
-  .catch(err => {
-    console.error('❌ credentials DB connection failed:', err.message);
-  });
+const createPool = (database) => {
+  console.log(`🔌 Connecting to: ${database} @ ${process.env.DB_SERVER}`);
+  return new sql.ConnectionPool({ ...baseConfig, database })
+    .connect()
+    .then(pool => {
+      console.log(`✅ Connected to [${database}] database`);
+      return pool;
+    })
+    .catch(err => {
+      // Detect firewall block specifically
+      if (
+        err.message.includes('Cannot open server') ||
+        err.message.includes('firewall') ||
+        err.code === 'ESOCKET' ||
+        err.code === 'ETIMEOUT'
+      ) {
+        console.error(`\n🔥 FIREWALL BLOCK on [${database}] database!`);
+        console.error(`   Your IP is not whitelisted in Azure SQL firewall.`);
+        console.error(`   Fix: Azure Portal → SQL Server → Networking → Add your IP\n`);
+      } else {
+        console.error(`❌ [${database}] DB connection failed:`, err.message);
+      }
+      // Return null so server still starts; individual routes will handle null pool
+      return null;
+    });
+};
 
-// ── Pool 2: patients DB (patient_records table) ───────────────
-console.log('🔌 Connecting to: patients @', process.env.DB_SERVER);
-const patientsPoolPromise = new sql.ConnectionPool({ ...baseConfig, database: 'patients' })
-  .connect()
-  .then(pool => {
-    console.log('✅ Connected to patients database');
-    return pool;
-  })
-  .catch(err => {
-    console.error('❌ patients DB connection failed:', err.message);
-  });
+const poolPromise = createPool('credentials');
+const patientsPoolPromise = createPool('patients');
 
 module.exports = { sql, poolPromise, patientsPoolPromise };
