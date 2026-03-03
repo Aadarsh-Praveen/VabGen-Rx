@@ -8,7 +8,7 @@ const LANGUAGES = [
   "Indonesian","Malay","Swahili","Dutch","Polish","Ukrainian",
 ];
 
-const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselTab, p }) => {
+const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselTab, p, onPrescribe, prescribeDisabled }) => {
   const drugCounseling      = agentResult?.drug_counseling      || [];
   const conditionCounseling = agentResult?.condition_counseling || [];
 
@@ -318,9 +318,31 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
             {totalPoints > 0 && <span className="pcoun-points-badge">{totalPoints} points</span>}
             {deniedCount > 0 && <span className="pcoun-denied-badge">{deniedCount} denied</span>}
           </div>
-          <button className="pcoun-preview-btn" onClick={() => setShowPreview(true)}>
-            ⟳ Preview for Patient
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {onPrescribe && (
+              <button
+                onClick={onPrescribe}
+                disabled={prescribeDisabled}
+                style={{
+                  background: prescribeDisabled
+                    ? "#a3d9b1"
+                    : "linear-gradient(135deg,#16a34a,#15803d)",
+                  border: "none", color: "#fff", borderRadius: 8,
+                  padding: "5px 14px", fontSize: "0.75rem", fontWeight: 700,
+                  cursor: prescribeDisabled ? "not-allowed" : "pointer",
+                  boxShadow: "0 2px 6px rgba(22,163,74,0.28)",
+                  opacity: prescribeDisabled ? 0.5 : 1,
+                  transition: "opacity 0.15s",
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                }}
+              >
+                📋 Prescribe
+              </button>
+            )}
+            <button className="pcoun-preview-btn" onClick={() => setShowPreview(true)}>
+              ⟳ Preview for Patient
+            </button>
+          </div>
         </div>
 
         <div className="pcoun-tabs">

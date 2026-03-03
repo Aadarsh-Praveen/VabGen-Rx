@@ -9,7 +9,7 @@ import DosingRecommendation   from "./dosingRecommendation";
 import OutOfStockFinder       from "./outOfStockFinder";
 import PatientCounselling     from "./patientCounselling";
 
-const DiagnosisTab = ({ p }) => {
+const DiagnosisTab = ({ p, user }) => {
   const isOutpatient = !!p.OP_No;
   const patientNo    = p.OP_No || p.IP_No;
 
@@ -48,6 +48,11 @@ const DiagnosisTab = ({ p }) => {
   const [agentLoading, setAgentLoading]       = useState(false);
   const [agentError, setAgentError]           = useState(null);
   const [outOfStock, setOutOfStock]           = useState([]);
+
+  // ── Prescribe modal state ────────────────────────────────────
+  const [showPrescribe,    setShowPrescribe]    = useState(false);
+  const [ePrescribeSent,   setEPrescribeSent]   = useState(false);
+  const [pdfGenerating,    setPdfGenerating]    = useState(false);
 
   const searchInputRef      = useRef(null);
   const debounceRef         = useRef(null);
@@ -343,6 +348,200 @@ const DiagnosisTab = ({ p }) => {
     ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
 
+  // ── Prescription PDF ─────────────────────────────────────────
+  const handlePrescriptionPdf = () => {
+    setPdfGenerating(true);
+
+    const esc = (str) =>
+      String(str || "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    const date = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
+    const now  = new Date().toLocaleString();
+
+    // Doctor info from user context
+    const drName       = user?.name        || "Doctor";
+    const drDesig      = user?.designation || "";
+    const drDept       = user?.department  || "";
+    const drLicence    = user?.licence_no  || "";
+    const drHospitalId = user?.hospital_id || "";
+    const drContact    = user?.contact_no  || "";
+    const drEmail      = user?.email       || "";
+
+    // Patient info
+    const ptName = p?.Name || "";
+    const ptAge  = p?.Age  ? `${p.Age} yrs` : "";
+    const ptSex  = p?.Sex  === "M" ? "Male" : p?.Sex === "F" ? "Female" : "";
+    const ptNo   = patientNo || "";
+
+    // Medication rows
+    const medRows = medications.map((m, i) => `
+      <tr>
+        <td class="tc">${i + 1}</td>
+        <td><strong>${esc(m.Brand_Name || "")}</strong><br/><span class="generic">${esc(m.Generic_Name || "")}</span></td>
+        <td>${esc(m.Strength || "")}</td>
+        <td>${esc(m.Route || "")}</td>
+        <td>${esc(m.Frequency || "")}</td>
+        <td class="tc">${esc(m.Days || "")}</td>
+      </tr>`).join("");
+
+    const diagText = [diagnosis.primary, diagnosis.secondary].filter(Boolean).join(", ");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Prescription</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { font-family: "Segoe UI", Arial, sans-serif; font-size: 13px; color: #111; background: #fff; padding: 36px 40px; }
+
+    /* ── Letterhead ── */
+    .letterhead {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      border-bottom: 3px solid #16a34a; padding-bottom: 16px; margin-bottom: 20px;
+    }
+    .lh-left { display: flex; flex-direction: column; gap: 3px; }
+    .lh-name  { font-size: 22px; font-weight: 800; color: #16a34a; letter-spacing: -0.3px; }
+    .lh-desig { font-size: 13px; font-weight: 600; color: #333; }
+    .lh-dept  { font-size: 12px; color: #555; }
+    .lh-right { text-align: right; font-size: 11px; color: #555; line-height: 1.9; }
+    .lh-right strong { color: #111; }
+    .rx-symbol { font-size: 48px; font-weight: 900; color: #e5f3eb; line-height: 1; align-self: center; }
+
+    /* ── Patient strip ── */
+    .patient-strip {
+      display: flex; gap: 0; border: 1px solid #d1fae5;
+      border-radius: 8px; overflow: hidden; margin-bottom: 20px;
+      background: #f0fdf4;
+    }
+    .ps-field { flex: 1; padding: 8px 14px; border-right: 1px solid #d1fae5; }
+    .ps-field:last-child { border-right: none; }
+    .ps-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #16a34a; margin-bottom: 2px; }
+    .ps-val   { font-size: 12px; font-weight: 600; color: #111; }
+
+    /* ── Diagnosis ── */
+    .diag-row { margin-bottom: 16px; font-size: 12px; }
+    .diag-row strong { color: #16a34a; }
+
+    /* ── Medication table ── */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    thead tr { background: #16a34a; }
+    thead th { padding: 9px 12px; font-size: 11px; font-weight: 700; color: #fff; text-align: left; letter-spacing: 0.04em; text-transform: uppercase; }
+    tbody tr { border-bottom: 1px solid #f0f0f0; }
+    tbody tr:nth-child(even) { background: #f9fefb; }
+    tbody td { padding: 9px 12px; font-size: 12px; vertical-align: top; }
+    .generic { font-size: 11px; color: #666; font-style: italic; }
+    .tc { text-align: center; }
+
+    /* ── Notes ── */
+    .notes-section { border: 1px dashed #86efac; border-radius: 6px; padding: 10px 14px; margin-bottom: 24px; font-size: 11.5px; color: #444; line-height: 1.6; }
+    .notes-label { font-size: 10px; font-weight: 700; color: #16a34a; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+
+    /* ── Signature ── */
+    .sig-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .sig-box { text-align: center; }
+    .sig-line { width: 180px; border-top: 1.5px solid #333; margin-bottom: 6px; }
+    .sig-name { font-size: 12px; font-weight: 700; color: #111; }
+    .sig-sub  { font-size: 10px; color: #555; }
+
+    /* ── Footer ── */
+    .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e0e0e0; display: flex; justify-content: space-between; font-size: 10px; color: #999; }
+
+    @page { margin: 15mm 12mm; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+
+  <!-- Letterhead -->
+  <div class="letterhead">
+    <div class="lh-left">
+      <div class="lh-name">Dr. ${esc(drName)}</div>
+      ${drDesig ? `<div class="lh-desig">${esc(drDesig)}</div>` : ""}
+      ${drDept  ? `<div class="lh-dept">Dept. of ${esc(drDept)}</div>` : ""}
+    </div>
+    <div class="rx-symbol">℞</div>
+    <div class="lh-right">
+      ${drLicence    ? `<div><strong>Licence No.:</strong> ${esc(drLicence)}</div>`    : ""}
+      ${drHospitalId ? `<div><strong>Doctor ID:</strong> ${esc(drHospitalId)}</div>`   : ""}
+      ${drContact    ? `<div><strong>Contact:</strong> ${esc(drContact)}</div>`         : ""}
+      ${drEmail      ? `<div><strong>Email:</strong> ${esc(drEmail)}</div>`             : ""}
+      <div><strong>Date:</strong> ${date}</div>
+    </div>
+  </div>
+
+  <!-- Patient strip -->
+  <div class="patient-strip">
+    ${ptName ? `<div class="ps-field"><div class="ps-label">Patient Name</div><div class="ps-val">${esc(ptName)}</div></div>` : ""}
+    ${ptNo   ? `<div class="ps-field"><div class="ps-label">${isOutpatient ? "OP No." : "IP No."}</div><div class="ps-val">${esc(String(ptNo))}</div></div>` : ""}
+    ${ptAge  ? `<div class="ps-field"><div class="ps-label">Age</div><div class="ps-val">${esc(ptAge)}</div></div>` : ""}
+    ${ptSex  ? `<div class="ps-field"><div class="ps-label">Sex</div><div class="ps-val">${esc(ptSex)}</div></div>` : ""}
+    ${diagText ? `<div class="ps-field" style="flex:2;"><div class="ps-label">Diagnosis</div><div class="ps-val">${esc(diagText)}</div></div>` : ""}
+  </div>
+
+  <!-- Medications -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px;">S.No</th>
+        <th>Brand / Generic Name</th>
+        <th>Strength</th>
+        <th>Route</th>
+        <th>Frequency</th>
+        <th style="width:50px;" class="tc">Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${medRows || `<tr><td colspan="6" style="text-align:center;color:#aaa;padding:16px;">No medications prescribed</td></tr>`}
+    </tbody>
+  </table>
+
+  ${diagnosis.notes ? `
+  <div class="notes-section">
+    <div class="notes-label">📋 Clinical Notes</div>
+    ${esc(diagnosis.notes)}
+  </div>` : ""}
+
+  <!-- Signature -->
+  <div class="sig-row">
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-name">Dr. ${esc(drName)}</div>
+      ${drDesig ? `<div class="sig-sub">${esc(drDesig)}</div>` : ""}
+      ${drDept  ? `<div class="sig-sub">Dept. of ${esc(drDept)}</div>` : ""}
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span>Generated by VabGenRx — For clinical use only</span>
+    <span>${now}</span>
+  </div>
+
+</body>
+</html>`;
+
+    const printWin = window.open("", "_blank", "width=900,height=700,scrollbars=yes");
+    if (!printWin) { setPdfGenerating(false); return; }
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+
+    const doPrint = () => {
+      setTimeout(() => { printWin.focus(); printWin.print(); setPdfGenerating(false); }, 400);
+    };
+    if (printWin.document.readyState === "complete") doPrint();
+    else { printWin.onload = doPrint; setTimeout(doPrint, 2000); }
+  };
+
+  // ── E-Prescribe ──────────────────────────────────────────────
+  const handleEPrescribe = () => {
+    setEPrescribeSent(true);
+    setTimeout(() => setEPrescribeSent(false), 3000);
+  };
+
   // ── Agent banner ─────────────────────────────────────────────
   const AgentBanner = () => {
     if (agentLoading) return (
@@ -489,7 +688,114 @@ const DiagnosisTab = ({ p }) => {
         counselTab={counselTab}
         setCounselTab={setCounselTab}
         p={p}
+        onPrescribe={() => setShowPrescribe(true)}
+        prescribeDisabled={medications.length === 0}
       />
+
+      {/* ══════════════ PRESCRIBE MODAL ══════════════ */}
+      {showPrescribe && (
+        <div className="presc-overlay" onClick={() => setShowPrescribe(false)}>
+          <div className="presc-modal" onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="presc-header">
+              <div className="presc-title">📋 Prescription</div>
+              <button className="presc-close" onClick={() => setShowPrescribe(false)}>✕</button>
+            </div>
+
+            {/* Doctor letterhead preview strip */}
+            <div className="presc-letterhead">
+              <div className="presc-lh-left">
+                <div className="presc-dr-name">Dr. {user?.name || "Doctor"}</div>
+                {user?.designation && <div className="presc-dr-desig">{user.designation}</div>}
+                {user?.department  && <div className="presc-dr-dept">Dept. of {user.department}</div>}
+              </div>
+              <div className="presc-rx">℞</div>
+              <div className="presc-lh-right">
+                {user?.licence_no  && <div><span>Licence:</span> {user.licence_no}</div>}
+                {user?.hospital_id && <div><span>ID:</span> {user.hospital_id}</div>}
+                {user?.contact_no  && <div><span>Contact:</span> {user.contact_no}</div>}
+              </div>
+            </div>
+
+            {/* Patient info */}
+            <div className="presc-patient-row">
+              {p?.Name && <div className="presc-pf"><div className="presc-pf-label">Patient</div><div className="presc-pf-val">{p.Name}</div></div>}
+              <div className="presc-pf"><div className="presc-pf-label">{isOutpatient ? "OP No." : "IP No."}</div><div className="presc-pf-val">{patientNo}</div></div>
+              {p?.Age  && <div className="presc-pf"><div className="presc-pf-label">Age</div><div className="presc-pf-val">{p.Age} yrs</div></div>}
+              {p?.Sex  && <div className="presc-pf"><div className="presc-pf-label">Sex</div><div className="presc-pf-val">{p.Sex === "M" ? "Male" : "Female"}</div></div>}
+            </div>
+
+            {/* Diagnosis */}
+            {(diagnosis.primary || diagnosis.secondary) && (
+              <div className="presc-diag">
+                <span className="presc-diag-label">Diagnosis:</span>{" "}
+                {[diagnosis.primary, diagnosis.secondary].filter(Boolean).join(", ")}
+              </div>
+            )}
+
+            {/* Medication table */}
+            <div className="presc-table-wrap">
+              <table className="presc-table">
+                <thead>
+                  <tr>
+                    <th>S.No</th>
+                    <th>Brand Name</th>
+                    <th>Generic Name</th>
+                    <th>Strength</th>
+                    <th>Route</th>
+                    <th>Frequency</th>
+                    <th>Days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {medications.length === 0 ? (
+                    <tr><td colSpan={7} className="presc-empty">No medications added yet.</td></tr>
+                  ) : medications.map((m, i) => (
+                    <tr key={m.ID || i}>
+                      <td className="presc-tc">{i + 1}</td>
+                      <td><strong>{m.Brand_Name || "—"}</strong></td>
+                      <td className="presc-generic">{m.Generic_Name || "—"}</td>
+                      <td>{m.Strength || "—"}</td>
+                      <td>{m.Route || "—"}</td>
+                      <td>{m.Frequency || "—"}</td>
+                      <td className="presc-tc">{m.Days || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer actions */}
+            <div className="presc-footer">
+              <span className="presc-footer-note">
+                {medications.length} medication{medications.length !== 1 ? "s" : ""}
+                {" · "}{new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+              </span>
+              <div className="presc-footer-btns">
+                <button
+                  className="presc-btn-pdf"
+                  onClick={handlePrescriptionPdf}
+                  disabled={pdfGenerating}
+                >
+                  {pdfGenerating ? "Generating..." : "📄 Save as PDF"}
+                </button>
+                <button className="presc-btn-eprescribe" onClick={handleEPrescribe}>
+                  ⚡ E-Prescribe
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── E-Prescribe sent toast ── */}
+      {ePrescribeSent && (
+        <div className="presc-toast">
+          ✅ E-Prescription sent successfully!
+        </div>
+      )}
 
     </div>
   );

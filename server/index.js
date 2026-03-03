@@ -1,10 +1,12 @@
 require('dotenv').config();
-const http = require('http');
-const multer = require('multer');
-const jwt = require('jsonwebtoken');
+const http    = require('http');
+const multer  = require('multer');
+const jwt     = require('jsonwebtoken');
+const bcrypt  = require('bcrypt');
 const { BlobServiceClient } = require('@azure/storage-blob');
 const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
+const SALT_ROUNDS  = 12;
 const JWT_SECRET     = process.env.JWT_SECRET     || 'vabgenrx_secret';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
@@ -48,14 +50,10 @@ const verifyToken = (req) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.split(' ')[1];
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch {
-    return null;
-  }
+  try { return jwt.verify(token, JWT_SECRET); }
+  catch { return null; }
 };
 
-// Public routes that don't need token
 const PUBLIC_ROUTES = [
   { method: 'POST', url: '/api/signin'   },
   { method: 'POST', url: '/api/register' },
@@ -73,21 +71,18 @@ const server = http.createServer(async (req, res) => {
 
   console.log(`➡️  ${req.method} ${req.url}`);
 
-  // ── Test ────────────────────────────────────────────────────
   if (req.method === 'GET' && req.url === '/') {
     res.writeHead(200); res.end('Backend is running!'); return;
   }
 
-  // ── JWT Guard — protect all non-public routes ────────────────
+  // ── JWT Guard ────────────────────────────────────────────────
   if (!isPublic(req.method, req.url)) {
     const decoded = verifyToken(req);
-    if (!decoded) {
-      return sendJSON(res, 401, { message: 'Unauthorized: Invalid or expired token' });
-    }
-    req.user = decoded; // attach user info to request
+    if (!decoded) return sendJSON(res, 401, { message: 'Unauthorized: Invalid or expired token' });
+    req.user = decoded;
   }
 
-  // ── Upload image ────────────────────────────────────────────
+  // ── Upload image ─────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/upload-image') {
     try {
       await parseMultipart(req);
@@ -99,13 +94,11 @@ const server = http.createServer(async (req, res) => {
         blobHTTPHeaders: { blobContentType: file.mimetype }
       });
       sendJSON(res, 200, { imageUrl: blockBlobClient.url });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get profile ─────────────────────────────────────────────
+  // ── Get profile ──────────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/profile')) {
     const email = decodeURIComponent(req.url.split('?email=')[1] || '');
     try {
@@ -116,86 +109,94 @@ const server = http.createServer(async (req, res) => {
       if (result.recordset.length > 0) {
         const user = result.recordset[0];
         if (user.dob instanceof Date) user.dob = user.dob.toISOString().split('T')[0];
+        delete user.password; // never send password to frontend
         sendJSON(res, 200, { user });
       } else {
         sendJSON(res, 404, { message: 'User not found' });
       }
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Sign in — issues JWT ────────────────────────────────────
+  // ── Sign in ──────────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/signin') {
     const { email, password } = await getBody(req);
+    if (!email || !password)
+      return sendJSON(res, 400, { message: 'Email and password required.' });
     try {
       const pool = await poolPromise;
       const result = await pool.request()
-        .input('email',    sql.VarChar, email)
-        .input('password', sql.VarChar, password)
-        .query('SELECT * FROM users WHERE email = @email AND password = @password');
-      if (result.recordset.length > 0) {
-        const user = result.recordset[0];
-        // ── Generate JWT token ──
-        const token = jwt.sign(
-          {
-            id:    user.id,
-            email: user.email,
-            name:  user.name,
-            role:  user.designation || 'doctor',
-          },
-          JWT_SECRET,
-          { expiresIn: JWT_EXPIRES_IN }
-        );
-        sendJSON(res, 200, {
-          message: 'Sign in successful',
-          token,
-          user,
-        });
-      } else {
-        sendJSON(res, 401, { message: 'Invalid email or password' });
-      }
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+        .input('email', sql.VarChar, email)
+        .query('SELECT * FROM users WHERE email = @email');
+
+      if (result.recordset.length === 0)
+        return sendJSON(res, 401, { message: 'Invalid email or password' });
+
+      const user = result.recordset[0];
+
+      // ── Compare password with bcrypt hash ──
+      const match = await bcrypt.compare(password, user.password);
+      if (!match)
+        return sendJSON(res, 401, { message: 'Invalid email or password' });
+
+      const token = jwt.sign(
+        { id: user.id, email: user.email, name: user.name, role: user.designation || 'doctor' },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+      );
+
+      delete user.password; // never send hash to frontend
+      sendJSON(res, 200, { message: 'Sign in successful', token, user });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Register ────────────────────────────────────────────────
+  // ── Register ─────────────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/register') {
-    const body = await getBody(req);
     const { hospital_id, licence_no, name, designation, department,
-            dob, age, sex, address, contact_no, email, password } = body;
+            dob, age, sex, address, contact_no, email, password } = await getBody(req);
+
+    if (!email || !password)
+      return sendJSON(res, 400, { message: 'Email and password required.' });
+
     try {
+      // ── Check if email already exists ──
       const pool = await poolPromise;
+      const existing = await pool.request()
+        .input('email', sql.VarChar, email)
+        .query('SELECT id FROM users WHERE email = @email');
+      if (existing.recordset.length > 0)
+        return sendJSON(res, 409, { message: 'Email already registered.' });
+
+      // ── Hash password before storing ──
+      const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
       await pool.request()
-        .input('hospital_id', sql.VarChar, hospital_id)
-        .input('licence_no',  sql.VarChar, licence_no)
-        .input('name',        sql.VarChar, name)
-        .input('designation', sql.VarChar, designation)
-        .input('department',  sql.VarChar, department)
-        .input('dob',         sql.Date,    dob)
-        .input('age',         sql.Int,     age)
-        .input('sex',         sql.VarChar, sex)
-        .input('address',     sql.VarChar, address)
-        .input('contact_no',  sql.VarChar, contact_no)
-        .input('email',       sql.VarChar, email)
-        .input('password',    sql.VarChar, password)
+        .input('hospital_id',    sql.VarChar, hospital_id  || '')
+        .input('licence_no',     sql.VarChar, licence_no   || '')
+        .input('name',           sql.VarChar, name         || '')
+        .input('designation',    sql.VarChar, designation  || '')
+        .input('department',     sql.VarChar, department   || '')
+        .input('dob',            sql.Date,    dob          || null)
+        .input('age',            sql.Int,     age          || null)
+        .input('sex',            sql.VarChar, sex          || '')
+        .input('address',        sql.VarChar, address      || '')
+        .input('contact_no',     sql.VarChar, contact_no   || '')
+        .input('email',          sql.VarChar, email)
+        .input('password',       sql.VarChar, hashedPassword)
         .query(`INSERT INTO users
           (hospital_id, licence_no, name, designation, department,
            dob, age, sex, address, contact_no, email, password)
           VALUES
           (@hospital_id, @licence_no, @name, @designation, @department,
            @dob, @age, @sex, @address, @contact_no, @email, @password)`);
+
       sendJSON(res, 201, { message: 'Registration successful' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Update address ──────────────────────────────────────────
+  // ── Update address ───────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/profile/update-address') {
     const { email, address } = await getBody(req);
     if (!email || !address) return sendJSON(res, 400, { message: 'Email and address required.' });
@@ -206,13 +207,11 @@ const server = http.createServer(async (req, res) => {
         .input('address', sql.VarChar, JSON.stringify(address))
         .query('UPDATE users SET address = @address WHERE email = @email');
       sendJSON(res, 200, { message: 'Address updated.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Change password ─────────────────────────────────────────
+  // ── Change password ──────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/profile/change-password') {
     const { email, currentPassword, newPassword } = await getBody(req);
     if (!email || !currentPassword || !newPassword)
@@ -222,21 +221,29 @@ const server = http.createServer(async (req, res) => {
       const result = await pool.request()
         .input('email', sql.VarChar, email)
         .query('SELECT password FROM users WHERE email = @email');
-      if (!result.recordset.length) return sendJSON(res, 404, { message: 'User not found.' });
-      if (currentPassword !== result.recordset[0].password)
+
+      if (!result.recordset.length)
+        return sendJSON(res, 404, { message: 'User not found.' });
+
+      // ── Verify current password against hash ──
+      const match = await bcrypt.compare(currentPassword, result.recordset[0].password);
+      if (!match)
         return sendJSON(res, 401, { message: 'Current password is incorrect.' });
+
+      // ── Hash new password before storing ──
+      const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
       await pool.request()
         .input('email',    sql.VarChar, email)
-        .input('password', sql.VarChar, newPassword)
+        .input('password', sql.VarChar, newHash)
         .query('UPDATE users SET password = @password WHERE email = @email');
-      sendJSON(res, 200, { message: 'Password changed.' });
-    } catch (err) {
-      sendJSON(res, 500, { message: err.message });
-    }
+
+      sendJSON(res, 200, { message: 'Password changed successfully.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get all inpatients ──────────────────────────────────────
+  // ── Get all inpatients ───────────────────────────────────────
   if (req.method === 'GET' && req.url === '/api/patients') {
     try {
       const pool = await patientsPoolPromise;
@@ -249,14 +256,11 @@ const server = http.createServer(async (req, res) => {
         FROM dbo.patient_records ORDER BY IP_No ASC
       `);
       sendJSON(res, 200, { patients: result.recordset });
-    } catch (err) {
-      console.error('❌ inpatients error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get single inpatient by IP_No ───────────────────────────
+  // ── Get single inpatient ─────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/patients/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/patients/')[1]);
     if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
@@ -264,27 +268,19 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('ipNo', sql.VarChar, ipNo)
-        .query(`
-          SELECT IP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language,
-            Occupation, Dept, DOA,
-            Reason_for_Admission, Past_Medical_History, Past_Medication_History,
+        .query(`SELECT IP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language,
+            Occupation, Dept, DOA, Reason_for_Admission,
+            Past_Medical_History, Past_Medication_History,
             Smoker, Alcoholic, Insurance_Type,
             Weight_kg, Height_cm, BMI, Followup_Outcome
-          FROM dbo.patient_records WHERE IP_No = @ipNo
-        `);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { patient: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Patient not found' });
-      }
-    } catch (err) {
-      console.error('❌ single patient error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+          FROM dbo.patient_records WHERE IP_No = @ipNo`);
+      if (result.recordset.length > 0) sendJSON(res, 200, { patient: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Patient not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get all outpatients ─────────────────────────────────────
+  // ── Get all outpatients ──────────────────────────────────────
   if (req.method === 'GET' && req.url === '/api/outpatients') {
     try {
       const pool = await patientsPoolPromise;
@@ -297,14 +293,11 @@ const server = http.createServer(async (req, res) => {
         FROM dbo.outpatient_records ORDER BY OP_No ASC
       `);
       sendJSON(res, 200, { patients: result.recordset });
-    } catch (err) {
-      console.error('❌ outpatients error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get single outpatient by OP_No ──────────────────────────
+  // ── Get single outpatient ────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/outpatients/')) {
     const opNo = decodeURIComponent(req.url.split('/api/outpatients/')[1]);
     if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
@@ -312,30 +305,21 @@ const server = http.createServer(async (req, res) => {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
         .input('opNo', sql.VarChar, opNo)
-        .query(`
-          SELECT OP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language,
+        .query(`SELECT OP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language,
             Occupation, Dept, DOA, Reason_for_Admission,
             Past_Medical_History, Past_Medication_History,
             Smoker, Alcoholic, Insurance_Type,
             Weight_kg, Height_cm, BMI, Followup_Outcome
-          FROM dbo.outpatient_records WHERE OP_No = @opNo
-        `);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { patient: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Outpatient not found' });
-      }
-    } catch (err) {
-      console.error('❌ single outpatient error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+          FROM dbo.outpatient_records WHERE OP_No = @opNo`);
+      if (result.recordset.length > 0) sendJSON(res, 200, { patient: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Outpatient not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get IP diagnosis ────────────────────────────────────────
+  // ── Get IP diagnosis ─────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/ip-diagnosis/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/ip-diagnosis/')[1]);
-    if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
@@ -344,19 +328,13 @@ const server = http.createServer(async (req, res) => {
             Drugs_Prescribed, Drug_Drug_Interactions,
             Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
           FROM dbo.ip_diagnosis WHERE IP_No = @ipNo`);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { diagnosis: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Diagnosis not found' });
-      }
-    } catch (err) {
-      console.error('❌ ip-diagnosis error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+      if (result.recordset.length > 0) sendJSON(res, 200, { diagnosis: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Diagnosis not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Save IP diagnosis ───────────────────────────────────────
+  // ── Save IP diagnosis ────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/ip-diagnosis') {
     const { ipNo, primary, secondary, notes } = await getBody(req);
     if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
@@ -371,17 +349,13 @@ const server = http.createServer(async (req, res) => {
           SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
           WHERE IP_No=@ipNo`);
       sendJSON(res, 200, { message: 'Diagnosis saved' });
-    } catch (err) {
-      console.error('❌ save ip-diagnosis error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get OP diagnosis ────────────────────────────────────────
+  // ── Get OP diagnosis ─────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-diagnosis/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-diagnosis/')[1]);
-    if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
@@ -390,19 +364,13 @@ const server = http.createServer(async (req, res) => {
             Drugs_Prescribed, Drug_Drug_Interactions,
             Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
           FROM dbo.op_diagnosis WHERE OP_No = @opNo`);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { diagnosis: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Diagnosis not found' });
-      }
-    } catch (err) {
-      console.error('❌ op-diagnosis error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+      if (result.recordset.length > 0) sendJSON(res, 200, { diagnosis: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Diagnosis not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Save OP diagnosis ───────────────────────────────────────
+  // ── Save OP diagnosis ────────────────────────────────────────
   if (req.method === 'POST' && req.url === '/api/op-diagnosis') {
     const { opNo, primary, secondary, notes } = await getBody(req);
     if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
@@ -417,17 +385,13 @@ const server = http.createServer(async (req, res) => {
           SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
           WHERE OP_No=@opNo`);
       sendJSON(res, 200, { message: 'Diagnosis saved' });
-    } catch (err) {
-      console.error('❌ save op-diagnosis error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get IP lab results ──────────────────────────────────────
+  // ── Get IP lab results ───────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/lab/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/lab/')[1]);
-    if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
@@ -435,22 +399,15 @@ const server = http.createServer(async (req, res) => {
         .query(`SELECT IP_No, Pulse, eGFR_mL_min_1_73m2, Sodium, Potassium, Chloride,
             Total_Bilirubin, FreeT3, FreeT4, TSH, Other_Investigations
           FROM dbo.ip_lab_results WHERE IP_No = @ipNo`);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { lab: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Lab results not found' });
-      }
-    } catch (err) {
-      console.error('❌ lab results error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+      if (result.recordset.length > 0) sendJSON(res, 200, { lab: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Lab results not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Get OP lab results ──────────────────────────────────────
+  // ── Get OP lab results ───────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-lab/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-lab/')[1]);
-    if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request()
@@ -463,19 +420,13 @@ const server = http.createServer(async (req, res) => {
             Lipid_Profile, ECG, Xray, Ultrasound, CT, MRI,
             FreeT3, FreeT4, TSH, Other_Investigations
           FROM dbo.op_lab_results WHERE OP_No = @opNo`);
-      if (result.recordset.length > 0) {
-        sendJSON(res, 200, { lab: result.recordset[0] });
-      } else {
-        sendJSON(res, 404, { message: 'Outpatient lab results not found' });
-      }
-    } catch (err) {
-      console.error('❌ op-lab error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+      if (result.recordset.length > 0) sendJSON(res, 200, { lab: result.recordset[0] });
+      else sendJSON(res, 404, { message: 'Outpatient lab results not found' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── Search drug inventory ───────────────────────────────────
+  // ── Search drug inventory ────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/drug-inventory/search')) {
     const rawQ = req.url.split('?q=')[1] || '';
     const q = decodeURIComponent(rawQ.split('&')[0]);
@@ -488,20 +439,16 @@ const server = http.createServer(async (req, res) => {
           WHERE Brand_Name LIKE @q OR Generic_Name LIKE @q
           ORDER BY Generic_Name, Strength ASC`);
       sendJSON(res, 200, { drugs: result.recordset });
-    } catch (err) {
-      console.error('❌ drug search error:', err.message);
-      sendJSON(res, 500, { message: err.message });
-    }
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
 
-  // ── IP Prescriptions ────────────────────────────────────────
+  // ── IP Prescriptions ─────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/ip-prescriptions/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/ip-prescriptions/')[1]);
     try {
       const pool = await patientsPoolPromise;
-      const result = await pool.request()
-        .input('ipNo', sql.VarChar, ipNo)
+      const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
         .query(`SELECT ID, IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
                 FROM dbo.ip_prescriptions WHERE IP_No = @ipNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
@@ -550,13 +497,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── OP Prescriptions ────────────────────────────────────────
+  // ── OP Prescriptions ─────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-prescriptions/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-prescriptions/')[1]);
     try {
       const pool = await patientsPoolPromise;
-      const result = await pool.request()
-        .input('opNo', sql.VarChar, opNo)
+      const result = await pool.request().input('opNo', sql.VarChar, opNo)
         .query(`SELECT ID, OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
                 FROM dbo.op_prescriptions WHERE OP_No = @opNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
@@ -605,7 +551,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── IP Prescription Notes ───────────────────────────────────
+  // ── IP Prescription Notes ────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/ip-prescription-notes/')) {
     const ipNo = decodeURIComponent(req.url.split('/api/ip-prescription-notes/')[1]);
     try {
@@ -651,7 +597,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── OP Prescription Notes ───────────────────────────────────
+  // ── OP Prescription Notes ────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-prescription-notes/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-prescription-notes/')[1]);
     try {
@@ -697,7 +643,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── 404 ─────────────────────────────────────────────────────
+  // ── 404 ──────────────────────────────────────────────────────
   sendJSON(res, 404, { message: 'Route not found' });
 });
 

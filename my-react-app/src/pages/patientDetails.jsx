@@ -91,19 +91,23 @@ const LabResultsTab = ({ p, isOutpatient }) => {
         {isOutpatient && <Row label="Temperature (°C)" value={lab.Temperature} />}
         {isOutpatient && <Row label="SpO2 (%)"          value={lab.SpO2} />}
       </Section>
-      {isOutpatient && <Section title="🧪 Haematology">
-        <Row label="Hb (g/dl)"      value={lab.Hb} />
-        <Row label="WBC (×10³/μL)"  value={lab.WBC} />
-        <Row label="Platelet Count" value={lab.Platelet_Count} />
-      </Section>}
-      {isOutpatient && <Section title="🩸 Blood Sugar">
-        <Row label="RBS (mg/dl)"  value={lab.RBS} />
-        <Row label="FBS (mg/dl)"  value={lab.FBS} />
-        <Row label="PPBS (mg/dl)" value={lab.PPBS} />
-      </Section>}
+      {isOutpatient && (
+        <Section title="🧪 Haematology">
+          <Row label="Hb (g/dl)"      value={lab.Hb} />
+          <Row label="WBC (×10³/μL)"  value={lab.WBC} />
+          <Row label="Platelet Count" value={lab.Platelet_Count} />
+        </Section>
+      )}
+      {isOutpatient && (
+        <Section title="🩸 Blood Sugar">
+          <Row label="RBS (mg/dl)"  value={lab.RBS} />
+          <Row label="FBS (mg/dl)"  value={lab.FBS} />
+          <Row label="PPBS (mg/dl)" value={lab.PPBS} />
+        </Section>
+      )}
       <Section title="🫘 Renal Function">
-        <Row label="Urea (mg/dl)"         value={lab.Urea} />
-        <Row label="Creatinine (mg/dl)"   value={lab.Creatinine} />
+        <Row label="Urea (mg/dl)"          value={lab.Urea} />
+        <Row label="Creatinine (mg/dl)"    value={lab.Creatinine} />
         <Row label="eGFR (mL/min/1.73m²)" value={lab.eGFR_mL_min_1_73m2} />
       </Section>
       <Section title="⚡ Electrolytes">
@@ -117,14 +121,20 @@ const LabResultsTab = ({ p, isOutpatient }) => {
         {isOutpatient && <Row label="ALP (U/L)"  value={lab.ALP} />}
         <Row label="Total Bilirubin" value={lab.Total_Bilirubin} />
       </Section>
-      {isOutpatient && <Section title="💊 Lipid Profile"><Row label="Result" value={lab.Lipid_Profile} /></Section>}
-      {isOutpatient && <Section title="🖼️ Imaging & Special Tests">
-        <Row label="ECG"        value={lab.ECG} />
-        <Row label="X-Ray"      value={lab.Xray} />
-        <Row label="Ultrasound" value={lab.Ultrasound} />
-        <Row label="CT Scan"    value={lab.CT} />
-        <Row label="MRI"        value={lab.MRI} />
-      </Section>}
+      {isOutpatient && (
+        <Section title="💊 Lipid Profile">
+          <Row label="Result" value={lab.Lipid_Profile} />
+        </Section>
+      )}
+      {isOutpatient && (
+        <Section title="🖼️ Imaging & Special Tests">
+          <Row label="ECG"        value={lab.ECG} />
+          <Row label="X-Ray"      value={lab.Xray} />
+          <Row label="Ultrasound" value={lab.Ultrasound} />
+          <Row label="CT Scan"    value={lab.CT} />
+          <Row label="MRI"        value={lab.MRI} />
+        </Section>
+      )}
       <Section title="🦋 Thyroid">
         <Row label="Free T3" value={lab.FreeT3} />
         <Row label="Free T4" value={lab.FreeT4} />
@@ -151,7 +161,11 @@ const ReferralTab = ({ p, isOutpatient }) => {
         <div className="pd-referral-form">
           <div className="pd-print-header">
             <h2>Patient Referral Letter</h2>
-            <p><strong>Patient:</strong> {p.Name} &nbsp;|&nbsp; <strong>Age/Sex:</strong> {p.Age} / {p.Sex === "M" ? "Male" : "Female"} &nbsp;|&nbsp; <strong>{isOutpatient ? "OP No" : "IP No"}:</strong> {patientNo}</p>
+            <p>
+              <strong>Patient:</strong> {p.Name} &nbsp;|&nbsp;
+              <strong>Age/Sex:</strong> {p.Age} / {p.Sex === "M" ? "Male" : "Female"} &nbsp;|&nbsp;
+              <strong>{isOutpatient ? "OP No" : "IP No"}:</strong> {patientNo}
+            </p>
             <p><strong>Dept:</strong> {p.Dept} &nbsp;|&nbsp; <strong>Date:</strong> {referral.date}</p>
             <hr />
           </div>
@@ -167,7 +181,9 @@ const ReferralTab = ({ p, isOutpatient }) => {
             <div className="pd-form-group">
               <label>Urgency</label>
               <select value={referral.urgency} onChange={e => setReferral(r => ({ ...r, urgency: e.target.value }))}>
-                <option>Routine</option><option>Urgent</option><option>Emergency</option>
+                <option>Routine</option>
+                <option>Urgent</option>
+                <option>Emergency</option>
               </select>
             </div>
             <div className="pd-form-group">
@@ -188,7 +204,9 @@ const ReferralTab = ({ p, isOutpatient }) => {
             <p><strong>Urgency:</strong> {referral.urgency}</p>
             <p><strong>Reason:</strong> {referral.reason}</p>
             <p><strong>Notes:</strong> {referral.notes}</p>
-            <br /><br /><p>_______________________</p><p>Referring Doctor's Signature</p>
+            <br /><br />
+            <p>_______________________</p>
+            <p>Referring Doctor's Signature</p>
           </div>
         </div>
         <div className="pd-referral-actions">
@@ -200,6 +218,7 @@ const ReferralTab = ({ p, isOutpatient }) => {
   );
 };
 
+// ── Main component ────────────────────────────────────────────
 const PatientDetail = ({ user }) => {
   const { id: patientNo } = useParams();
   const navigate = useNavigate();
@@ -238,33 +257,54 @@ const PatientDetail = ({ user }) => {
       <Nav user={user} />
       <main className="pd-main">
         <button className="pd-back-btn" onClick={() => navigate(-1)}>← Back to Patients</button>
-        {loading && <div className="pd-state"><div className="pd-spinner" /><p>Loading patient...</p></div>}
-        {error   && <div className="pd-state pd-error">⚠️ {error}</div>}
+
+        {loading && (
+          <div className="pd-state">
+            <div className="pd-spinner" />
+            <p>Loading patient...</p>
+          </div>
+        )}
+        {error && <div className="pd-state pd-error">⚠️ {error}</div>}
+
         {patient && (
           <>
+            {/* Hero */}
             <div className="pd-hero">
               <div className="pd-hero-avatar">{patient.Name?.charAt(0)}</div>
               <div className="pd-hero-info">
                 <h1 className="pd-hero-name">{patient.Name}</h1>
                 <p className="pd-hero-sub">
-                  {patient.IP_No || patient.OP_No} &nbsp;·&nbsp; {patient.Dept} &nbsp;·&nbsp;
-                  {patient.Sex === "M" ? "Male" : "Female"}, {patient.Age} yrs &nbsp;·&nbsp; {patient.Insurance_Type}
+                  {patient.IP_No || patient.OP_No} &nbsp;·&nbsp;
+                  {patient.Dept} &nbsp;·&nbsp;
+                  {patient.Sex === "M" ? "Male" : "Female"}, {patient.Age} yrs &nbsp;·&nbsp;
+                  {patient.Insurance_Type}
                 </p>
               </div>
               <div className={`pd-hero-badge pd-badge-${patient.Sex === "M" ? "blue" : "pink"}`}>
                 {isOutpatient ? "Out-Patient" : "In-Patient"}
               </div>
             </div>
+
+            {/* Tabs */}
             <div className="pd-tabs">
               {tabs.map(t => (
-                <button key={t.key} className={`pd-tab-btn${activeTab === t.key ? " active" : ""}`}
-                  onClick={() => setActiveTab(t.key)}>{t.label}</button>
+                <button
+                  key={t.key}
+                  className={`pd-tab-btn${activeTab === t.key ? " active" : ""}`}
+                  onClick={() => setActiveTab(t.key)}
+                >
+                  {t.label}
+                </button>
               ))}
             </div>
+
+            {/* Tab content */}
             {activeTab === "info"      && <PatientInfoTab p={patient} isOutpatient={isOutpatient} />}
             {activeTab === "lab"       && <LabResultsTab  p={patient} isOutpatient={isOutpatient} />}
-            {activeTab === "diagnosis" && <DiagnosisTab   p={patient} />}
-            {activeTab === "referral"  && <ReferralTab    p={patient} isOutpatient={isOutpatient} />}
+            {activeTab === "diagnosis" && (
+              <DiagnosisTab p={patient} user={user} />
+            )}
+            {activeTab === "referral"  && <ReferralTab p={patient} isOutpatient={isOutpatient} />}
           </>
         )}
       </main>
