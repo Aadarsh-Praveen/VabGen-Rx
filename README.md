@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="./vabgen_logo.png" alt="Vab Gen Rx Logo" width="250"/>
+</p>
+
 # 🧪 Vab Gen Rx
 
 ### Multi-Agent Clinical Decision Support & Medication Safety Platform
 
-🚀 Microsoft AI Dev Days Hackathon 2026 Submission
+🚀 Microsoft AI Dev Days Hackathon 2026 Submission  
 Hosted by Microsoft
 
 ---
@@ -21,12 +25,12 @@ Medication-related harm is a major public health challenge, particularly among e
 
 Community Health Centers face critical challenges:
 
-* Fragmented medication histories across providers
-* Polypharmacy and drug interaction risks
-* Incorrect dosing for renal or hepatic impairment
-* Medication non-adherence due to access barriers
-* Pharmacy deserts and medication availability issues
-* Provider workflow burden and alert fatigue
+* Fragmented medication histories across providers  
+* Polypharmacy and drug interaction risks  
+* Incorrect dosing for renal or hepatic impairment  
+* Medication non-adherence due to access barriers  
+* Pharmacy deserts and medication availability issues  
+* Provider workflow burden and alert fatigue  
 
 These issues contribute to preventable adverse drug events, emergency visits, and hospitalizations.
 
@@ -36,12 +40,12 @@ These issues contribute to preventable adverse drug events, emergency visits, an
 
 Vab Gen Rx provides an AI-powered platform that supports clinicians and patients through:
 
-* Medication reconciliation and interaction detection
-* AI-assisted dosing optimization
-* Adverse drug event risk prediction
-* Automated patient counseling generation
-* Pharmacy availability and therapeutic alternatives
-* Explainable and transparent clinical recommendations
+* Medication reconciliation and interaction detection  
+* AI-assisted dosing optimization  
+* Adverse drug event risk prediction  
+* Automated patient counseling generation  
+* Pharmacy availability and therapeutic alternatives  
+* Explainable and transparent clinical recommendations  
 
 The system enhances — but does not replace — clinician judgment.
 
@@ -51,12 +55,12 @@ The system enhances — but does not replace — clinician judgment.
 
 Vab Gen Rx leverages multiple specialized AI agents:
 
-* **Medication Reconciliation Agent** — Detects duplicate therapies and conflicts
-* **Drug Interaction Agent** — Identifies contraindications and interaction risks
-* **Dosing Optimization Agent** — Provides patient-specific dose recommendations
-* **Risk Prediction Agent** — Identifies high-risk patients for adverse events
-* **Counseling Agent** — Generates patient-friendly medication instructions
-* **Pharmacy Access Agent** — Identifies nearby pharmacies and alternatives
+* **Medication Reconciliation Agent** — Detects duplicate therapies and conflicts  
+* **Drug Interaction Agent** — Identifies contraindications and interaction risks  
+* **Dosing Optimization Agent** — Provides patient-specific dose recommendations  
+* **Risk Prediction Agent** — Identifies high-risk patients for adverse events  
+* **Counseling Agent** — Generates patient-friendly medication instructions  
+* **Pharmacy Access Agent** — Identifies nearby pharmacies and alternatives  
 
 These agents collaborate using multi-agent orchestration patterns.
 
@@ -66,11 +70,11 @@ These agents collaborate using multi-agent orchestration patterns.
 
 This project satisfies the core requirements:
 
-* Uses Microsoft AI platform technologies
-* Multi-agent architecture using Microsoft Agent Framework
-* Deployable on Azure cloud
-* Developed using GitHub and VS Code
-* Designed for real-world enterprise deployment
+* Uses Microsoft AI platform technologies  
+* Multi-agent architecture using Microsoft Agent Framework  
+* Deployable on Azure cloud  
+* Developed using GitHub and VS Code  
+* Designed for real-world enterprise deployment  
 
 ---
 
@@ -78,47 +82,47 @@ This project satisfies the core requirements:
 
 ### Hero Technologies
 
-* Microsoft Agent Framework
-* Microsoft Foundry
-* Azure OpenAI
-* Azure MCP (Model Context Protocol)
+* Microsoft Agent Framework  
+* Microsoft Foundry  
+* Azure OpenAI  
+* Azure MCP (Model Context Protocol)  
 
 ### Azure Services
 
-* Azure Functions
-* Azure App Service / Container Apps
-* Azure Cosmos DB / Azure SQL
-* Azure API Management
-* Azure Storage
-* Azure Monitor
+* Azure Functions  
+* Azure App Service / Container Apps  
+* Azure Cosmos DB / Azure SQL  
+* Azure API Management  
+* Azure Storage  
+* Azure Monitor  
 
 ### Developer Tools
 
-* GitHub
-* GitHub Copilot Agent Mode
-* VS Code
+* GitHub  
+* GitHub Copilot Agent Mode  
+* VS Code  
 
 ---
 
 ## 🏥 Use Case Workflow
 
-1. Clinician enters patient clinical information
-2. AI agents analyze medication history
-3. Drug interaction and risk alerts generated
-4. Dosing recommendations provided
-5. Patient counseling instructions created
-6. Pharmacy availability and alternatives suggested
+1. Clinician enters patient clinical information  
+2. AI agents analyze medication history  
+3. Drug interaction and risk alerts generated  
+4. Dosing recommendations provided  
+5. Patient counseling instructions created  
+6. Pharmacy availability and alternatives suggested  
 
 ---
 
 ## 🌟 Innovation Highlights
 
-* Multi-agent healthcare intelligence platform
-* Integration of safety, dosing, counseling, and access
-* Enterprise-ready architecture
-* Explainable AI with clinician oversight
-* Regulatory-aligned clinical decision support model
-* Real-world healthcare impact potential
+* Multi-agent healthcare intelligence platform  
+* Integration of safety, dosing, counseling, and access  
+* Enterprise-ready architecture  
+* Explainable AI with clinician oversight  
+* Regulatory-aligned clinical decision support model  
+* Real-world healthcare impact potential  
 
 ---
 
@@ -126,11 +130,11 @@ This project satisfies the core requirements:
 
 Vab Gen Rx aims to:
 
-* Reduce preventable adverse drug events
-* Improve medication adherence
-* Enhance clinician workflow efficiency
-* Improve healthcare access equity
-* Support high-risk patient populations
+* Reduce preventable adverse drug events  
+* Improve medication adherence  
+* Enhance clinician workflow efficiency  
+* Improve healthcare access equity  
+* Support high-risk patient populations  
 
 ---
 
@@ -140,31 +144,25 @@ Vab Gen Rx is designed as Clinical Decision Support (CDS), not autonomous medica
 
 Key principles:
 
-* Clinician retains full authority
-* Transparent recommendations
-* Explainable AI outputs
-* Auditability and logging
-* Privacy-aware architecture
+* Clinician retains full authority  
+* Transparent recommendations  
+* Explainable AI outputs  
+* Auditability and logging  
+* Privacy-aware architecture  
 
 ---
 
 ## 🏆 Target Hackathon Categories
 
-* Best Enterprise Solution
-* Best Multi-Agent System
-* Best Azure Integration
+* Best Enterprise Solution  
+* Best Multi-Agent System  
+* Best Azure Integration  
 
 ---
 
 ## 🏗️ Architecture Diagram
 
 *To be added*
-
----
-
-## 🚧 Project Status
-
-Prototype — Active Development (Hackathon Phase)
 
 ---
 
@@ -176,16 +174,18 @@ Prototype — Active Development (Hackathon Phase)
 
 ## 📜 Disclaimer
 
-This project is for educational and research purposes only.
+This project is for educational and research purposes only.  
 It does not provide medical diagnosis or replace licensed healthcare professionals.
 
 ---
 
 ## 🔮 Future Enhancements
 
-* FHIR-based EHR integration
-* Real-time pharmacy inventory APIs
-* Predictive adherence analytics
-* Reinforcement learning optimization
-* Multilingual voice assistant
-* Integration with wearable health data
+* FHIR-based EHR integration  
+* Real-time pharmacy inventory APIs  
+* Predictive adherence analytics  
+* Reinforcement learning optimization  
+* Multilingual voice assistant  
+* Integration with wearable health data  
+
+---
