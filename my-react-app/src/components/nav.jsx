@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import logo from "../assets/vabgen_logo.png";
-import "./nav.css";
+import "../components/styles/nav.css";
 
 const NAV_ITEMS = {
   MAIN: [

@@ -1,0 +1,60 @@
+/* ── Wrap ────────────────────────────────────────────────────── */
+.diag-wrap { display: flex; flex-direction: column; gap: 1rem; }
+
+/* ── Two-column grid ────────────────────────────────────────── */
+.diag-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 768px) { .diag-grid-2 { grid-template-columns: 1fr; } }
+
+/* ── Diagnosis card ─────────────────────────────────────────── */
+.diag-card {
+  background: #fff;
+  border: 1.5px solid #f0f0f8;
+  border-radius: 12px;
+  overflow: visible;
+  box-shadow: 0 1px 6px rgba(108,99,255,0.05);
+}
+.diag-card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0.65rem 1.1rem;
+  background: #f8f7ff;
+  border-bottom: 1px solid #eeebff;
+}
+.diag-card-title {
+  font-size: 0.8rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; color: #1a73e8;
+  display: flex; align-items: center; gap: 8px;
+}
+.diag-card-body { padding: 1rem 1.1rem; }
+
+/* ── Diagnosis fields ───────────────────────────────────────── */
+.diag-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.85rem; }
+@media (max-width: 600px) { .diag-row-2 { grid-template-columns: 1fr; } }
+.diag-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.diag-lbl {
+  font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em; color: #888;
+}
+.diag-inp, .diag-ta {
+  background: #f8f7ff; border: 1.5px solid #e0e3ef;
+  border-radius: 8px; padding: 0.55rem 0.8rem;
+  font-size: 0.875rem; color: #1a1a2e; font-family: inherit;
+  outline: none; transition: border 0.2s; width: 100%;
+  box-sizing: border-box;
+}
+.diag-inp:focus, .diag-ta:focus { border-color: #1a73e8; }
+.diag-ta { resize: vertical; }
+.diag-save-diagnosis-btn {
+  padding: 0.55rem 1.4rem;
+  background: #1a73e8; color: #fff;
+  border: none; border-radius: 8px;
+  font-size: 0.875rem; font-weight: 600;
+  cursor: pointer; transition: background 0.2s;
+}
+.diag-save-diagnosis-btn:hover    { background: #1558b0; }
+.diag-save-diagnosis-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Dark Mode ──────────────────────────────────────────────── */
+[data-theme="dark"] .diag-card        { background: #1a1a2e; border-color: #2a2a40; }
+[data-theme="dark"] .diag-card-header { background: #16162a; }
+[data-theme="dark"] .diag-inp,
+[data-theme="dark"] .diag-ta          { background: #16162a; color: #e0e0f0; border-color: #2a2a40; }
