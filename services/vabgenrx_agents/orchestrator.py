@@ -10,6 +10,14 @@ Phase 3: Signal extraction (Python, instant)
 Phase 4: Round 2 re-evaluation (conditional, parallel)
 Phase 5: Counselling + patient services (parallel)
 Phase 6: Orchestrator agent synthesis (cross-domain reasoning)
+
+CHANGES:
+- Phase 2: after SafetyAgent Round 1 completes, calls
+  self.safety_evidence.patch_drug_drug_evidence() to stamp
+  correct pubmed_papers, fda_reports, and fda_label_sections_count
+  onto cached pair results. The agent reliably copies clinical text
+  for cached pairs but writes zeros for evidence counts — this patch
+  bypasses the agent for those three numeric fields entirely.
 """
 
 import os
@@ -217,11 +225,38 @@ class VabGenRxOrchestrator:
                 try:
                     result = future.result()
                     if label == "safety":
-                        safety_r1  = result
-                        print("   ✅ SafetyAgent Round 1 complete")
+                        # ── Patch evidence counts for cached pairs ─────
+                        # The agent copies clinical text correctly for
+                        # cached pairs but writes zeros for numeric
+                        # evidence fields (pubmed_papers, fda_reports,
+                        # fda_label_sections_count). Stamp the correct
+                        # values directly from raw evidence so the
+                        # frontend badges always render correctly —
+                        # both on first run and from cache.
+                        safety_r1 = (
+                            self.safety_evidence
+                            .patch_drug_drug_evidence(
+                                result,
+                                safety_evidence.get("drug_drug", {})
+                            )
+                        )
+                        print("   ✅ SafetyAgent Round 1 complete "
+                              "(evidence patched)")
                     elif label == "disease":
-                        disease_r1 = result
-                        print("   ✅ DiseaseAgent Round 1 complete")
+                        # ── Patch evidence counts for cached pairs ─
+                        # Same pattern as safety patch — agent writes
+                        # zeros for fda_label_sections_count on cached
+                        # disease pairs. Stamp correct values from raw
+                        # evidence so the frontend badge renders.
+                        disease_r1 = (
+                            self.disease_evidence
+                            .patch_drug_disease_evidence(
+                                result,
+                                disease_evidence
+                            )
+                        )
+                        print("   ✅ DiseaseAgent Round 1 complete "
+                              "(evidence patched)")
                     elif label == "dosing":
                         dosing_r1  = result
                         print("   ✅ DosingAgent Round 1 complete")
@@ -251,7 +286,6 @@ class VabGenRxOrchestrator:
             print(f"\n   ⚡ Phase 4 — Round 2 Re-evaluation "
                   f"(signals: {list(compounding_signals.keys())})")
 
-            # Determine which agents need to re-evaluate
             agents_to_rerun = set()
             for signal_data in compounding_signals.values():
                 for agent in signal_data.get("agents_to_rerun", []):
@@ -288,13 +322,16 @@ class VabGenRxOrchestrator:
 
             print("   ✅ Phase 4 complete")
         else:
-            print(f"\n   ⚡ Phase 4 — Skipped (no compounding signals)")
+            print(f"\n   ⚡ Phase 4 — Skipped "
+                  f"(no compounding signals)")
 
         # ── Phase 5 — Counselling (parallel services) ──────────────────
         print(f"\n   ⚡ Phase 5 — Counselling")
 
-        counselling_result = {"drug_counseling": [],
-                              "condition_counseling": []}
+        counselling_result = {
+            "drug_counseling":      [],
+            "condition_counseling": [],
+        }
 
         if workflow["run_counselling"]:
             counselling_result = self.counselling_agent.analyze(
@@ -345,38 +382,14 @@ class VabGenRxOrchestrator:
         )
 
         print(f"\n   📊 Analysis complete:")
-        print(
-            f"      drug_drug:            "
-            f"{len(final['drug_drug'])}"
-        )
-        print(
-            f"      drug_disease:         "
-            f"{len(final['drug_disease'])}"
-        )
-        print(
-            f"      drug_food:            "
-            f"{len(final['drug_food'])}"
-        )
-        print(
-            f"      drug_counseling:      "
-            f"{len(final['drug_counseling'])}"
-        )
-        print(
-            f"      condition_counseling: "
-            f"{len(final['condition_counseling'])}"
-        )
-        print(
-            f"      dosing_recs:          "
-            f"{len(final['dosing_recommendations'])}"
-        )
-        print(
-            f"      compounding_signals:  "
-            f"{len(compounding_signals)}"
-        )
-        print(
-            f"      risk_level:           "
-            f"{final['risk_summary']['level']}"
-        )
+        print(f"      drug_drug:            {len(final['drug_drug'])}")
+        print(f"      drug_disease:         {len(final['drug_disease'])}")
+        print(f"      drug_food:            {len(final['drug_food'])}")
+        print(f"      drug_counseling:      {len(final['drug_counseling'])}")
+        print(f"      condition_counseling: {len(final['condition_counseling'])}")
+        print(f"      dosing_recs:          {len(final['dosing_recommendations'])}")
+        print(f"      compounding_signals:  {len(compounding_signals)}")
+        print(f"      risk_level:           {final['risk_summary']['level']}")
 
         return {"status": "completed", "analysis": final}
 
@@ -442,8 +455,6 @@ class VabGenRxOrchestrator:
             sum(1 for r in all_dose if r.get("round2_updated"))
         )
 
-        # Risk level from orchestrator if available,
-        # otherwise compute from counts
         risk_level = orchestrator_result.get("risk_level") or (
             "HIGH"     if severe_count > 0 or contra_count > 0 else
             "MODERATE" if mod_count > 0 else
@@ -463,25 +474,25 @@ class VabGenRxOrchestrator:
             "dosing_recommendations": all_dose,
             "compounding_signals":    compounding_signals,
             "risk_summary": {
-                "level":                       risk_level,
-                "severe_count":                severe_count,
-                "moderate_count":              mod_count,
-                "contraindicated_count":       contra_count,
-                "dosing_adjustments_required": dose_adj_count,
+                "level":                         risk_level,
+                "severe_count":                  severe_count,
+                "moderate_count":                mod_count,
+                "contraindicated_count":         contra_count,
+                "dosing_adjustments_required":   dose_adj_count,
                 "compounding_patterns_detected": len(
                     compounding_signals
                 ),
-                "round2_updates":              round2_updates,
-                "clinical_summary":            orchestrator_result.get(
+                "round2_updates":                round2_updates,
+                "clinical_summary":              orchestrator_result.get(
                     "clinical_summary", ""
                 ),
-                "compounding_patterns":        orchestrator_result.get(
+                "compounding_patterns":          orchestrator_result.get(
                     "compounding_patterns", []
                 ),
-                "priority_actions":            orchestrator_result.get(
+                "priority_actions":              orchestrator_result.get(
                     "priority_actions", []
                 ),
-                "evidence_summary":            orchestrator_result.get(
+                "evidence_summary":              orchestrator_result.get(
                     "evidence_summary", {}
                 ),
             },

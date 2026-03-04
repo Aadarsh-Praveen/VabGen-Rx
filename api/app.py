@@ -3,15 +3,17 @@ VabGenRx — FastAPI Layer
 Clinical Intelligence Platform for Medication Safety
 
 CHANGES:
+- /agent/analyze/interactions now calls
+  safety_ev_svc.patch_drug_drug_evidence() and
+  disease_ev_svc.patch_drug_disease_evidence() after agent
+  synthesis so evidence badge counts (pubmed_papers,
+  fda_reports, fda_label_sections_count) are correctly
+  populated for cached pairs before the response is returned.
+  Previously the patch was only called inside
+  VabGenRxOrchestrator.analyze() — this route bypasses the
+  orchestrator so the patch was never running here.
 - /agent/analyze/summary no longer calls agent_service.analyze()
-  (full 6-phase pipeline). That was running the entire pipeline
-  a second time in parallel with the other phase endpoints,
-  causing doubled PubMed calls, doubled agent calls, and
-  non-deterministic signals from two independent SignalExtractor
-  runs. Now runs only OrchestratorAgent with patient context.
-- /agent/translate updated to accept new payload shape:
-    { language, drug_counseling, condition_counseling }
-- TranslateRequest model updated accordingly
+- /agent/translate updated to accept new payload shape
 - All other endpoints unchanged
 """
 
@@ -159,9 +161,6 @@ class DrugValidateRequest(BaseModel):
     drug_name: str
 
 
-# Updated: accepts drug_counseling + condition_counseling directly
-# Old shape: { language, content: { drugData, condData } }
-# New shape: { language, drug_counseling, condition_counseling }
 class TranslateRequest(BaseModel):
     language:             str
     drug_counseling:      List[Dict[str, Any]] = []
@@ -585,8 +584,11 @@ def analyze_interactions(req: AnalysisRequest):
     Runs evidence gathering + Safety + Disease agents.
     Returns drug_drug, drug_disease, drug_food,
     compounding_signals.
-    FIXED: saves results to SQL cache after synthesis so
-    re-analyse hits cache instead of re-running agents.
+
+    FIXED: calls patch_drug_drug_evidence() and
+    patch_drug_disease_evidence() after agent synthesis so
+    evidence badge counts are correctly populated for cached
+    pairs before the response is returned to the frontend.
     """
     if not req.medications:
         raise HTTPException(
@@ -633,7 +635,6 @@ def analyze_interactions(req: AnalysisRequest):
         safety_evidence  = sf.result()
         disease_evidence = df.result()
 
-    # Reuse orchestrator's existing agent instances
     safety_agent  = agent_service.safety_agent
     disease_agent = agent_service.disease_agent
 
@@ -663,9 +664,25 @@ def analyze_interactions(req: AnalysisRequest):
             label  = futures[future]
             result = future.result()
             if label == "safety":
-                safety_r1  = result or {"drug_drug": [], "drug_food": []}
+                safety_r1  = result or {
+                    "drug_drug": [], "drug_food": []
+                }
             else:
                 disease_r1 = result or {"drug_disease": []}
+
+    # ── Patch evidence counts for cached pairs ─────────────────────
+    # The agent copies clinical text correctly for cached pairs but
+    # writes zeros for pubmed_papers, fda_reports, and
+    # fda_label_sections_count. Stamp correct values directly from
+    # raw evidence — bypasses the agent for these numeric fields.
+    safety_r1  = safety_ev_svc.patch_drug_drug_evidence(
+        safety_r1,
+        safety_evidence.get("drug_drug", {})
+    )
+    disease_r1 = disease_ev_svc.patch_drug_disease_evidence(
+        disease_r1,
+        disease_evidence
+    )
 
     # ── Save drug-drug results to SQL cache ────────────────────────
     for item in safety_r1.get("drug_drug", []):
@@ -678,10 +695,18 @@ def analyze_interactions(req: AnalysisRequest):
                         "severity":         item.get("severity"),
                         "confidence":       item.get("confidence"),
                         "mechanism":        item.get("mechanism", ""),
-                        "clinical_effects": item.get("clinical_effects", ""),
-                        "recommendation":   item.get("recommendation", ""),
-                        "pubmed_papers":    item.get("evidence", {}).get("pubmed_papers", 0),
-                        "fda_reports":      item.get("evidence", {}).get("fda_reports", 0),
+                        "clinical_effects": item.get(
+                            "clinical_effects", ""
+                        ),
+                        "recommendation":   item.get(
+                            "recommendation", ""
+                        ),
+                        "pubmed_papers":    item.get(
+                            "evidence", {}
+                        ).get("pubmed_papers", 0),
+                        "fda_reports":      item.get(
+                            "evidence", {}
+                        ).get("fda_reports", 0),
                         "evidence":         item.get("evidence", {}),
                     }
                 )
@@ -696,16 +721,34 @@ def analyze_interactions(req: AnalysisRequest):
                     item.get("drug", ""),
                     item.get("disease", ""),
                     {
-                        "contraindicated":          item.get("contraindicated", False),
-                        "severity":                 item.get("severity"),
-                        "confidence":               item.get("confidence"),
-                        "clinical_evidence":        item.get("clinical_evidence", ""),
-                        "recommendation":           item.get("recommendation", ""),
-                        "alternative_drugs":        item.get("alternative_drugs", []),
-                        "pubmed_count":             item.get("evidence", {}).get("pubmed_papers", 0),
-                        "fda_label_sections_count": item.get("evidence", {}).get("fda_label_sections_count", 0),
-                        "fda_label_sections_found": item.get("evidence", {}).get("fda_label_sections_found", []),
-                        "evidence":         item.get("evidence", {}),
+                        "contraindicated":          item.get(
+                            "contraindicated", False
+                        ),
+                        "severity":                 item.get(
+                            "severity"
+                        ),
+                        "confidence":               item.get(
+                            "confidence"
+                        ),
+                        "clinical_evidence":        item.get(
+                            "clinical_evidence", ""
+                        ),
+                        "recommendation":           item.get(
+                            "recommendation", ""
+                        ),
+                        "alternative_drugs":        item.get(
+                            "alternative_drugs", []
+                        ),
+                        "pubmed_count":             item.get(
+                            "evidence", {}
+                        ).get("pubmed_papers", 0),
+                        "fda_label_sections_count": item.get(
+                            "evidence", {}
+                        ).get("fda_label_sections_count", 0),
+                        "fda_label_sections_found": item.get(
+                            "evidence", {}
+                        ).get("fda_label_sections_found", []),
+                        "evidence": item.get("evidence", {}),
                     }
                 )
             except Exception as e:
@@ -718,14 +761,28 @@ def analyze_interactions(req: AnalysisRequest):
                 cache.save_food(
                     item.get("drug", ""),
                     {
-                        "foods_to_avoid":              item.get("foods_to_avoid", []),
-                        "foods_to_separate":           item.get("foods_to_separate", []),
-                        "foods_to_monitor":            item.get("foods_to_monitor", []),
-                        "no_significant_interactions": item.get("no_significant_interactions", False),
-                        "mechanism_explanation":       item.get("mechanism", ""),
-                        "evidence_summary":            item.get("evidence", {}).get("evidence_summary", ""),
-                        "pubmed_count":                item.get("evidence", {}).get("pubmed_papers", 0),
-                        "evidence":         item.get("evidence", {}),
+                        "foods_to_avoid":    item.get(
+                            "foods_to_avoid", []
+                        ),
+                        "foods_to_separate": item.get(
+                            "foods_to_separate", []
+                        ),
+                        "foods_to_monitor":  item.get(
+                            "foods_to_monitor", []
+                        ),
+                        "no_significant_interactions": item.get(
+                            "no_significant_interactions", False
+                        ),
+                        "mechanism_explanation": item.get(
+                            "mechanism", ""
+                        ),
+                        "evidence_summary":  item.get(
+                            "evidence", {}
+                        ).get("evidence_summary", ""),
+                        "pubmed_count":      item.get(
+                            "evidence", {}
+                        ).get("pubmed_papers", 0),
+                        "evidence": item.get("evidence", {}),
                     }
                 )
             except Exception as e:
@@ -739,7 +796,9 @@ def analyze_interactions(req: AnalysisRequest):
             "age":        req.age or 45,
             "sex":        req.sex or "unknown",
             "conditions": diseases,
-            "egfr":       _labs_to_dict(req.patient_labs).get("egfr"),
+            "egfr":       _labs_to_dict(
+                req.patient_labs
+            ).get("egfr"),
         }
     )
 
@@ -751,6 +810,7 @@ def analyze_interactions(req: AnalysisRequest):
         "phase":               "interactions",
         "status":              "completed",
     }
+
 
 @app.post("/agent/analyze/dosing")
 def analyze_dosing(req: AnalysisRequest):
@@ -787,7 +847,6 @@ def analyze_dosing(req: AnalysisRequest):
     }
     dose_map = req.dose_map or {}
 
-    # Reuse orchestrator's existing dosing agent instance
     dosing_agent = agent_service.dosing_agent
 
     dosing_r1 = dosing_agent.analyze(
@@ -886,19 +945,9 @@ def analyze_summary(req: AnalysisRequest):
     """
     Phase 4 — Clinical summary via OrchestratorAgent only.
 
-    FIXED: No longer calls agent_service.analyze() (full pipeline).
-    Previously this triggered all 6 phases a second time in parallel
-    with the other phase endpoints, causing:
-      - Doubled PubMed calls → rate limit errors
-      - Two independent SignalExtractor runs → different signals
-        each time (non-determinism in compounding_signals)
-      - Doubled Azure AI agent calls → unnecessary cost
-      - drug_disease counts varying between runs (4, 5, 7)
-
-    Now runs only OrchestratorAgent with patient context.
-    The orchestrator produces clinical_summary, priority_actions,
-    compounding_patterns, and risk_level based on patient context.
-    The frontend merges all four phase results client-side.
+    No longer calls agent_service.analyze() (full pipeline).
+    Runs only OrchestratorAgent with patient context.
+    Frontend merges all four phase results client-side.
     """
     if not req.medications:
         raise HTTPException(
@@ -921,10 +970,8 @@ def analyze_summary(req: AnalysisRequest):
             detail      = "No valid medication names provided"
         )
 
-    # Reuse orchestrator's existing orchestrator agent instance
     orchestrator = agent_service.orchestrator_agent
-
-    labs = _labs_to_dict(req.patient_labs)
+    labs         = _labs_to_dict(req.patient_labs)
 
     patient_context = {
         "age":        req.age or 45,
@@ -937,17 +984,13 @@ def analyze_summary(req: AnalysisRequest):
         "pulse":      labs.get("pulse"),
     }
 
-    # Run orchestrator with empty specialist results.
-    # It produces a patient-context-aware clinical summary
-    # and risk level. The interactions phase results are not
-    # available yet since all four phases run in parallel.
-    # The frontend merges everything client-side.
     orchestrator_result = orchestrator.synthesize(
-        safety_result       = {"drug_drug":    [], "drug_food": []},
+        safety_result       = {"drug_drug": [], "drug_food": []},
         disease_result      = {"drug_disease": []},
         dosing_result       = {"dosing_recommendations": []},
         counselling_result  = {
-            "drug_counseling": [], "condition_counseling": []
+            "drug_counseling": [],
+            "condition_counseling": []
         },
         compounding_signals = {},
         patient_context     = patient_context,
@@ -1174,16 +1217,6 @@ def cache_stats():
 def translate_counselling(req: TranslateRequest):
     """
     Translate approved counselling content to preferred language.
-    Called by PatientCounselling preview modal when doctor
-    selects a non-English language.
-
-    Accepts:
-        { language, drug_counseling, condition_counseling }
-
-    Returns:
-        { drug_counseling, condition_counseling, translated, language }
-
-    Drug names, doses, and lab abbreviations are never translated.
     """
     if not translation_service.needs_translation(req.language):
         return {
@@ -1193,7 +1226,6 @@ def translate_counselling(req: TranslateRequest):
             "language":             req.language,
         }
 
-    # Build the structure translate_agent_result expects
     agent_result = {
         "drug_counseling":      req.drug_counseling,
         "condition_counseling": req.condition_counseling,

@@ -3,8 +3,15 @@ VabGenRx — Disease Agent
 Specialist agent for drug-disease contraindication synthesis.
 
 CHANGES:
-- _build_evidence_text iterates all FDA sections dynamically
-  No hardcoded section names anywhere
+- _build_evidence_text now injects FULL CONTENT of 9 core
+  clinical FDA sections directly into the prompt instead of
+  sending only a section index.
+- This fixes "Insufficient evidence" showing for pairs where
+  PubMed has 0 papers but FDA label has 19-21 sections —
+  previously agent could see section names but not content.
+- Remaining non-core sections still listed as index only.
+- Agent instruction updated: never return insufficient evidence
+  when FDA core content is present.
 """
 
 import json
@@ -19,6 +26,31 @@ _SKIP = {
     "found", "drug", "brand_names",
     "generic_names", "manufacturer",
 }
+
+# Admin sections — not clinically useful for drug-disease analysis
+_ADMIN = {
+    "package_label_principal_display_panel",
+    "spl_product_data_elements", "spl_medguide",
+    "recent_major_changes", "how_supplied",
+    "dosage_forms_and_strengths", "description",
+    "references", "set_id", "id", "version", "effective_time",
+}
+
+# Core sections — always injected with full content
+# These directly answer: is this drug safe for this disease?
+_CORE_SECTIONS = [
+    "boxed_warning",
+    "contraindications",
+    "warnings",
+    "warnings_and_cautions",
+    "warnings_and_precautions",
+    "drug_interactions",
+    "use_in_specific_populations",
+    "adverse_reactions",
+    "indications_and_usage",
+    "pregnancy",
+    "nursing_mothers",
+]
 
 
 class VabGenRxDiseaseAgent(_BaseAgent):
@@ -65,8 +97,10 @@ CRITICAL OUTPUT RULES — READ CAREFULLY
    clinical_evidence:
    → Describe the CLINICAL RISK to the patient in plain language
    → Explain why this drug is concerning in this disease state
+   → Use the FDA content provided — it contains real clinical data
    → NEVER write "There are multiple PubMed articles..."
    → NEVER write paper counts or PMIDs in this field
+   → NEVER write "insufficient evidence" if FDA content is present
    → ALWAYS describe the actual clinical risk to the patient
 
    recommendation:
@@ -77,7 +111,8 @@ CRITICAL OUTPUT RULES — READ CAREFULLY
    → List safer alternatives for this specific disease context
 
 2. EVIDENCE USE:
-   → Use evidence to determine severity and confidence
+   → Core FDA sections are provided in full — READ and USE them
+   → Even with 0 PubMed papers, FDA label content is real evidence
    → PMIDs and paper counts belong ONLY in evidence sub-object
    → Never mention evidence provenance in clinical fields
 
@@ -95,14 +130,15 @@ CRITICAL OUTPUT RULES — READ CAREFULLY
    → Commonly used together safely
 
    UNKNOWN / contraindicated=false:
-   → Zero evidence — only when has_any_evidence=false
+   → ONLY when has_any_evidence=false AND no FDA content present
+   → DO NOT use unknown if FDA core content was provided
 
 4. CONFIDENCE CALIBRATION:
    → Full FDA label (4+ sections) + 10+ papers → 0.88–0.95
    → Partial FDA label + 5+ papers              → 0.78–0.88
    → FDA label only (any sections)              → 0.70–0.80
    → Papers only (no FDA label)                 → 0.68–0.78
-   → Zero evidence                              → null
+   → Zero evidence of any kind                  → null
 
 5. MANDATORY COMPLETENESS:
    → Every pair must have populated clinical_evidence
@@ -113,12 +149,6 @@ CRITICAL OUTPUT RULES — READ CAREFULLY
 DRUG-DISEASE EVIDENCE:
 {evidence_text}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-For each pair you will see a list of available FDA sections
-with their character counts. Declare the sections you need
-in requested_sections[] — only the most clinically relevant
-ones for THIS specific drug-disease combination.
-Typically 3–6 sections are sufficient.
 
 Return ONLY valid JSON:
 {{
@@ -132,7 +162,7 @@ Return ONLY valid JSON:
       "clinical_evidence": "plain language clinical risk — no PMIDs",
       "recommendation":  "specific clinical action — never empty",
       "alternative_drugs": [],
-      "requested_sections": ["boxed_warning", "contraindications"],
+      "requested_sections": [],
       "compounding_flag":    false,
       "compounding_organs":  [],
       "round2_updated":      false,
@@ -242,21 +272,25 @@ Return ONLY a single valid JSON object:
 
         return result
 
-    # ── Evidence Text Builder — fully dynamic ─────────────────────
+    # ── Evidence Text Builder ─────────────────────────────────────
 
     def _build_evidence_text(self, evidence: Dict) -> str:
         """
-        Sends the agent a compact section INDEX per pair,
-        not the full FDA content.
+        For each drug-disease pair:
 
-        The index shows { section_name: char_count } so the agent
-        knows what exists and how substantial each section is.
-        The agent declares requested_sections[] in its JSON output.
-        Full content of only those sections is available via
-        inject_requested_sections() for targeted second passes.
+        1. Injects FULL CONTENT of core clinical sections directly
+           into the prompt — agent reads the actual FDA text.
+        2. Lists remaining sections as index — agent can reference
+           them in requested_sections[] if needed.
 
-        This keeps the prompt size proportional to the number of
-        pairs, not to the total size of all FDA label sections.
+        Core sections injected (up to 600 chars each):
+           boxed_warning, contraindications, warnings,
+           warnings_and_cautions, warnings_and_precautions,
+           drug_interactions, use_in_specific_populations,
+           adverse_reactions, indications_and_usage
+
+        This ensures the agent always has real evidence to reason
+        from even when PubMed has 0 papers for a pair.
         """
         if not evidence:
             return "No drug-disease pairs to analyze."
@@ -265,6 +299,7 @@ Return ONLY a single valid JSON object:
         for pair, ev in evidence.items():
             drug, disease = pair
 
+            # ── Cached result — use directly ───────────────────────
             if ev.get("cache_hit") and ev.get("cached_data"):
                 cached = ev["cached_data"]
                 parts.append(
@@ -282,24 +317,49 @@ Return ONLY a single valid JSON object:
                 )
                 continue
 
-            fda_found  = ev.get(
-                "fda_label_full", {}
-            ).get("found", False)
+            # ── Fresh result — inject core content ─────────────────
+            full_label = ev.get("fda_label_full", {})
+            fda_found  = full_label.get("found", False)
             sec_index  = ev.get("fda_section_index", {})
 
-            # ── Compact index — section name + char count ──────────
-            # Agent uses this to decide which sections to request.
-            # Sections ordered by size descending so most substantial
-            # content is visible first in the index.
-            sorted_index = sorted(
-                sec_index.items(),
-                key=lambda x: x[1],
-                reverse=True
+            # Step 1: Inject core sections with full content
+            core_lines = []
+            injected   = set()
+            for section in _CORE_SECTIONS:
+                content = full_label.get(section, "")
+                if content:
+                    label = section.replace("_", " ").upper()
+                    core_lines.append(
+                        f"  FDA {label}:\n"
+                        f"  {str(content)[:600]}\n"
+                    )
+                    injected.add(section)
+
+            core_text = (
+                "".join(core_lines)
+                or "  No core FDA sections found for this drug.\n"
             )
-            index_lines = "\n".join(
-                f"    {name} ({chars} chars)"
-                for name, chars in sorted_index
-            ) or "    No FDA sections available"
+
+            # Step 2: List remaining sections as index only
+            remaining = {
+                k: v for k, v in sec_index.items()
+                if k not in injected
+                and k not in _SKIP
+                and k not in _ADMIN
+                and not k.endswith("_table")
+            }
+            if remaining:
+                sorted_remaining = sorted(
+                    remaining.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
+                index_lines = "\n".join(
+                    f"    {name} ({chars} chars)"
+                    for name, chars in sorted_remaining
+                )
+            else:
+                index_lines = "    None"
 
             abstracts_text = ""
             for i, ab in enumerate(ev.get("abstracts", []), 1):
@@ -311,22 +371,34 @@ Return ONLY a single valid JSON object:
                 ev.get("pubmed_count", 0) > 0 or fda_found
             )
 
+            sections_found = ev.get(
+                "fda_label_sections_found", []
+            )
+
             parts.append(
                 f"PAIR: {drug} + {disease}\n"
-                f"  PubMed papers found: {ev.get('pubmed_count', 0)}\n"
-                f"  FDA label found: {fda_found}\n"
-                f"  FDA sections available "
-                f"({len(sec_index)} sections):\n"
+                f"  PubMed papers found: "
+                f"{ev.get('pubmed_count', 0)}\n"
+                f"  FDA label found: {fda_found} "
+                f"({len(sections_found)} sections total)\n"
+                f"\n"
+                f"  ── CORE FDA CONTENT (read and use this) ──\n"
+                f"{core_text}"
+                f"\n"
+                f"  ── ADDITIONAL SECTIONS "
+                f"(index — request if needed) ──\n"
                 f"{index_lines}\n"
-                f"  Research abstracts:\n{abstracts_text}"
+                f"\n"
+                f"  PubMed abstracts:\n"
+                f"{abstracts_text if abstracts_text else '  None found.\n'}"
+                f"\n"
                 f"  INSTRUCTION: "
-                f"{'Synthesize clinical assessment.' if has_any_evidence else 'Return severity=unknown confidence=null.'} "
-                f"Declare which FDA sections you need in "
-                f"requested_sections[] — the full content of "
-                f"those sections will be retrieved for you.\n"
+                f"{'Synthesize a real clinical assessment using the FDA content above. Do NOT return insufficient evidence if FDA content is present.' if has_any_evidence else 'Return severity=unknown confidence=null — truly no evidence found.'}\n"
             )
 
         return "\n\n".join(parts)
+
+    # ── Signal Context Builder ────────────────────────────────────
 
     def _build_signal_context(
         self,

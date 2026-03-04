@@ -3,13 +3,13 @@ VabGenRx — Disease Evidence Service
 Gathers drug-disease contraindication evidence in parallel.
 
 CHANGES:
-- No hardcoded section tiers or lists anywhere
-- FDA labels stored in full in memory (fda_label_full)
-- Only a compact section INDEX sent to the agent
-  { section_name: char_count } — agent declares what it needs
-- Admin/non-clinical sections excluded from index automatically
-- Section count printed once per drug, not once per pair
-- PubMed semaphore caps concurrent requests at 7 (under 10/s limit)
+- patch_drug_disease_evidence() added — mirrors the same pattern
+  as SafetyEvidenceService.patch_drug_drug_evidence().
+  Called by orchestrator after DiseaseAgent Round 1 completes.
+  For cached pairs the agent copies clinical text correctly but
+  writes zeros for evidence counts. This method stamps the correct
+  fda_label_sections_count and pubmed_papers directly from the
+  raw cached_data so the frontend badge always renders.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,18 +19,14 @@ from services.pubmed_service    import PubMedService
 from services.fda_service       import FDAService
 from services.cache_service     import AzureSQLCacheService
 from services.pubmed_semaphore  import PUBMED_SEMAPHORE
+from services.fda_semaphore     import FDA_SEMAPHORE
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
-# Keys that are metadata, not clinical content
 _SKIP = {
     "found", "drug", "brand_names",
     "generic_names", "manufacturer",
 }
 
-# Sections that are never clinically useful for drug-disease analysis
-# Excluded from the index sent to the agent
 _ADMIN_SECTIONS = {
     "package_label_principal_display_panel",
     "spl_product_data_elements",
@@ -47,17 +43,7 @@ _ADMIN_SECTIONS = {
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _build_section_index(label: dict) -> dict:
-    """
-    Build a compact index of available clinical sections.
-    Returns { section_name: character_count }.
-
-    Agent uses this index to decide which sections to request.
-    Administrative sections and table variants excluded.
-    No hardcoded list — built purely from what fda_service returned.
-    """
     return {
         k: len(str(v))
         for k, v in label.items()
@@ -73,18 +59,12 @@ def _get_section_content(
     sections: list,
     limit: int = 800
 ) -> dict:
-    """
-    Return full content of requested sections, truncated at limit.
-    Used after agent declares which sections it needs.
-    """
     return {
         s: str(label.get(s, ""))[:limit]
         for s in sections
         if label.get(s)
     }
 
-
-# ── Service ───────────────────────────────────────────────────────────────────
 
 class DiseaseEvidenceService:
 
@@ -114,13 +94,131 @@ class DiseaseEvidenceService:
 
         return self._gather_drug_disease(pairs)
 
+    # ── Patch method ──────────────────────────────────────────────
+
+    def patch_drug_disease_evidence(
+        self,
+        agent_result: Dict,
+        raw_evidence: Dict
+    ) -> Dict:
+        """
+        After DiseaseAgent.synthesize() returns, patch evidence
+        counts on cached pairs directly from raw cached_data.
+
+        The agent copies clinical text correctly for cached pairs
+        but writes zeros for fda_label_sections_count and
+        pubmed_papers. This method bypasses the agent for those
+        fields and stamps the correct values in directly.
+
+        Mirrors SafetyEvidenceService.patch_drug_drug_evidence().
+        """
+        dd_results = agent_result.get("drug_disease", [])
+        if not dd_results:
+            return agent_result
+
+        # Build lookup: (drug, disease) lower → raw evidence entry
+        ev_lookup = {}
+        for pair_key, ev in raw_evidence.items():
+            if not ev.get("cache_hit"):
+                continue
+            d   = str(pair_key[0]).lower()
+            dis = str(pair_key[1]).lower()
+            ev_lookup[(d, dis)] = ev
+
+        print(f"   🔍 Disease patch — ev_lookup keys: "
+              f"{list(ev_lookup.keys())}")
+        print(f"   🔍 Disease patch — agent items: "
+              f"{[(i.get('drug',''), i.get('disease','')) for i in dd_results]}")
+
+        for item in dd_results:
+            d   = str(item.get("drug",    "")).lower()
+            dis = str(item.get("disease", "")).lower()
+            key = (d, dis)
+
+            raw_ev = ev_lookup.get(key)
+            if not raw_ev:
+                print(f"   🔍 No cache hit match for: {key}")
+                continue
+
+            cached_data = raw_ev.get("cached_data", {})
+            cached_ev   = cached_data.get("evidence", {})
+
+            # Priority order:
+            # 1. nested evidence{} in cached blob  (new format)
+            # 2. top-level fields in cached blob   (old format)
+            # 3. raw evidence dict                 (fallback)
+            pubmed_papers = (
+                cached_ev.get("pubmed_papers")
+                or cached_data.get("pubmed_papers")
+                or cached_data.get("pubmed_count")
+                or raw_ev.get("pubmed_count", 0)
+            )
+            fda_sections = (
+                cached_ev.get("fda_label_sections_count")
+                or cached_data.get("fda_label_sections_count")
+                or raw_ev.get("fda_label_sections_count", 0)
+            )
+            sections_found = (
+                cached_ev.get("fda_label_sections_found")
+                or cached_data.get("fda_label_sections_found")
+                or raw_ev.get("fda_label_sections_found", [])
+            )
+
+            # ── Patch evidence counts ──────────────────────────
+            ev_out = item.get("evidence", {})
+            if not isinstance(ev_out, dict):
+                ev_out = {}
+
+            ev_out["pubmed_papers"]            = pubmed_papers
+            ev_out["fda_label_sections_count"] = fda_sections
+            ev_out["fda_label_sections_found"] = sections_found
+            item["evidence"]                   = ev_out
+
+            # ── Patch clinical fields from cached_data ─────────
+            # The agent is supposed to copy cached clinical fields
+            # exactly but at temperature=0 it still recalculates
+            # confidence and sometimes changes severity.
+            # Stamp all clinical fields directly from cached_data
+            # so the response is always identical to what was
+            # originally synthesized and stored.
+            if cached_data.get("confidence") is not None:
+                item["confidence"] = cached_data["confidence"]
+            if cached_data.get("severity"):
+                item["severity"] = cached_data["severity"]
+            if "contraindicated" in cached_data:
+                item["contraindicated"] = (
+                    cached_data["contraindicated"]
+                )
+            if cached_data.get("clinical_evidence"):
+                item["clinical_evidence"] = (
+                    cached_data["clinical_evidence"]
+                )
+            if cached_data.get("recommendation"):
+                item["recommendation"] = (
+                    cached_data["recommendation"]
+                )
+            if cached_data.get("alternative_drugs") is not None:
+                item["alternative_drugs"] = (
+                    cached_data["alternative_drugs"]
+                )
+
+            print(
+                f"   🔧 Patched cached disease: "
+                f"{item.get('drug')}+{item.get('disease')} — "
+                f"confidence={item.get('confidence')} "
+                f"severity={item.get('severity')} "
+                f"pubmed={pubmed_papers} "
+                f"fda_sections={fda_sections}"
+            )
+
+        return agent_result
+
     # ── Core ──────────────────────────────────────────────────────
 
     def _gather_drug_disease(
         self, pairs: List[Tuple[str, str]]
     ) -> Dict:
 
-        # ── Step 1: Parallel cache checks ─────────────────────────
         print(f"      Checking {len(pairs)} drug-disease caches "
               f"in parallel...")
         cache_results = {}
@@ -144,23 +242,32 @@ class DiseaseEvidenceService:
 
         evidence = {}
 
-        # Cache hits — no need to rebuild FDA content
         for pair, cached in cache_results.items():
             if cached is not None:
-                sections_found = cached.get(
-                    "fda_label_sections_found", []
+                cached_ev      = cached.get("evidence", {})
+                sections_found = (
+                    cached_ev.get("fda_label_sections_found")
+                    or cached.get("fda_label_sections_found", [])
+                )
+                sec_count = (
+                    cached_ev.get("fda_label_sections_count")
+                    or cached.get("fda_label_sections_count")
+                    or len(sections_found)
                 )
                 evidence[pair] = {
                     "cache_hit":                True,
                     "cached_data":              cached,
-                    "pubmed_count":             cached.get("pubmed_count", 0),
+                    "pubmed_count":             (
+                        cached.get("pubmed_papers", 0)
+                        or cached.get("pubmed_count", 0)
+                    ),
                     "pubmed_pmids":             cached.get("pmids", []),
                     "abstracts":                cached.get("abstracts", []),
                     "fda_label":                {},
                     "fda_label_full":           {},
                     "fda_section_index":        {},
                     "fda_label_sections_found": sections_found,
-                    "fda_label_sections_count": len(sections_found),
+                    "fda_label_sections_count": sec_count,
                 }
 
         miss_pairs   = [
@@ -175,25 +282,26 @@ class DiseaseEvidenceService:
               f"{len(miss_pairs)} pairs, "
               f"{len(unique_drugs)} unique drugs in parallel...")
 
-        # ── Step 2: FDA labels — one fetch per unique drug ─────────
-        # Not one per pair — fda_service in-memory cache handles
-        # deduplication but we avoid redundant calls entirely here
         contra_labels = {}
         dosing_labels = {}
+
+        def _get_contra(d):
+            with FDA_SEMAPHORE:
+                return self.fda.get_drug_contraindications(d)
+
+        def _get_dosing(d):
+            with FDA_SEMAPHORE:
+                return self.fda.get_dosing_label(d)
 
         with ThreadPoolExecutor(
             max_workers=min(len(unique_drugs) * 2, 10)
         ) as ex:
             cf = {
-                ex.submit(
-                    self.fda.get_drug_contraindications, d
-                ): d
+                ex.submit(_get_contra, d): d
                 for d in unique_drugs
             }
             df = {
-                ex.submit(
-                    self.fda.get_dosing_label, d
-                ): d
+                ex.submit(_get_dosing, d): d
                 for d in unique_drugs
             }
             all_futures = {**cf, **df}
@@ -213,8 +321,6 @@ class DiseaseEvidenceService:
                     else:
                         dosing_labels[drug] = {"found": False}
 
-        # ── Step 3: Merge labels + build section index per drug ────
-        # Printed ONCE per drug, not once per pair
         merged_labels   = {}
         section_indexes = {}
 
@@ -222,7 +328,6 @@ class DiseaseEvidenceService:
             cl = contra_labels.get(drug, {})
             dl = dosing_labels.get(drug, {})
 
-            # Merge — dosing label takes priority (richer content)
             merged = {
                 "found": (
                     cl.get("found", False) or
@@ -232,7 +337,6 @@ class DiseaseEvidenceService:
             for k, v in dl.items():
                 if k not in _SKIP and v:
                     merged[k] = v
-            # Fill gaps from contraindication label
             for k, v in cl.items():
                 if k not in _SKIP and v and not merged.get(k):
                     merged[k] = v
@@ -240,7 +344,6 @@ class DiseaseEvidenceService:
             merged_labels[drug]   = merged
             section_indexes[drug] = _build_section_index(merged)
 
-            # Print once per drug
             print(
                 f"      📋 {drug}: "
                 f"{len(section_indexes[drug])} clinical sections "
@@ -248,7 +351,6 @@ class DiseaseEvidenceService:
                 f"{', '.join(section_indexes[drug].keys())}"
             )
 
-        # ── Step 4: PubMed — rate-limited semaphore ────────────────
         pubmed_results = {}
 
         def _pubmed_search(pair):
@@ -274,7 +376,6 @@ class DiseaseEvidenceService:
                         "count": 0, "pmids": [], "abstracts": []
                     }
 
-        # ── Step 5: Build evidence dict per pair ───────────────────
         for pair in miss_pairs:
             drug, disease = pair
             pubmed        = pubmed_results.get(pair, {})
@@ -282,20 +383,16 @@ class DiseaseEvidenceService:
             sec_index     = section_indexes.get(drug, {})
 
             evidence[pair] = {
-                "cache_hit":    False,
-                "cached_data":  None,
-                "pubmed_count": pubmed.get("count", 0),
-                "pubmed_pmids": pubmed.get("pmids", [])[:5],
-                "abstracts":    [
+                "cache_hit":                 False,
+                "cached_data":               None,
+                "pubmed_count":              pubmed.get("count", 0),
+                "pubmed_pmids":              pubmed.get("pmids", [])[:5],
+                "abstracts":                 [
                     a["text"][:400]
                     for a in pubmed.get("abstracts", [])[:2]
                 ],
-                # Full label stored in memory — agent requests
-                # specific sections it needs via section index
                 "fda_label_full":            full_label,
-                # Only index sent to agent in evidence text
                 "fda_section_index":         sec_index,
-                # fda_label populated per-section on agent request
                 "fda_label":                 {},
                 "fda_label_sections_found":  list(sec_index.keys()),
                 "fda_label_sections_count":  len(sec_index),
@@ -303,7 +400,6 @@ class DiseaseEvidenceService:
 
         return evidence
 
-    # ── Public helper — inject section content after agent request ─
     def inject_requested_sections(
         self,
         evidence:           Dict,
@@ -312,17 +408,9 @@ class DiseaseEvidenceService:
         requested_sections: List[str],
         limit:              int = 800
     ) -> Dict:
-        """
-        After the agent declares which sections it needs,
-        inject their full content into the evidence dict.
-
-        Called by disease_agent if it wants to do a targeted
-        second-pass for high-severity findings.
-        """
         pair = (drug, disease)
         if pair not in evidence:
             return evidence
-
         full_label = evidence[pair].get("fda_label_full", {})
         content    = _get_section_content(
             full_label, requested_sections, limit

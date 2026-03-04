@@ -4,17 +4,22 @@ Access to 35M+ medical research papers
 U.S. National Library of Medicine
 
 CHANGES:
-- Added NCBI API key support — raises rate limit from 3 to 10
-  requests per second
-- _parse_abstracts guards against empty and non-XML responses
-- email updated to match NCBI account
+- Retry logic added to _search_and_fetch — on rate limit error
+  (HTTP 429 or non-XML JSON error response from NCBI) waits 2s
+  and retries once. This is the correct fix for rate limit errors
+  rather than holding the semaphore longer (which caused timeouts
+  and zero-evidence returns).
+- Semaphore import removed — semaphore is managed by callers
+  (safety_evidence.py, disease_evidence.py). This service does
+  not acquire it directly.
+- Sleep between esearch and efetch kept at 0.15s with API key.
 """
 
 import os
-import requests
 import time
+import requests
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional
+from typing import Dict, List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,7 +28,6 @@ load_dotenv()
 class PubMedService:
     """
     Interface to PubMed medical research database.
-    Free government API.
     With NCBI API key: 10 requests/second.
     Without key: 3 requests/second.
     """
@@ -45,10 +49,7 @@ class PubMedService:
     # ── Search methods ────────────────────────────────────────────
 
     def search_drug_interaction(
-        self,
-        drug1:       str,
-        drug2:       str,
-        max_results: int = 5
+        self, drug1: str, drug2: str, max_results: int = 5
     ) -> Dict:
         query = (
             f'("{drug1}"[Title/Abstract] AND '
@@ -58,10 +59,7 @@ class PubMedService:
         return self._search_and_fetch(query, max_results)
 
     def search_disease_contraindication(
-        self,
-        drug:        str,
-        disease:     str,
-        max_results: int = 5
+        self, drug: str, disease: str, max_results: int = 5
     ) -> Dict:
         query = (
             f'("{drug}"[Title/Abstract] AND '
@@ -73,9 +71,7 @@ class PubMedService:
         return self._search_and_fetch(query, max_results)
 
     def search_all_food_interactions_for_drug(
-        self,
-        drug:        str,
-        max_results: int = 10
+        self, drug: str, max_results: int = 10
     ) -> Dict:
         query = (
             f'("{drug}"[Title/Abstract] AND ('
@@ -90,12 +86,20 @@ class PubMedService:
     # ── Core search and fetch ─────────────────────────────────────
 
     def _search_and_fetch(
-        self,
-        query:       str,
-        max_results: int
+        self, query: str, max_results: int, _retry: bool = True
     ) -> Dict:
+        """
+        Execute esearch then efetch.
+        On rate limit error — wait 2s and retry once.
+        Semaphore is held by the caller, not here.
+        """
+        empty = {
+            'count': 0, 'pmids': [],
+            'abstracts': [], 'evidence_quality': 'none',
+        }
+
         try:
-            # ── Step 1: Search for PMIDs ──────────────────────────
+            # ── Step 1: esearch ───────────────────────────────────
             search_params = {
                 'db':      'pubmed',
                 'term':    query,
@@ -113,43 +117,48 @@ class PubMedService:
                 timeout = 10
             )
 
-            # Check for non-JSON error response
+            # ── Rate limit check — retry once ─────────────────────
+            if response.status_code == 429:
+                if _retry:
+                    print("PubMed rate limit hit (429) — "
+                          "waiting 2s and retrying...")
+                    time.sleep(2)
+                    return self._search_and_fetch(
+                        query, max_results, _retry=False
+                    )
+                print("PubMed rate limit hit — retry exhausted")
+                return empty
+
             try:
                 data = response.json()
             except Exception:
-                print(f"PubMed search returned non-JSON: "
-                      f"{response.text[:120]}")
-                return {
-                    'count':            0,
-                    'pmids':            [],
-                    'abstracts':        [],
-                    'evidence_quality': 'none',
-                }
+                raw = response.text[:200]
+                # NCBI returns JSON error on rate limit
+                if "rate limit" in raw.lower() and _retry:
+                    print(f"PubMed rate limit (JSON error) — "
+                          f"waiting 2s and retrying...")
+                    time.sleep(2)
+                    return self._search_and_fetch(
+                        query, max_results, _retry=False
+                    )
+                print(f"PubMed non-JSON response: {raw}")
+                return empty
 
             pmids = data.get(
                 'esearchresult', {}
             ).get('idlist', [])
             count = int(
-                data.get(
-                    'esearchresult', {}
-                ).get('count', 0)
+                data.get('esearchresult', {}).get('count', 0)
             )
 
             if not pmids:
-                return {
-                    'count':            count,
-                    'pmids':            [],
-                    'abstracts':        [],
-                    'evidence_quality': 'none',
-                }
+                return {**empty, 'count': count}
 
-            # ── Rate limiting ─────────────────────────────────────
-            # With API key: 10 req/s → 0.1s sleep sufficient
-            # Without key:  3 req/s  → 0.4s sleep required
+            # ── Sleep between esearch and efetch ──────────────────
             sleep_time = 0.15 if self.api_key else 0.4
             time.sleep(sleep_time)
 
-            # ── Step 2: Fetch abstracts ───────────────────────────
+            # ── Step 2: efetch ────────────────────────────────────
             fetch_params = {
                 'db':      'pubmed',
                 'id':      ','.join(pmids),
@@ -164,6 +173,17 @@ class PubMedService:
                 params  = fetch_params,
                 timeout = 15
             )
+
+            # ── Rate limit on efetch — retry whole call ───────────
+            if fetch_response.status_code == 429:
+                if _retry:
+                    print("PubMed efetch rate limit — "
+                          "waiting 2s and retrying...")
+                    time.sleep(2)
+                    return self._search_and_fetch(
+                        query, max_results, _retry=False
+                    )
+                return {**empty, 'count': count}
 
             abstracts        = self._parse_abstracts(
                 fetch_response.text
@@ -183,39 +203,23 @@ class PubMedService:
 
         except Exception as e:
             print(f"PubMed Error: {e}")
-            return {
-                'count':            0,
-                'pmids':            [],
-                'abstracts':        [],
-                'evidence_quality': 'none',
-            }
+            return empty
 
     # ── XML Parser ────────────────────────────────────────────────
 
     def _parse_abstracts(self, xml_text: str) -> List[Dict]:
-        """
-        Robustly parse PubMed XML response.
-
-        Guards against:
-        - Empty response
-        - Non-XML response (rate limit errors, HTML error pages)
-        - Malformed XML with nested tags
-        """
         abstracts = []
 
-        # Guard 1 — empty response
         if not xml_text or not xml_text.strip():
             return abstracts
 
-        # Guard 2 — non-XML response
-        # PubMed returns JSON error on rate limit
-        # or HTML on server errors
         stripped = xml_text.strip()
         if not stripped.startswith('<'):
-            print(
-                f"PubMed returned non-XML response: "
-                f"{stripped[:150]}"
-            )
+            # Check for rate limit in JSON error body
+            if "rate limit" in stripped.lower():
+                print(f"PubMed rate limit in efetch response")
+            else:
+                print(f"PubMed non-XML response: {stripped[:150]}")
             return abstracts
 
         try:
@@ -224,12 +228,8 @@ class PubMedService:
                 pmid_el = article.find(".//PMID")
                 pmid    = (
                     pmid_el.text
-                    if pmid_el is not None
-                    else "unknown"
+                    if pmid_el is not None else "unknown"
                 )
-
-                # Extract all AbstractText sections
-                # Some papers have multiple labelled sections
                 abstract_parts = article.findall(
                     ".//AbstractText"
                 )
@@ -246,7 +246,6 @@ class PubMedService:
                             f"/{pmid}/"
                         ),
                     })
-
         except ET.ParseError as e:
             print(f"XML Parse Error: {e}")
 
