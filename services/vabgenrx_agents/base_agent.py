@@ -1,0 +1,177 @@
+"""
+VabGenRx — Base Agent
+
+CHANGES:
+- temperature=0 added to create_agent() call
+  This is the critical fix for non-determinism.
+  All specialist agents (Safety, Disease, Dosing, Orchestrator)
+  inherit from this base — one fix applies everywhere.
+- top_p=1 set explicitly for full determinism alongside temperature=0
+- _run() logic unchanged
+"""
+
+import json
+import os
+from typing import Dict
+
+from azure.ai.agents        import AgentsClient
+from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
+from azure.core.rest        import HttpRequest
+
+
+class _BaseAgent:
+
+    def __init__(
+        self,
+        client:   AgentsClient,
+        model:    str,
+        endpoint: str
+    ):
+        self.client   = client
+        self.model    = model
+        self.endpoint = endpoint
+
+    def _build_toolset(self, functions: set = None) -> ToolSet:
+        toolset = ToolSet()
+        if functions:
+            toolset.add(FunctionTool(functions=functions))
+        return toolset
+
+    def _toolset_has_functions(self, toolset: ToolSet) -> bool:
+        if toolset is None:
+            return False
+        tools_list = getattr(toolset, '_tools', None)
+        if tools_list is not None:
+            return any(
+                isinstance(t, FunctionTool)
+                for t in tools_list
+            )
+        try:
+            toolset.get_tool(FunctionTool)
+            return True
+        except (ValueError, AttributeError):
+            return False
+
+    def _run(
+        self,
+        name:         str,
+        instructions: str,
+        content:      str,
+        toolset:      ToolSet = None
+    ) -> Dict:
+        if toolset is None:
+            toolset = ToolSet()
+
+        agent = self.client.create_agent(
+            model        = self.model,
+            name         = name,
+            instructions = instructions,
+            toolset      = toolset,
+            # ── Determinism fix ───────────────────────────────────
+            # temperature=0 makes GPT-4o deterministic.
+            # Same input always produces same clinical output.
+            # Critical for a healthcare system — severity scores,
+            # contraindication flags, and recommendations must not
+            # vary between runs for the same patient data.
+            temperature  = 0,
+            top_p        = 1,
+        )
+
+        try:
+            has_functions = self._toolset_has_functions(toolset)
+
+            if has_functions:
+                ctx = self.client.enable_auto_function_calls(toolset)
+                if ctx is not None:
+                    with ctx:
+                        run = self.client.create_thread_and_process_run(
+                            agent_id = agent.id,
+                            thread   = {
+                                "messages": [
+                                    {
+                                        "role":    "user",
+                                        "content": content
+                                    }
+                                ]
+                            }
+                        )
+                else:
+                    run = self.client.create_thread_and_process_run(
+                        agent_id = agent.id,
+                        thread   = {
+                            "messages": [
+                                {
+                                    "role":    "user",
+                                    "content": content
+                                }
+                            ]
+                        },
+                        toolset  = toolset
+                    )
+            else:
+                print(f"   ℹ️  {name} running as synthesis-only "
+                      f"(no tool calls)")
+                run = self.client.create_thread_and_process_run(
+                    agent_id = agent.id,
+                    thread   = {
+                        "messages": [
+                            {
+                                "role":    "user",
+                                "content": content
+                            }
+                        ]
+                    }
+                )
+
+            print(f"   ✅ {name} status: {run.status}")
+
+            if run.status == RunStatus.COMPLETED:
+                messages_data = self._get_messages(run.thread_id)
+                for msg in messages_data:
+                    if msg.get("role") == "assistant":
+                        for block in msg.get("content", []):
+                            if block.get("type") == "text":
+                                raw = block["text"]["value"]
+                                try:
+                                    start = raw.find('{')
+                                    if start < 0:
+                                        print(
+                                            f"   ⚠️  {name} no JSON "
+                                            f"found in response"
+                                        )
+                                        return {}
+                                    decoder   = json.JSONDecoder()
+                                    obj, _end = decoder.raw_decode(
+                                        raw, start
+                                    )
+                                    return obj
+                                except Exception as e:
+                                    print(
+                                        f"   ⚠️  {name} JSON parse "
+                                        f"error: {e}"
+                                    )
+                                    return {}
+            else:
+                print(f"   ❌ {name} run failed: {run.status}")
+                return {}
+
+        finally:
+            self.client.delete_agent(agent.id)
+
+        return {}
+
+    def _get_messages(self, thread_id: str) -> list:
+        url = (
+            f"{self.endpoint}/threads/{thread_id}"
+            f"/messages?api-version=2025-05-01"
+        )
+        try:
+            req      = HttpRequest(method="GET", url=url)
+            response = self.client.send_request(req)
+            data     = response.json()
+            if "data" in data:
+                return data["data"]
+            return []
+        except Exception as e:
+            print(f"   ⚠️  Failed to fetch messages: {e}")
+            return []

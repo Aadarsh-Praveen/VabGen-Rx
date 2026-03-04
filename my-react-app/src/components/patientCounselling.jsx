@@ -12,17 +12,14 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
   const drugCounseling      = agentResult?.drug_counseling      || [];
   const conditionCounseling = agentResult?.condition_counseling || [];
 
-  const [denied,     setDenied]     = useState({});
-
-
-  // ── Preview modal state ──────────────────────────────────────
-  const [showPreview,   setShowPreview]   = useState(false);
-  const [langSearch,    setLangSearch]    = useState("");
-  const [selectedLang,  setSelectedLang]  = useState("English");
-  const [showLangDrop,  setShowLangDrop]  = useState(false);
-  const [translated,    setTranslated]    = useState(null);
-  const [translating,   setTranslating]   = useState(false);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [denied,       setDenied]       = useState({});
+  const [showPreview,  setShowPreview]  = useState(false);
+  const [langSearch,   setLangSearch]   = useState("");
+  const [selectedLang, setSelectedLang] = useState("English");
+  const [showLangDrop, setShowLangDrop] = useState(false);
+  const [translated,   setTranslated]   = useState(null);
+  const [translating,  setTranslating]  = useState(false);
+  const [pdfGenerating,setPdfGenerating]= useState(false);
 
   const langRef = useRef(null);
 
@@ -35,7 +32,10 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
 
   // Close lang dropdown on outside click
   useEffect(() => {
-    const fn = (e) => { if (langRef.current && !langRef.current.contains(e.target)) setShowLangDrop(false); };
+    const fn = (e) => {
+      if (langRef.current && !langRef.current.contains(e.target))
+        setShowLangDrop(false);
+    };
     document.addEventListener("mousedown", fn);
     return () => document.removeEventListener("mousedown", fn);
   }, []);
@@ -56,8 +56,10 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
 
   // ── Collect only non-denied points for preview ───────────────
   const approvedDrugData = drugCounseling.map((drug, di) => ({
-    drug:   drug.drug,
-    points: (drug.counseling_points || []).filter((_, pi) => !denied[`drug-${di}-${pi}`]),
+    drug:            drug.drug,
+    points:          (drug.counseling_points || []).filter((_, pi) => !denied[`drug-${di}-${pi}`]),
+    key_monitoring:  drug.key_monitoring  || "",
+    patient_summary: drug.patient_summary || "",
   })).filter(d => d.points.length > 0);
 
   const approvedCondData = conditionCounseling.map((cond, ci) => ({
@@ -73,18 +75,67 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
     if (lang === "English") { setTranslated(null); return; }
     setTranslating(true);
     try {
-      const res  = await fetch("/agent/translate", {
+      // Remap frontend shape → backend shape
+      // Frontend uses: points[]
+      // Backend expects: counseling_points[]
+      const drug_counseling = approvedDrugData.map(d => ({
+        drug:              d.drug,
+        counseling_points: d.points,
+        key_monitoring:    d.key_monitoring  || "",
+        patient_summary:   d.patient_summary || "",
+      }));
+
+      const condition_counseling = approvedCondData.map(c => ({
+        condition:  c.condition,
+        exercise:   c.exercise  || [],
+        diet:       c.diet      || [],
+        lifestyle:  c.lifestyle || [],
+        safety:     c.safety    || [],
+        monitoring: c.monitoring || "",
+        follow_up:  c.follow_up  || "",
+      }));
+
+      const res = await fetch("/agent/translate", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           language: lang,
-          content:  { drugData: approvedDrugData, condData: approvedCondData },
+          drug_counseling,
+          condition_counseling,
         }),
       });
+
       const data = await res.json();
-      setTranslated(data.translated || null);
-    } catch { setTranslated(null); }
-    finally { setTranslating(false); }
+
+      if (!data.drug_counseling && !data.condition_counseling) {
+        console.error("Translation returned empty:", data);
+        setTranslated(null);
+        return;
+      }
+
+      // Remap backend response → frontend shape
+      // Backend returns: counseling_points[]
+      // Frontend needs:  points[]
+      const translatedDrugData = (data.drug_counseling || []).map(d => ({
+        drug:            d.drug,
+        points:          d.counseling_points || [],
+        key_monitoring:  d.key_monitoring    || "",
+        patient_summary: d.patient_summary   || "",
+      }));
+
+      const translatedCondData = data.condition_counseling || [];
+
+      setTranslated({
+        drugData: translatedDrugData,
+        condData: translatedCondData,
+      });
+
+    } catch (err) {
+      console.error("Translation error:", err);
+      setTranslated(null);
+    } finally {
+      setTranslating(false);
+    }
   };
 
   const handleSelectLang = (lang) => {
@@ -281,7 +332,7 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
 
   // ── Single counselling point row ─────────────────────────────
   const CounselItem = ({ itemKey, icon, title, severity, urgency, detail }) => {
-    const isDenied = denied[itemKey];
+    const isDenied   = denied[itemKey];
     const badgeLevel = severity || urgency;
     return (
       <div className={`pcoun-item${isDenied ? " pcoun-item-denied" : ""}`}>

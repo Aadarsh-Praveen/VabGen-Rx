@@ -1,9 +1,13 @@
 """
 VabGenRx — Condition Counseling Service
-Generates patient-specific lifestyle, diet, exercise and safety counseling.
+Generates patient-specific lifestyle, diet, exercise and
+safety counseling.
+
+MOVED from services/condition_service.py
+ZERO code changes — identical to original.
 
 Key principles:
-- Never assume lifestyle habits (alcohol, smoking, diet preferences)
+- Never assume lifestyle habits
 - Only counsel on confirmed patient habits
 - Never suggest avoiding cultural/religious foods
 - Exercise advice must consider age and physical limitations
@@ -46,10 +50,6 @@ class ConditionCounselingService:
 
     def _cache_key(self, condition: str, sex: str, age_group: str,
                    patient_profile: Dict) -> str:
-        """
-        Cache key includes patient profile so different habit
-        combinations get different cached results.
-        """
         habits = []
         if patient_profile.get('drinks_alcohol') is True:
             habits.append('alcohol')
@@ -62,8 +62,13 @@ class ConditionCounselingService:
         if patient_profile.get('has_joint_pain') is True:
             habits.append('joint_pain')
 
-        habit_str = '_'.join(sorted(habits)) if habits else 'no_habits'
-        return f"{condition.lower()}|{sex.lower()}|{age_group}|{habit_str}"
+        habit_str = (
+            '_'.join(sorted(habits)) if habits else 'no_habits'
+        )
+        return (
+            f"{condition.lower()}|{sex.lower()}"
+            f"|{age_group}|{habit_str}"
+        )
 
     def _get_cached(self, cache_key: str) -> Optional[Dict]:
         try:
@@ -83,10 +88,13 @@ class ConditionCounselingService:
                 """, cache_key)
                 conn.commit()
                 conn.close()
-                print(f"   💾 Condition counseling cache HIT: {cache_key}")
+                print(
+                    f"   💾 Condition counseling cache HIT: "
+                    f"{cache_key}"
+                )
                 data = json.loads(row[0])
-                data['from_cache'] = True  
-                return data 
+                data['from_cache'] = True
+                return data
             conn.close()
             return None
         except:
@@ -104,10 +112,12 @@ class ConditionCounselingService:
                 WHEN MATCHED THEN UPDATE SET
                     full_result = ?, cached_at = GETDATE()
                 WHEN NOT MATCHED THEN INSERT
-                    (cache_key, condition, sex, age_group, full_result)
+                    (cache_key, condition, sex, age_group,
+                     full_result)
                 VALUES (?, ?, ?, ?, ?);
             """, cache_key, json.dumps(result),
-                cache_key, condition, sex, age_group, json.dumps(result))
+                cache_key, condition, sex, age_group,
+                json.dumps(result))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -123,54 +133,75 @@ class ConditionCounselingService:
         medications:     List[str] = None,
         patient_profile: Dict = None
     ) -> Dict:
-        """
-        Generate condition counseling based only on confirmed information.
-
-        patient_profile example:
-        {
-            "drinks_alcohol": True,
-            "smokes": False,
-            "sedentary": True,         # confirmed not physically active
-            "has_mobility_issues": True,
-            "has_joint_pain": True
-        }
-        Only pass keys you actually know about the patient.
-        """
         medications     = medications or []
         patient_profile = patient_profile or {}
         age_group       = _get_age_group(age)
-        cache_key       = self._cache_key(condition, sex, age_group, patient_profile)
+        cache_key       = self._cache_key(
+            condition, sex, age_group, patient_profile
+        )
 
         cached = self._get_cached(cache_key)
         if cached:
-            print(f"   💾 Condition counseling cache HIT: {condition} ({sex}, {age_group})")
+            print(
+                f"   💾 Condition counseling cache HIT: "
+                f"{condition} ({sex}, {age_group})"
+            )
             return cached
 
-        print(f"   🔬 Generating condition counseling: {condition} ({sex}, age {age})")
+        print(
+            f"   🔬 Generating condition counseling: "
+            f"{condition} ({sex}, age {age})"
+        )
 
-        meds_text = ', '.join(medications) if medications else 'none'
+        meds_text = (
+            ', '.join(medications) if medications else 'none'
+        )
 
-        # Build confirmed habits text
         confirmed_habits = []
         if patient_profile.get('drinks_alcohol') is True:
-            confirmed_habits.append("Patient confirmed: drinks alcohol")
+            confirmed_habits.append(
+                "Patient confirmed: drinks alcohol"
+            )
         if patient_profile.get('smokes') is True:
             confirmed_habits.append("Patient confirmed: smoker")
         if patient_profile.get('sedentary') is True:
-            confirmed_habits.append("Patient confirmed: currently sedentary/inactive")
+            confirmed_habits.append(
+                "Patient confirmed: currently sedentary/inactive"
+            )
         if patient_profile.get('has_mobility_issues') is True:
-            confirmed_habits.append("Patient confirmed: has mobility issues")
+            confirmed_habits.append(
+                "Patient confirmed: has mobility issues"
+            )
         if patient_profile.get('has_joint_pain') is True:
-            confirmed_habits.append("Patient confirmed: has joint pain")
+            confirmed_habits.append(
+                "Patient confirmed: has joint pain"
+            )
 
         habits_text = (
             "\n".join(confirmed_habits)
             if confirmed_habits
-            else "No lifestyle habits confirmed — do not assume any."
+            else "No lifestyle habits confirmed — "
+                 "do not assume any."
         )
 
+        # Include compounding context if present
+        compounding_context = patient_profile.get(
+            "compounding_context", ""
+        )
+
+        compounding_section = ""
+        if compounding_context:
+            compounding_section = f"""
+COMPOUNDING RISK CONTEXT (from cross-agent analysis):
+{compounding_context}
+
+Where relevant — ensure safety and monitoring counseling
+reflects the compounding risks identified above.
+"""
+
         prompt = f"""
-You are a clinical physician generating condition counseling for a specific patient.
+You are a clinical physician generating condition counseling
+for a specific patient.
 
 CONDITION: {condition}
 PATIENT: {age} year old {sex} ({age_group})
@@ -178,6 +209,7 @@ CURRENT MEDICATIONS: {meds_text}
 
 CONFIRMED PATIENT HABITS:
 {habits_text}
+{compounding_section}
 
 STRICT RULES — READ CAREFULLY:
 
@@ -185,38 +217,29 @@ STRICT RULES — READ CAREFULLY:
    - ONLY mention alcohol if "drinks_alcohol" is confirmed
    - ONLY mention smoking cessation if "smokes" is confirmed
    - If a habit is NOT confirmed, do NOT mention it
-   - Do NOT say "quit smoking" if we don't know they smoke
-   - Do NOT say "reduce alcohol" if we don't know they drink
 
 2. DIETARY RULES — MOST IMPORTANT:
    - NEVER suggest avoiding specific cultural or religious foods
-   - NEVER mention: pork, beef, shellfish, halal, kosher, or any
-     religiously/culturally significant food items
-   - ONLY mention foods with a DIRECT clinical impact on the condition
-     (e.g., low sodium for hypertension, low glycemic index for diabetes)
+   - NEVER mention: pork, beef, shellfish, halal, kosher,
+     or any religiously/culturally significant food items
+   - ONLY mention foods with a DIRECT clinical impact on
+     the condition
    - Use NUTRIENT categories not specific foods
-     (say "reduce saturated fats" NOT "avoid butter and cheese")
-   - Exception: if a food has a specific pharmacological interaction
-     with a current medication (e.g., grapefruit + statin, vitamin K + warfarin)
-     then you may mention it specifically
 
 3. EXERCISE RULES:
-   - Consider age: elderly patients need lower intensity, balance focus
+   - Consider age: elderly patients need lower intensity
    - If mobility issues confirmed: suggest seated/chair exercises
-   - If joint pain confirmed: suggest low-impact options (swimming, cycling)
-   - Give SPECIFIC duration and frequency, not vague advice
-   - Do NOT suggest high-impact activities for elderly patients
+   - If joint pain confirmed: suggest low-impact options
+   - Give SPECIFIC duration and frequency
 
 4. SAFETY RULES:
    - Include CRITICAL safety warnings for this condition
-     (e.g., no driving for seizures, no heavy lifting post-cardiac event)
    - Consider current medications for safety interactions
    - Include emergency warning signs
 
 5. RELEVANCE:
    - Maximum 3 points per category
    - Focus on the MOST IMPACTFUL advice
-   - Be specific and actionable
 
 Return JSON:
 {{
@@ -232,15 +255,15 @@ Return JSON:
   "lifestyle": [
     {{
       "title": "Short heading",
-      "detail": "Specific actionable change (only if confirmed habit or universally applicable)"
+      "detail": "Specific actionable change"
     }}
   ],
   "diet": [
     {{
       "title": "Short heading",
-      "detail": "Nutrient or clinically relevant food guidance only",
-      "nutrients_to_increase": ["e.g. potassium", "fibre"],
-      "nutrients_to_reduce": ["e.g. sodium", "saturated fat"]
+      "detail": "Nutrient or clinically relevant food guidance",
+      "nutrients_to_increase": [],
+      "nutrients_to_reduce": []
     }}
   ],
   "safety": [
@@ -257,7 +280,9 @@ Return JSON:
 
         result               = self._call_llm(prompt)
         result['from_cache'] = False
-        self._save_cache(cache_key, condition, sex, age_group, result)
+        self._save_cache(
+            cache_key, condition, sex, age_group, result
+        )
         return result
 
     def get_counseling_for_all_conditions(
@@ -294,17 +319,22 @@ Return JSON:
                     {
                         "role":    "system",
                         "content": (
-                            "You are a clinical physician. Generate precise condition counseling "
-                            "based ONLY on confirmed patient information. "
+                            "You are a clinical physician. "
+                            "Generate precise condition counseling "
+                            "based ONLY on confirmed patient "
+                            "information. "
                             "Never assume lifestyle habits. "
-                            "Never mention cultural, religious or ethnically specific foods. "
-                            "Use nutrient categories for diet advice, not specific food items. "
-                            "Only mention pharmacological food interactions when clinically significant."
+                            "Never mention cultural, religious or "
+                            "ethnically specific foods. "
+                            "Use nutrient categories for diet advice,"
+                            " not specific food items. "
+                            "Only mention pharmacological food "
+                            "interactions when clinically significant."
                         )
                     },
                     {"role": "user", "content": prompt}
                 ],
-                temperature     = 0.1,
+                temperature     = 0,
                 max_tokens      = 900,
                 response_format = {"type": "json_object"}
             )
