@@ -14,7 +14,6 @@ import OutOfStockFinder       from "./outOfStockFinder";
 import PatientCounselling     from "./patientCounselling";
 
 // ── Loading state constants ────────────────────────────────────────
-// All phases start loading simultaneously — parallel execution
 const LOADING_IDLE = {
   interactions: false,
   dosing:       false,
@@ -29,14 +28,29 @@ const LOADING_ALL = {
   summary:      true,
 };
 
+// ── Helper — bucket agentResult into DB shape ─────────────────────
+function buildInteractionPayload(patientNo, isOutpatient, agentResult) {
+  const dd   = agentResult?.drug_drug    || [];
+  const ddis = agentResult?.drug_disease || [];
+  const df   = agentResult?.drug_food    || [];
+  return {
+    ...(isOutpatient ? { op_no: patientNo } : { ip_no: patientNo }),
+    dd_severe:            dd.filter(x => x.severity === "severe"),
+    dd_moderate:          dd.filter(x => x.severity === "moderate"),
+    dd_minor:             dd.filter(x => x.severity !== "severe" && x.severity !== "moderate"),
+    ddis_contraindicated: ddis.filter(x => x.contraindicated),
+    ddis_moderate:        ddis.filter(x => !x.contraindicated && x.severity === "moderate"),
+    ddis_minor:           ddis.filter(x => !x.contraindicated && x.severity !== "moderate"),
+    drug_food:            df,
+  };
+}
+
 const DiagnosisTab = ({ p, user }) => {
   const isOutpatient = !!p.OP_No;
   const patientNo    = p.OP_No || p.IP_No;
 
   // ── State ──────────────────────────────────────────────────────
-  const [diagnosis, setDiagnosis]     = useState({
-    primary: "", secondary: "", notes: ""
-  });
+  const [diagnosis, setDiagnosis]     = useState({ primary: "", secondary: "", notes: "" });
   const [diagLoading, setDiagLoading] = useState(true);
   const [saving, setSaving]           = useState(false);
   const [saveMsg, setSaveMsg]         = useState(null);
@@ -53,17 +67,13 @@ const DiagnosisTab = ({ p, user }) => {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching]     = useState(false);
   const [newMed, setNewMed]           = useState(null);
-  const [newForm, setNewForm]         = useState({
-    route: "", frequency: "", days: ""
-  });
+  const [newForm, setNewForm]         = useState({ route: "", frequency: "", days: "" });
   const [newErrors, setNewErrors]     = useState({});
   const [addSaving, setAddSaving]     = useState(false);
   const [editingId, setEditingId]     = useState(null);
   const [editValues, setEditValues]   = useState({});
   const [menuPos, setMenuPos]         = useState({ top: 0, left: 0 });
-  const [dropdownPos, setDropdownPos] = useState({
-    top: 0, left: 0, width: 0
-  });
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const [prescriberNotes, setPrescriberNotes] = useState([]);
   const [noteText, setNoteText]               = useState("");
   const [noteSaving, setNoteSaving]           = useState(false);
@@ -78,16 +88,17 @@ const DiagnosisTab = ({ p, user }) => {
   const [pdfGenerating,  setPdfGenerating]  = useState(false);
 
   // ── Agent state ────────────────────────────────────────────────
-  const [agentResult,  setAgentResult]  = useState(null);
-  const [loadingState, setLoadingState] = useState(LOADING_IDLE);
-  const [agentError,   setAgentError]   = useState(null);
+  const [agentResult,    setAgentResult]    = useState(null);
+  const [loadingState,   setLoadingState]   = useState(LOADING_IDLE);
+  const [agentError,     setAgentError]     = useState(null);
+  const [wasInterrupted, setWasInterrupted] = useState(false);
 
-  // Derived — true if any phase is still loading
   const agentLoading = Object.values(loadingState).some(Boolean);
 
   const searchInputRef      = useRef(null);
   const debounceRef         = useRef(null);
   const analysisDebounceRef = useRef(null);
+  const abortRef            = useRef(null);
 
   // ── Fetch medications ──────────────────────────────────────────
   const fetchMeds = async () => {
@@ -98,7 +109,13 @@ const DiagnosisTab = ({ p, user }) => {
         : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`;
       const res  = await apiFetch(ep);
       const data = await res.json();
-      if (res.ok) setMedications(data.prescriptions || []);
+      if (res.ok) {
+        // Map Is_Held (DB bit 0/1) → held (boolean) for UI
+        setMedications((data.prescriptions || []).map(m => ({
+          ...m,
+          held: m.Is_Held === true || m.Is_Held === 1,
+        })));
+      }
     } catch { setMedications([]); }
     finally  { setMedLoading(false); }
   };
@@ -116,7 +133,12 @@ const DiagnosisTab = ({ p, user }) => {
   };
 
   useEffect(() => { fetchMeds(); fetchNotes(); }, [patientNo]);
-  useEffect(() => () => clearTimeout(analysisDebounceRef.current), []);
+
+  useEffect(() => () => {
+    clearTimeout(analysisDebounceRef.current);
+    abortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     const close = () => setOpenMenu(null);
     document.addEventListener("click", close);
@@ -144,6 +166,144 @@ const DiagnosisTab = ({ p, user }) => {
     };
     load();
   }, [patientNo]);
+
+  // ── Load ALL saved data together (MERGED) ──────────────────────
+  // ⚠️ CRITICAL: ALL sources must be fetched in ONE useEffect and
+  // merged into ONE setAgentResult call to avoid race conditions.
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const diEp = isOutpatient
+          ? `/api/op-drug-interactions/${encodeURIComponent(patientNo)}`
+          : `/api/ip-drug-interactions/${encodeURIComponent(patientNo)}`;
+        const drEp = isOutpatient
+          ? `/api/op-dosing-recommendations/${encodeURIComponent(patientNo)}`
+          : `/api/ip-dosing-recommendations/${encodeURIComponent(patientNo)}`;
+        const pcEp = isOutpatient
+          ? `/api/op-patient-counselling/${encodeURIComponent(patientNo)}`
+          : `/api/ip-patient-counselling/${encodeURIComponent(patientNo)}`;
+
+        // Fetch all three in parallel
+        const [diRes, drRes, pcRes] = await Promise.all([
+          apiFetch(diEp),
+          apiFetch(drEp),
+          apiFetch(pcEp),
+        ]);
+
+        const diData = await diRes.json();
+        const drData = await drRes.json();
+        const pcData = await pcRes.json();
+
+        // Parse interactions
+        const s = (diRes.ok && diData.found && diData.data) ? diData.data : null;
+        const drug_drug = s ? [
+          ...(s.drug_drug.severe   || []),
+          ...(s.drug_drug.moderate || []),
+          ...(s.drug_drug.minor    || []),
+        ] : [];
+        const drug_disease = s ? [
+          ...(s.drug_disease.contraindicated || []),
+          ...(s.drug_disease.moderate        || []),
+          ...(s.drug_disease.minor           || []),
+        ] : [];
+        const drug_food = s ? (s.drug_food || []) : [];
+
+        // Parse dosing
+        const d = (drRes.ok && drData.found && drData.data) ? drData.data : null;
+        const dosing_recommendations = d
+          ? [...(d.high || []), ...(d.medium || [])]
+          : [];
+
+        // Parse counselling
+        const c = (pcRes.ok && pcData.found && pcData.data) ? pcData.data : null;
+        const drug_counseling      = c ? (c.drug_counselling      || []) : [];
+        const condition_counseling = c ? (c.condition_counselling || []) : [];
+
+        // Only set state if we have something to show
+        if (
+          drug_drug.length > 0 || drug_disease.length > 0 ||
+          drug_food.length > 0 || dosing_recommendations.length > 0 ||
+          drug_counseling.length > 0 || condition_counseling.length > 0
+        ) {
+          setAgentResult({
+            drug_drug,
+            drug_disease,
+            drug_food,
+            dosing_recommendations,
+            drug_counseling,
+            condition_counseling,
+            compounding_signals: {},
+            risk_summary:        {},
+          });
+        }
+      } catch { /* no saved data yet — silently ignore */ }
+    };
+    load();
+  }, [patientNo]); // ← single effect, single setAgentResult
+
+  // ── Save drug interactions whenever agentResult changes ────────
+  useEffect(() => {
+    if (agentLoading || !agentResult) return;
+    const save = async () => {
+      try {
+        const ep      = isOutpatient ? "/api/op-drug-interactions" : "/api/ip-drug-interactions";
+        const payload = buildInteractionPayload(patientNo, isOutpatient, agentResult);
+        await apiFetch(ep, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(payload),
+        });
+      } catch (err) { console.error("Failed to save drug interactions:", err); }
+    };
+    save();
+  }, [agentResult, agentLoading]);
+
+  // ── Save dosing recommendations whenever agentResult changes ───
+  useEffect(() => {
+    if (agentLoading || !agentResult) return;
+    const recs = agentResult.dosing_recommendations || [];
+    if (recs.length === 0) return;
+    const save = async () => {
+      try {
+        const ep      = isOutpatient ? "/api/op-dosing-recommendations" : "/api/ip-dosing-recommendations";
+        const payload = {
+          ...(isOutpatient ? { op_no: patientNo } : { ip_no: patientNo }),
+          high:   recs.filter(r => r.urgency === "high"),
+          medium: recs.filter(r => r.urgency === "medium" || r.urgency === "moderate"),
+        };
+        await apiFetch(ep, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(payload),
+        });
+      } catch (err) { console.error("Failed to save dosing recommendations:", err); }
+    };
+    save();
+  }, [agentResult, agentLoading]);
+
+  // ── Save patient counselling whenever agentResult changes ──────
+  useEffect(() => {
+    if (agentLoading || !agentResult) return;
+    const drugC = agentResult.drug_counseling      || [];
+    const condC = agentResult.condition_counseling || [];
+    if (drugC.length === 0 && condC.length === 0) return;
+    const save = async () => {
+      try {
+        const ep      = isOutpatient ? "/api/op-patient-counselling" : "/api/ip-patient-counselling";
+        const payload = {
+          ...(isOutpatient ? { op_no: patientNo } : { ip_no: patientNo }),
+          drug_counselling:      drugC,
+          condition_counselling: condC,
+        };
+        await apiFetch(ep, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(payload),
+        });
+      } catch (err) { console.error("Failed to save patient counselling:", err); }
+    };
+    save();
+  }, [agentResult, agentLoading]);
 
   // ── Check stock ────────────────────────────────────────────────
   const checkStockForMed = async (med) => {
@@ -187,9 +347,7 @@ const DiagnosisTab = ({ p, user }) => {
   // ── Switch medication ──────────────────────────────────────────
   const handleSwitch = async (outMed, altDrug) => {
     try {
-      const delEp = isOutpatient
-        ? "/api/op-prescriptions/delete"
-        : "/api/ip-prescriptions/delete";
+      const delEp = isOutpatient ? "/api/op-prescriptions/delete" : "/api/ip-prescriptions/delete";
       await apiFetch(delEp, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: outMed.ID }),
@@ -227,17 +385,24 @@ const DiagnosisTab = ({ p, user }) => {
     }
   };
 
-  // ── Agent analysis — parallel phases with independent loading ──
-  // All four phases fire simultaneously.
-  // Each phase independently marks itself done when it completes.
-  // UI updates immediately as each phase arrives —
-  // dosing/counselling populate in ~10s while interactions
-  // is still running (~30s). Total wait = slowest phase only.
+  // ── Stop analysis ──────────────────────────────────────────────
+  const onInterrupt = () => {
+    abortRef.current?.abort();
+    setLoadingState(LOADING_IDLE);
+    setWasInterrupted(true);
+  };
+
+  // ── Agent analysis ─────────────────────────────────────────────
   const triggerAnalysis = async () => {
     if (medications.length === 0) return;
 
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setAgentResult(null);
     setAgentError(null);
+    setWasInterrupted(false);
     setLoadingState(LOADING_ALL);
 
     try {
@@ -251,24 +416,20 @@ const DiagnosisTab = ({ p, user }) => {
         .filter(Boolean)
         .flatMap(d => d.split(",").map(s => s.trim()).filter(Boolean));
 
+      const activeMeds = medications.filter(m => !m.held);
+      if (activeMeds.length === 0) return; // all meds on hold
+
       const doseMap = {};
-      medications.forEach(m => {
+      activeMeds.forEach(m => {
         if (m.Generic_Name)
-          doseMap[m.Generic_Name] = [m.Strength, m.Frequency]
-            .filter(Boolean).join(" ");
+          doseMap[m.Generic_Name] = [m.Strength, m.Frequency].filter(Boolean).join(" ");
       });
 
-      // Each phase independently marks itself done —
-      // no assumed order, no state machine.
-      // Phases complete in parallel in whatever order they finish.
       const onPhaseComplete = (phase, data) => {
-        // Mark this specific phase done immediately
+        if (controller.signal.aborted) return;
         setLoadingState(prev => ({ ...prev, [phase]: false }));
+        if (!data) return;
 
-        if (!data) return; // phase failed — spinner cleared, move on
-
-        // Merge only this phase's own fields — never overwrite
-        // data from other phases that may have already arrived
         setAgentResult(prev => {
           const base = prev || {
             drug_drug:              [],
@@ -280,7 +441,6 @@ const DiagnosisTab = ({ p, user }) => {
             compounding_signals:    {},
             risk_summary:           {},
           };
-
           if (phase === "interactions") return {
             ...base,
             drug_drug:           data.drug_drug           ?? base.drug_drug,
@@ -288,18 +448,15 @@ const DiagnosisTab = ({ p, user }) => {
             drug_food:           data.drug_food           ?? base.drug_food,
             compounding_signals: data.compounding_signals ?? base.compounding_signals,
           };
-
           if (phase === "dosing") return {
             ...base,
             dosing_recommendations: data.dosing_recommendations ?? base.dosing_recommendations,
           };
-
           if (phase === "counselling") return {
             ...base,
             drug_counseling:      data.drug_counseling      ?? base.drug_counseling,
             condition_counseling: data.condition_counseling ?? base.condition_counseling,
           };
-
           if (phase === "summary") return {
             ...base,
             risk_summary: data.risk_summary ?? base.risk_summary,
@@ -308,13 +465,12 @@ const DiagnosisTab = ({ p, user }) => {
               Object.keys(data.compounding_signals).length > 0
             ) ? data.compounding_signals : base.compounding_signals,
           };
-
           return base;
         });
       };
 
-      await runPhaseAnalysis({
-        medications:       medications.map(m => m.Generic_Name).filter(Boolean),
+      const response = await runPhaseAnalysis({
+        medications:       activeMeds.map(m => m.Generic_Name).filter(Boolean),
         diseases:          conditions,
         age:               p.Age,
         sex:               p.Sex === "M" ? "male" : "female",
@@ -322,13 +478,16 @@ const DiagnosisTab = ({ p, user }) => {
         patientProfile:    buildPatientProfile(p),
         patientLabs:       buildPatientLabs(labData, p),
         preferredLanguage: null,
+        signal:            controller.signal,
         onPhaseComplete,
       });
 
+      if (response.status === "interrupted") setWasInterrupted(true);
+
     } catch (err) {
-      setAgentError(err.message);
+      if (err.name !== "AbortError") setAgentError(err.message);
     } finally {
-      setLoadingState(LOADING_IDLE);
+      if (abortRef.current === controller) setLoadingState(LOADING_IDLE);
     }
   };
 
@@ -415,7 +574,10 @@ const DiagnosisTab = ({ p, user }) => {
 
   const handleAutoSave = async () => {
     const errors = {};
-    if (!newMed)                   errors.drug      = "Select a drug.";
+    // For manual entries, newMed is injected via handleSelectDrug just
+    // before this is called — so we allow a brief window for state to settle.
+    // We still validate route/frequency/days as required.
+    if (!newMed)                   errors.drug      = "Select or enter a drug.";
     if (!newForm.route.trim())     errors.route     = "Required.";
     if (!newForm.frequency.trim()) errors.frequency = "Required.";
     if (!newForm.days.trim())      errors.days      = "Required.";
@@ -423,6 +585,7 @@ const DiagnosisTab = ({ p, user }) => {
     setAddSaving(true);
     try {
       const ep   = isOutpatient ? "/api/op-prescriptions" : "/api/ip-prescriptions";
+      // manual flag is just a UI hint — never sent to inventory
       const body = isOutpatient
         ? { opNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days }
         : { ipNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days };
@@ -475,9 +638,21 @@ const DiagnosisTab = ({ p, user }) => {
     setEditingId(null); setEditValues({});
   };
 
-  const handleHold = (id) => {
-    setMedications(m => m.map(x => x.ID === id ? { ...x, held: !x.held } : x));
+  const handleHold = async (id) => {
+    // Optimistically toggle in UI immediately
+    const target  = medications.find(x => x.ID === id);
+    const newHeld = !target?.held;
+    setMedications(m => m.map(x => x.ID === id ? { ...x, held: newHeld } : x));
     setOpenMenu(null);
+    // Persist to DB
+    try {
+      const ep = isOutpatient ? "/api/op-prescriptions/hold" : "/api/ip-prescriptions/hold";
+      await apiFetch(ep, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ id, held: newHeld }),
+      });
+    } catch (err) { console.error("Failed to save hold state:", err); }
   };
 
   const handleDelete = async (id) => {
@@ -504,9 +679,7 @@ const DiagnosisTab = ({ p, user }) => {
 
   // ── Helpers ────────────────────────────────────────────────────
   const formatDate = (s) => s
-    ? new Date(s).toLocaleDateString("en-US", {
-        month: "short", day: "numeric", year: "numeric"
-      })
+    ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
 
   // ── Prescription PDF ───────────────────────────────────────────
@@ -516,8 +689,8 @@ const DiagnosisTab = ({ p, user }) => {
       String(str || "")
         .replace(/&/g, "&amp;").replace(/</g, "&lt;")
         .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const date = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
-    const now  = new Date().toLocaleString();
+    const date         = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
+    const now          = new Date().toLocaleString();
     const drName       = user?.name        || "Doctor";
     const drDesig      = user?.designation || "";
     const drDept       = user?.department  || "";
@@ -529,7 +702,7 @@ const DiagnosisTab = ({ p, user }) => {
     const ptAge  = p?.Age  ? `${p.Age} yrs` : "";
     const ptSex  = p?.Sex === "M" ? "Male" : p?.Sex === "F" ? "Female" : "";
     const ptNo   = patientNo || "";
-    const medRows = medications.map((m, i) => `
+    const medRows = medications.filter(m => !m.held).map((m, i) => `
       <tr>
         <td class="tc">${i + 1}</td>
         <td><strong>${esc(m.Brand_Name || "")}</strong><br/>
@@ -579,7 +752,7 @@ const DiagnosisTab = ({ p, user }) => {
 </style></head><body>
   <div class="letterhead">
     <div class="lh-left">
-      <div class="lh-name">Dr. ${esc(drName)}</div>
+      <div class="lh-name">${esc(drName)}</div>
       ${drDesig ? `<div class="lh-desig">${esc(drDesig)}</div>` : ""}
       ${drDept  ? `<div class="lh-dept">Dept. of ${esc(drDept)}</div>` : ""}
     </div>
@@ -638,78 +811,45 @@ const DiagnosisTab = ({ p, user }) => {
   };
 
   // ── Agent Banner ───────────────────────────────────────────────
-  // Shows each phase pill independently — they clear in parallel
-  // as phases complete, not in sequence.
   const AgentBanner = () => {
-  if (agentLoading) return (
-    <div style={{
-      display:      "flex",
-      alignItems:   "center",
-      gap:          10,
-      background:   "#eff6ff",
-      border:       "1px solid #bfdbfe",
-      borderRadius: 8,
-      padding:      "10px 14px",
-      fontSize:     "0.82rem",
-      color:        "#1a73e8",
-      marginBottom: 12,
-    }}>
-      <div
-        className="pd-spinner"
-        style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }}
-      />
-      🤖 Running VabGenRx Safety analysis...
-    </div>
-  );
+    if (agentLoading) return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        background: "#eff6ff", border: "1px solid #bfdbfe",
+        borderRadius: 8, padding: "10px 14px",
+        fontSize: "0.82rem", color: "#1a73e8", marginBottom: 12,
+      }}>
+        <div className="pd-spinner" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
+        🤖 Running VabGenRx Safety analysis...
+      </div>
+    );
+    if (agentError) return (
+      <div style={{
+        background: "#fff5f5", border: "1px solid #fca5a5",
+        borderRadius: 8, padding: "10px 14px",
+        fontSize: "0.82rem", color: "#e05252", marginBottom: 12,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <span>⚠️ Analysis error: {agentError}</span>
+        <button onClick={triggerAnalysis} style={{
+          padding: "3px 12px", borderRadius: 6,
+          border: "1px solid #e05252", background: "transparent",
+          color: "#e05252", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600,
+        }}>Retry</button>
+      </div>
+    );
+    if (agentResult) return (
+      <div style={{
+        background: "#f0fdf4", border: "1px solid #86efac",
+        borderRadius: 8, padding: "8px 14px",
+        fontSize: "0.78rem", color: "#16a34a", marginBottom: 12,
+      }}>
+        ✅ VabGenRx Safety analysis completed
+      </div>
+    );
+    return null;
+  };
 
-  if (agentError) return (
-    <div style={{
-      background:     "#fff5f5",
-      border:         "1px solid #fca5a5",
-      borderRadius:   8,
-      padding:        "10px 14px",
-      fontSize:       "0.82rem",
-      color:          "#e05252",
-      marginBottom:   12,
-      display:        "flex",
-      alignItems:     "center",
-      justifyContent: "space-between",
-    }}>
-      <span>⚠️ Analysis error: {agentError}</span>
-      <button
-        onClick={triggerAnalysis}
-        style={{
-          padding:      "3px 12px",
-          borderRadius: 6,
-          border:       "1px solid #e05252",
-          background:   "transparent",
-          color:        "#e05252",
-          cursor:       "pointer",
-          fontSize:     "0.75rem",
-          fontWeight:   600,
-        }}
-      >
-        Retry
-      </button>
-    </div>
-  );
-
-  if (agentResult) return (
-    <div style={{
-      background:   "#f0fdf4",
-      border:       "1px solid #86efac",
-      borderRadius: 8,
-      padding:      "8px 14px",
-      fontSize:     "0.78rem",
-      color:        "#16a34a",
-      marginBottom: 12,
-    }}>
-      ✅ VabGenRx Safety analysis completed
-    </div>
-  );
-
-  return null;
-};
   // ════════════════════════════════════════════════════════════════
   return (
     <div className="diag-wrap">
@@ -790,6 +930,7 @@ const DiagnosisTab = ({ p, user }) => {
           dropdownPos={dropdownPos}
           agentLoading={agentLoading}
           agentResult={agentResult}
+          wasInterrupted={wasInterrupted}
           handleSearch={handleSearch}
           handleSelectDrug={handleSelectDrug}
           handleAutoSave={handleAutoSave}
@@ -801,6 +942,7 @@ const DiagnosisTab = ({ p, user }) => {
           handleMenuOpen={handleMenuOpen}
           updateDropdownPos={updateDropdownPos}
           triggerAnalysis={triggerAnalysis}
+          onInterrupt={onInterrupt}
           searchInputRef={searchInputRef}
         />
         <PrescriberNotes
@@ -824,7 +966,6 @@ const DiagnosisTab = ({ p, user }) => {
       <AgentBanner />
 
       {/* ── Drug Interactions + Dosing ── */}
-      {/* Each component gets its own phase loading flag ── */}
       <div className="diag-grid-2">
         <DrugInteractionWarning
           agentResult={agentResult}
@@ -873,7 +1014,7 @@ const DiagnosisTab = ({ p, user }) => {
             </div>
             <div className="presc-letterhead">
               <div className="presc-lh-left">
-                <div className="presc-dr-name">Dr. {user?.name || "Doctor"}</div>
+                <div className="presc-dr-name">{user?.name || "Doctor"}</div>
                 {user?.designation && <div className="presc-dr-desig">{user.designation}</div>}
                 {user?.department  && <div className="presc-dr-dept">Dept. of {user.department}</div>}
               </div>
@@ -908,9 +1049,9 @@ const DiagnosisTab = ({ p, user }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {medications.length === 0
-                    ? <tr><td colSpan={7} className="presc-empty">No medications added yet.</td></tr>
-                    : medications.map((m, i) => (
+                  {medications.filter(m => !m.held).length === 0
+                    ? <tr><td colSpan={7} className="presc-empty">No active medications.</td></tr>
+                    : medications.filter(m => !m.held).map((m, i) => (
                       <tr key={m.ID || i}>
                         <td className="presc-tc">{i + 1}</td>
                         <td><strong>{m.Brand_Name || "—"}</strong></td>
@@ -927,7 +1068,8 @@ const DiagnosisTab = ({ p, user }) => {
             </div>
             <div className="presc-footer">
               <span className="presc-footer-note">
-                {medications.length} medication{medications.length !== 1 ? "s" : ""}
+                {medications.filter(m => !m.held).length} medication{medications.filter(m => !m.held).length !== 1 ? "s" : ""}
+                {medications.some(m => m.held) ? ` · ${medications.filter(m => m.held).length} on hold` : ""}
                 {" · "}
                 {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
               </span>

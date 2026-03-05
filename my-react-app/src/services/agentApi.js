@@ -74,24 +74,15 @@ export async function runAgentAnalysis({ medications, diseases, age, sex, doseMa
 // Each phase calls onPhaseComplete the moment it finishes.
 // The UI updates immediately per phase — no waiting for all.
 //
-// Why parallel not sequential:
-//   Sequential = user waits for interactions (~30s) THEN dosing
-//   (~15s) THEN counselling (~10s) = 55s total visible wait.
-//
-//   Parallel = all start at once. Dosing arrives ~15s,
-//   counselling ~10s, interactions ~30s, summary ~20s.
-//   User sees dosing and counselling in ~10-15s while
-//   interactions is still processing. Total time = ~30s
-//   (the slowest phase) not 55s (sum of all phases).
-//
-//   The PubMed rate limit issue from before was caused by the
-//   summary endpoint running the full pipeline again in parallel.
-//   That is now fixed — summary only runs OrchestratorAgent.
-//   So parallel phase calls are safe again.
+// signal (AbortSignal) is accepted and passed to every fetch so the
+// doctor can click Stop at any time and cancel all in-flight requests
+// instantly. Phases that have already completed keep their results.
+// Aborted phases are silently ignored (not treated as errors).
 export async function runPhaseAnalysis({
   medications, diseases, age, sex,
   doseMap, patientProfile, patientLabs,
   preferredLanguage, onPhaseComplete,
+  signal,                                      // 👈 NEW — AbortSignal from parent
 }) {
   const payload = buildPayload({ medications, diseases, age, sex, doseMap, patientProfile, patientLabs, preferredLanguage });
   const headers = { 'Content-Type': 'application/json' };
@@ -109,51 +100,69 @@ export async function runPhaseAnalysis({
     risk_summary:           {},
   };
 
+  // Helper — wraps each phase fetch with abort awareness
+  // If aborted: resolves silently with null (not an error)
+  // If failed:  logs error, calls onPhaseComplete with null
+  const makePhase = (name, url, onData) =>
+    fetch(url, { method: 'POST', headers, body, signal })   // 👈 signal passed
+      .then(safeJson)
+      .then(data => {
+        if (signal?.aborted) return null;                   // 👈 stop if aborted after response
+        onData(data);
+        onPhaseComplete?.(name, { ...result });
+        return data;
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return null;         // 👈 silently swallow abort
+        console.error(`${name} phase failed:`, err);
+        onPhaseComplete?.(name, null);
+        return null;
+      });
+
   // Fire all four phases simultaneously
-  const fetchInteractions = fetch(`${BASE}/analyze/interactions`, { method: 'POST', headers, body })
-    .then(safeJson)
-    .then(data => {
+  const fetchInteractions = makePhase(
+    'interactions',
+    `${BASE}/analyze/interactions`,
+    data => {
       result.drug_drug           = data.drug_drug           || [];
       result.drug_disease        = data.drug_disease        || [];
       result.drug_food           = data.drug_food           || [];
       result.compounding_signals = data.compounding_signals || {};
-      onPhaseComplete?.('interactions', { ...result });
-      return data;
-    })
-    .catch(err => { console.error('Interactions phase failed:', err); onPhaseComplete?.('interactions', null); return null; });
+    }
+  );
 
-  const fetchDosing = fetch(`${BASE}/analyze/dosing`, { method: 'POST', headers, body })
-    .then(safeJson)
-    .then(data => {
+  const fetchDosing = makePhase(
+    'dosing',
+    `${BASE}/analyze/dosing`,
+    data => {
       result.dosing_recommendations = data.dosing_recommendations || [];
-      onPhaseComplete?.('dosing', { ...result });
-      return data;
-    })
-    .catch(err => { console.error('Dosing phase failed:', err); onPhaseComplete?.('dosing', null); return null; });
+    }
+  );
 
-  const fetchCounselling = fetch(`${BASE}/analyze/counselling`, { method: 'POST', headers, body })
-    .then(safeJson)
-    .then(data => {
+  const fetchCounselling = makePhase(
+    'counselling',
+    `${BASE}/analyze/counselling`,
+    data => {
       result.drug_counseling      = data.drug_counseling      || [];
       result.condition_counseling = data.condition_counseling || [];
-      onPhaseComplete?.('counselling', { ...result });
-      return data;
-    })
-    .catch(err => { console.error('Counselling phase failed:', err); onPhaseComplete?.('counselling', null); return null; });
+    }
+  );
 
-  const fetchSummary = fetch(`${BASE}/analyze/summary`, { method: 'POST', headers, body })
-    .then(safeJson)
-    .then(data => {
+  const fetchSummary = makePhase(
+    'summary',
+    `${BASE}/analyze/summary`,
+    data => {
       result.risk_summary = data.risk_summary || {};
       if (data.compounding_signals && Object.keys(data.compounding_signals).length > 0)
         result.compounding_signals = data.compounding_signals;
-      onPhaseComplete?.('summary', { ...result });
-      return data;
-    })
-    .catch(err => { console.error('Summary phase failed:', err); onPhaseComplete?.('summary', null); return null; });
+    }
+  );
 
-  // Wait for all — but UI already updated as each arrived
+  // Wait for all — UI already updated as each arrived
   await Promise.allSettled([fetchInteractions, fetchDosing, fetchCounselling, fetchSummary]);
+
+  // If aborted, reflect that in the return status
+  if (signal?.aborted) return { status: 'interrupted', analysis: result };
 
   return { status: 'completed', analysis: result };
 }

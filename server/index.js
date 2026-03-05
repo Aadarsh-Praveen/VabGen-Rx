@@ -1,3 +1,8 @@
+// ─── IMPORTANT ───────────────────────────────────────────────────
+// ALL route handlers must be INSIDE the http.createServer callback.
+// The `await getBody(req)` calls only work inside an async function.
+// Do NOT paste any route blocks outside the createServer callback.
+// ─────────────────────────────────────────────────────────────────
 require('dotenv').config();
 const http    = require('http');
 const multer  = require('multer');
@@ -6,7 +11,7 @@ const bcrypt  = require('bcrypt');
 const { BlobServiceClient } = require('@azure/storage-blob');
 const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
-const SALT_ROUNDS  = 12;
+const SALT_ROUNDS    = 12;
 const JWT_SECRET     = process.env.JWT_SECRET     || 'vabgenrx_secret';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
@@ -109,7 +114,7 @@ const server = http.createServer(async (req, res) => {
       if (result.recordset.length > 0) {
         const user = result.recordset[0];
         if (user.dob instanceof Date) user.dob = user.dob.toISOString().split('T')[0];
-        delete user.password; // never send password to frontend
+        delete user.password;
         sendJSON(res, 200, { user });
       } else {
         sendJSON(res, 404, { message: 'User not found' });
@@ -128,24 +133,18 @@ const server = http.createServer(async (req, res) => {
       const result = await pool.request()
         .input('email', sql.VarChar, email)
         .query('SELECT * FROM users WHERE email = @email');
-
       if (result.recordset.length === 0)
         return sendJSON(res, 401, { message: 'Invalid email or password' });
-
-      const user = result.recordset[0];
-
-      // ── Compare password with bcrypt hash ──
+      const user  = result.recordset[0];
       const match = await bcrypt.compare(password, user.password);
       if (!match)
         return sendJSON(res, 401, { message: 'Invalid email or password' });
-
       const token = jwt.sign(
         { id: user.id, email: user.email, name: user.name, role: user.designation || 'doctor' },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
       );
-
-      delete user.password; // never send hash to frontend
+      delete user.password;
       sendJSON(res, 200, { message: 'Sign in successful', token, user });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
@@ -155,22 +154,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/register') {
     const { hospital_id, licence_no, name, designation, department,
             dob, age, sex, address, contact_no, email, password } = await getBody(req);
-
     if (!email || !password)
       return sendJSON(res, 400, { message: 'Email and password required.' });
-
     try {
-      // ── Check if email already exists ──
       const pool = await poolPromise;
       const existing = await pool.request()
         .input('email', sql.VarChar, email)
         .query('SELECT id FROM users WHERE email = @email');
       if (existing.recordset.length > 0)
         return sendJSON(res, 409, { message: 'Email already registered.' });
-
-      // ── Hash password before storing ──
       const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
       await pool.request()
         .input('hospital_id',    sql.VarChar, hospital_id  || '')
         .input('licence_no',     sql.VarChar, licence_no   || '')
@@ -190,7 +183,6 @@ const server = http.createServer(async (req, res) => {
           VALUES
           (@hospital_id, @licence_no, @name, @designation, @department,
            @dob, @age, @sex, @address, @contact_no, @email, @password)`);
-
       sendJSON(res, 201, { message: 'Registration successful' });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
@@ -221,23 +213,16 @@ const server = http.createServer(async (req, res) => {
       const result = await pool.request()
         .input('email', sql.VarChar, email)
         .query('SELECT password FROM users WHERE email = @email');
-
       if (!result.recordset.length)
         return sendJSON(res, 404, { message: 'User not found.' });
-
-      // ── Verify current password against hash ──
       const match = await bcrypt.compare(currentPassword, result.recordset[0].password);
       if (!match)
         return sendJSON(res, 401, { message: 'Current password is incorrect.' });
-
-      // ── Hash new password before storing ──
       const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-
       await pool.request()
         .input('email',    sql.VarChar, email)
         .input('password', sql.VarChar, newHash)
         .query('UPDATE users SET password = @password WHERE email = @email');
-
       sendJSON(res, 200, { message: 'Password changed successfully.' });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
@@ -449,7 +434,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
-        .query(`SELECT ID, IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
+        .query(`SELECT ID, IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On, Is_Held
                 FROM dbo.ip_prescriptions WHERE IP_No = @ipNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -503,7 +488,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const pool = await patientsPoolPromise;
       const result = await pool.request().input('opNo', sql.VarChar, opNo)
-        .query(`SELECT ID, OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
+        .query(`SELECT ID, OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On, Is_Held
                 FROM dbo.op_prescriptions WHERE OP_No = @opNo ORDER BY ID ASC`);
       sendJSON(res, 200, { prescriptions: result.recordset });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -639,6 +624,368 @@ const server = http.createServer(async (req, res) => {
       await pool.request().input('id', sql.Int, id)
         .query(`DELETE FROM dbo.op_prescription_notes WHERE ID=@id`);
       sendJSON(res, 200, { message: 'Deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save IP drug interactions ────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-drug-interactions') {
+    const { ip_no, dd_severe, dd_moderate, dd_minor,
+            ddis_contraindicated, ddis_moderate, ddis_minor,
+            drug_food } = await getBody(req);
+    if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('ipNo', sql.VarChar, ip_no)
+        .query('SELECT ID FROM dbo.ip_drug_interactions WHERE IP_No = @ipNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('ipNo',   sql.VarChar,  ip_no)
+          .input('ddSev',  sql.NVarChar, JSON.stringify(dd_severe            || []))
+          .input('ddMod',  sql.NVarChar, JSON.stringify(dd_moderate          || []))
+          .input('ddMin',  sql.NVarChar, JSON.stringify(dd_minor             || []))
+          .input('disCon', sql.NVarChar, JSON.stringify(ddis_contraindicated || []))
+          .input('disMod', sql.NVarChar, JSON.stringify(ddis_moderate        || []))
+          .input('disMin', sql.NVarChar, JSON.stringify(ddis_minor           || []))
+          .input('food',   sql.NVarChar, JSON.stringify(drug_food            || []))
+          .input('now',    sql.DateTime, new Date())
+          .query(`UPDATE dbo.ip_drug_interactions SET
+            DD_Severe=@ddSev, DD_Moderate=@ddMod, DD_Minor=@ddMin,
+            DDis_Contraindicated=@disCon, DDis_Moderate=@disMod, DDis_Minor=@disMin,
+            Drug_Food=@food, Updated_At=@now WHERE IP_No=@ipNo`);
+      } else {
+        await pool.request()
+          .input('ipNo',   sql.VarChar,  ip_no)
+          .input('ddSev',  sql.NVarChar, JSON.stringify(dd_severe            || []))
+          .input('ddMod',  sql.NVarChar, JSON.stringify(dd_moderate          || []))
+          .input('ddMin',  sql.NVarChar, JSON.stringify(dd_minor             || []))
+          .input('disCon', sql.NVarChar, JSON.stringify(ddis_contraindicated || []))
+          .input('disMod', sql.NVarChar, JSON.stringify(ddis_moderate        || []))
+          .input('disMin', sql.NVarChar, JSON.stringify(ddis_minor           || []))
+          .input('food',   sql.NVarChar, JSON.stringify(drug_food            || []))
+          .query(`INSERT INTO dbo.ip_drug_interactions
+            (IP_No, DD_Severe, DD_Moderate, DD_Minor,
+             DDis_Contraindicated, DDis_Moderate, DDis_Minor, Drug_Food)
+            VALUES (@ipNo,@ddSev,@ddMod,@ddMin,@disCon,@disMod,@disMin,@food)`);
+      }
+      sendJSON(res, 200, { message: 'IP drug interactions saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get IP drug interactions ─────────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/ip-drug-interactions/')) {
+    const ipNo = decodeURIComponent(req.url.split('/api/ip-drug-interactions/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('ipNo', sql.VarChar, ipNo)
+        .query('SELECT * FROM dbo.ip_drug_interactions WHERE IP_No = @ipNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, {
+        found: true,
+        data: {
+          drug_drug: {
+            severe:   parse(r.DD_Severe),
+            moderate: parse(r.DD_Moderate),
+            minor:    parse(r.DD_Minor),
+          },
+          drug_disease: {
+            contraindicated: parse(r.DDis_Contraindicated),
+            moderate:        parse(r.DDis_Moderate),
+            minor:           parse(r.DDis_Minor),
+          },
+          drug_food:  parse(r.Drug_Food),
+          updated_at: r.Updated_At,
+        },
+      });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save OP drug interactions ────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-drug-interactions') {
+    const { op_no, dd_severe, dd_moderate, dd_minor,
+            ddis_contraindicated, ddis_moderate, ddis_minor,
+            drug_food } = await getBody(req);
+    if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('opNo', sql.VarChar, op_no)
+        .query('SELECT ID FROM dbo.op_drug_interactions WHERE OP_No = @opNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('opNo',   sql.VarChar,  op_no)
+          .input('ddSev',  sql.NVarChar, JSON.stringify(dd_severe            || []))
+          .input('ddMod',  sql.NVarChar, JSON.stringify(dd_moderate          || []))
+          .input('ddMin',  sql.NVarChar, JSON.stringify(dd_minor             || []))
+          .input('disCon', sql.NVarChar, JSON.stringify(ddis_contraindicated || []))
+          .input('disMod', sql.NVarChar, JSON.stringify(ddis_moderate        || []))
+          .input('disMin', sql.NVarChar, JSON.stringify(ddis_minor           || []))
+          .input('food',   sql.NVarChar, JSON.stringify(drug_food            || []))
+          .input('now',    sql.DateTime, new Date())
+          .query(`UPDATE dbo.op_drug_interactions SET
+            DD_Severe=@ddSev, DD_Moderate=@ddMod, DD_Minor=@ddMin,
+            DDis_Contraindicated=@disCon, DDis_Moderate=@disMod, DDis_Minor=@disMin,
+            Drug_Food=@food, Updated_At=@now WHERE OP_No=@opNo`);
+      } else {
+        await pool.request()
+          .input('opNo',   sql.VarChar,  op_no)
+          .input('ddSev',  sql.NVarChar, JSON.stringify(dd_severe            || []))
+          .input('ddMod',  sql.NVarChar, JSON.stringify(dd_moderate          || []))
+          .input('ddMin',  sql.NVarChar, JSON.stringify(dd_minor             || []))
+          .input('disCon', sql.NVarChar, JSON.stringify(ddis_contraindicated || []))
+          .input('disMod', sql.NVarChar, JSON.stringify(ddis_moderate        || []))
+          .input('disMin', sql.NVarChar, JSON.stringify(ddis_minor           || []))
+          .input('food',   sql.NVarChar, JSON.stringify(drug_food            || []))
+          .query(`INSERT INTO dbo.op_drug_interactions
+            (OP_No, DD_Severe, DD_Moderate, DD_Minor,
+             DDis_Contraindicated, DDis_Moderate, DDis_Minor, Drug_Food)
+            VALUES (@opNo,@ddSev,@ddMod,@ddMin,@disCon,@disMod,@disMin,@food)`);
+      }
+      sendJSON(res, 200, { message: 'OP drug interactions saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get OP drug interactions ─────────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/op-drug-interactions/')) {
+    const opNo = decodeURIComponent(req.url.split('/api/op-drug-interactions/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('opNo', sql.VarChar, opNo)
+        .query('SELECT * FROM dbo.op_drug_interactions WHERE OP_No = @opNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, {
+        found: true,
+        data: {
+          drug_drug: {
+            severe:   parse(r.DD_Severe),
+            moderate: parse(r.DD_Moderate),
+            minor:    parse(r.DD_Minor),
+          },
+          drug_disease: {
+            contraindicated: parse(r.DDis_Contraindicated),
+            moderate:        parse(r.DDis_Moderate),
+            minor:           parse(r.DDis_Minor),
+          },
+          drug_food:  parse(r.Drug_Food),
+          updated_at: r.Updated_At,
+        },
+      });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save IP dosing recommendations ───────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-dosing-recommendations') {
+    const { ip_no, high, medium } = await getBody(req);
+    if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('ipNo', sql.VarChar, ip_no)
+        .query('SELECT ID FROM dbo.ip_dosing_recommendations WHERE IP_No = @ipNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('ipNo',   sql.VarChar,  ip_no)
+          .input('high',   sql.NVarChar, JSON.stringify(high   || []))
+          .input('medium', sql.NVarChar, JSON.stringify(medium || []))
+          .input('now',    sql.DateTime, new Date())
+          .query(`UPDATE dbo.ip_dosing_recommendations
+            SET High=@high, Medium=@medium, Updated_At=@now WHERE IP_No=@ipNo`);
+      } else {
+        await pool.request()
+          .input('ipNo',   sql.VarChar,  ip_no)
+          .input('high',   sql.NVarChar, JSON.stringify(high   || []))
+          .input('medium', sql.NVarChar, JSON.stringify(medium || []))
+          .query(`INSERT INTO dbo.ip_dosing_recommendations (IP_No, High, Medium)
+            VALUES (@ipNo, @high, @medium)`);
+      }
+      sendJSON(res, 200, { message: 'IP dosing recommendations saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get IP dosing recommendations ────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/ip-dosing-recommendations/')) {
+    const ipNo = decodeURIComponent(req.url.split('/api/ip-dosing-recommendations/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('ipNo', sql.VarChar, ipNo)
+        .query('SELECT * FROM dbo.ip_dosing_recommendations WHERE IP_No = @ipNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, { found: true, data: { high: parse(r.High), medium: parse(r.Medium), updated_at: r.Updated_At } });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save OP dosing recommendations ───────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-dosing-recommendations') {
+    const { op_no, high, medium } = await getBody(req);
+    if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('opNo', sql.VarChar, op_no)
+        .query('SELECT ID FROM dbo.op_dosing_recommendations WHERE OP_No = @opNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('opNo',   sql.VarChar,  op_no)
+          .input('high',   sql.NVarChar, JSON.stringify(high   || []))
+          .input('medium', sql.NVarChar, JSON.stringify(medium || []))
+          .input('now',    sql.DateTime, new Date())
+          .query(`UPDATE dbo.op_dosing_recommendations
+            SET High=@high, Medium=@medium, Updated_At=@now WHERE OP_No=@opNo`);
+      } else {
+        await pool.request()
+          .input('opNo',   sql.VarChar,  op_no)
+          .input('high',   sql.NVarChar, JSON.stringify(high   || []))
+          .input('medium', sql.NVarChar, JSON.stringify(medium || []))
+          .query(`INSERT INTO dbo.op_dosing_recommendations (OP_No, High, Medium)
+            VALUES (@opNo, @high, @medium)`);
+      }
+      sendJSON(res, 200, { message: 'OP dosing recommendations saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get OP dosing recommendations ────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/op-dosing-recommendations/')) {
+    const opNo = decodeURIComponent(req.url.split('/api/op-dosing-recommendations/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('opNo', sql.VarChar, opNo)
+        .query('SELECT * FROM dbo.op_dosing_recommendations WHERE OP_No = @opNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, { found: true, data: { high: parse(r.High), medium: parse(r.Medium), updated_at: r.Updated_At } });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save IP patient counselling ──────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-patient-counselling') {
+    const { ip_no, drug_counselling, condition_counselling } = await getBody(req);
+    if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('ipNo', sql.VarChar, ip_no)
+        .query('SELECT ID FROM dbo.ip_patient_counselling WHERE IP_No = @ipNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('ipNo', sql.VarChar,  ip_no)
+          .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
+          .input('cc',   sql.NVarChar, JSON.stringify(condition_counselling || []))
+          .input('now',  sql.DateTime, new Date())
+          .query(`UPDATE dbo.ip_patient_counselling
+            SET Drug_Counselling=@dc, Condition_Counselling=@cc, Updated_At=@now
+            WHERE IP_No=@ipNo`);
+      } else {
+        await pool.request()
+          .input('ipNo', sql.VarChar,  ip_no)
+          .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
+          .input('cc',   sql.NVarChar, JSON.stringify(condition_counselling || []))
+          .query(`INSERT INTO dbo.ip_patient_counselling (IP_No, Drug_Counselling, Condition_Counselling)
+            VALUES (@ipNo, @dc, @cc)`);
+      }
+      sendJSON(res, 200, { message: 'IP patient counselling saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get IP patient counselling ───────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/ip-patient-counselling/')) {
+    const ipNo = decodeURIComponent(req.url.split('/api/ip-patient-counselling/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('ipNo', sql.VarChar, ipNo)
+        .query('SELECT * FROM dbo.ip_patient_counselling WHERE IP_No = @ipNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, {
+        found: true,
+        data: {
+          drug_counselling:      parse(r.Drug_Counselling),
+          condition_counselling: parse(r.Condition_Counselling),
+          updated_at:            r.Updated_At,
+        },
+      });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save OP patient counselling ──────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-patient-counselling') {
+    const { op_no, drug_counselling, condition_counselling } = await getBody(req);
+    if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      const existing = await pool.request()
+        .input('opNo', sql.VarChar, op_no)
+        .query('SELECT ID FROM dbo.op_patient_counselling WHERE OP_No = @opNo');
+      if (existing.recordset.length > 0) {
+        await pool.request()
+          .input('opNo', sql.VarChar,  op_no)
+          .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
+          .input('cc',   sql.NVarChar, JSON.stringify(condition_counselling || []))
+          .input('now',  sql.DateTime, new Date())
+          .query(`UPDATE dbo.op_patient_counselling
+            SET Drug_Counselling=@dc, Condition_Counselling=@cc, Updated_At=@now
+            WHERE OP_No=@opNo`);
+      } else {
+        await pool.request()
+          .input('opNo', sql.VarChar,  op_no)
+          .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
+          .input('cc',   sql.NVarChar, JSON.stringify(condition_counselling || []))
+          .query(`INSERT INTO dbo.op_patient_counselling (OP_No, Drug_Counselling, Condition_Counselling)
+            VALUES (@opNo, @dc, @cc)`);
+      }
+      sendJSON(res, 200, { message: 'OP patient counselling saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get OP patient counselling ───────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/op-patient-counselling/')) {
+    const opNo = decodeURIComponent(req.url.split('/api/op-patient-counselling/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('opNo', sql.VarChar, opNo)
+        .query('SELECT * FROM dbo.op_patient_counselling WHERE OP_No = @opNo');
+      if (!result.recordset.length)
+        return sendJSON(res, 200, { found: false, data: null });
+      const r = result.recordset[0];
+      const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
+      sendJSON(res, 200, {
+        found: true,
+        data: {
+          drug_counselling:      parse(r.Drug_Counselling),
+          condition_counselling: parse(r.Condition_Counselling),
+          updated_at:            r.Updated_At,
+        },
+      });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
