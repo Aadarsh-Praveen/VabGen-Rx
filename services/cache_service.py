@@ -3,9 +3,16 @@ Azure SQL Cache Service — VabGenRx
 Caches drug-drug, drug-disease, and drug-food results
 to avoid redundant PubMed/FDA/OpenAI calls.
 
-Uses shared persistent connection from db_connection.py
-to avoid Login timeout errors from creating new connections
-on every cache call.
+CHANGES:
+- get_drug_disease now normalises evidence{} on read — same
+  pattern as get_drug_drug. Ensures pubmed_papers and
+  fda_label_sections_count are always present in the nested
+  evidence{} sub-object so the frontend badge renders correctly
+  for cached disease pairs.
+- save_drug_disease now stores fda_label_sections_count as a
+  dedicated column AND ensures evidence{} is complete before
+  storing full_result — same pattern as save_drug_drug.
+- save_drug_drug already had these fixes — unchanged.
 """
 
 import json
@@ -24,12 +31,12 @@ class AzureSQLCacheService:
     def __init__(self):
         self.available = self._test_connection()
 
-    # ── Connection — uses shared persistent connection ────────────────────────
+    # ── Connection ────────────────────────────────────────────────────────────
 
     def _test_connection(self) -> bool:
         try:
             from services.db_connection import get_connection
-            conn = get_connection()  # already prints ✅ on first connect only
+            conn = get_connection()
             conn.cursor().execute("SELECT 1")
             return True
         except Exception as e:
@@ -38,15 +45,10 @@ class AzureSQLCacheService:
             return False
 
     def _conn(self):
-        """
-        Returns the shared persistent connection.
-        Falls back to a fresh pyodbc connection if shared connection fails.
-        """
         try:
             from services.db_connection import get_connection
             return get_connection()
         except Exception:
-            # Fallback — direct connection
             import pyodbc
             conn_str = (
                 f"DRIVER={{ODBC Driver 18 for SQL Server}};"
@@ -56,6 +58,29 @@ class AzureSQLCacheService:
                 f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
             )
             return pyodbc.connect(conn_str, timeout=10)
+
+    # ── Shared normaliser ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _normalise_evidence(result: Dict, fields: list) -> Dict:
+        """
+        Ensure the nested evidence{} sub-object contains all
+        expected fields, promoting top-level fields as fallback.
+
+        fields = list of (evidence_key, top_level_fallback_key)
+
+        Applied on every cache read so the frontend always finds
+        badge counts in item.evidence.* regardless of when the
+        entry was originally cached.
+        """
+        ev = result.get("evidence", {})
+        if not isinstance(ev, dict):
+            ev = {}
+        for ev_key, fallback_key in fields:
+            if not ev.get(ev_key):
+                ev[ev_key] = result.get(fallback_key, 0)
+        result["evidence"] = ev
+        return result
 
     # ── Drug-Drug Cache ───────────────────────────────────────────────────────
 
@@ -82,8 +107,16 @@ class AzureSQLCacheService:
                 """, d1, d2)
                 conn.commit()
                 age = (datetime.now() - row.cached_at).days
-                print(f"      💾 Cache HIT: {d1}+{d2} (cached {age}d ago, {row.access_count} uses)")
-                return json.loads(row.full_result)
+                print(f"      💾 Cache HIT: {d1}+{d2} "
+                      f"(cached {age}d ago, "
+                      f"{row.access_count} uses)")
+                result = json.loads(row.full_result)
+                result = self._normalise_evidence(result, [
+                    ("pubmed_papers",          "pubmed_papers"),
+                    ("fda_reports",            "fda_reports"),
+                    ("fda_label_sections_count","fda_label_sections_count"),
+                ])
+                return result
             print(f"      ❌ Cache MISS: {d1}+{d2}")
             return None
         except Exception as e:
@@ -97,33 +130,59 @@ class AzureSQLCacheService:
         try:
             conn = self._conn()
             cur  = conn.cursor()
+
+            ev            = result.get("evidence", {})
+            pubmed_papers = (
+                ev.get("pubmed_papers")
+                or result.get("pubmed_papers", 0)
+            )
+            fda_reports   = (
+                ev.get("fda_reports")
+                or result.get("fda_reports", 0)
+            )
+            fda_sec_count = (
+                ev.get("fda_label_sections_count")
+                or result.get("fda_label_sections_count", 0)
+            )
+
+            # Ensure evidence{} is complete before storing
+            ev["pubmed_papers"]            = pubmed_papers
+            ev["fda_reports"]              = fda_reports
+            ev["fda_label_sections_count"] = fda_sec_count
+            result["evidence"]             = ev
+
             cur.execute("""
                 MERGE interaction_cache AS t
                 USING (SELECT ? AS drug1, ? AS drug2) AS s
                 ON t.drug1 = s.drug1 AND t.drug2 = s.drug2
                 WHEN MATCHED THEN UPDATE SET
-                    full_result   = ?,
-                    severity      = ?,
-                    confidence    = ?,
-                    pubmed_papers = ?,
-                    fda_reports   = ?,
-                    cached_at     = GETDATE()
+                    full_result              = ?,
+                    severity                 = ?,
+                    confidence               = ?,
+                    pubmed_papers            = ?,
+                    fda_reports              = ?,
+                    fda_label_sections_count = ?,
+                    cached_at                = GETDATE()
                 WHEN NOT MATCHED THEN INSERT
-                    (drug1, drug2, interaction_type, severity, confidence,
-                     pubmed_papers, fda_reports, full_result)
-                VALUES (?, ?, 'drug_drug', ?, ?, ?, ?, ?);
+                    (drug1, drug2, interaction_type,
+                     severity, confidence,
+                     pubmed_papers, fda_reports,
+                     fda_label_sections_count, full_result)
+                VALUES (?, ?, 'drug_drug', ?, ?, ?, ?, ?, ?);
             """,
                 d1, d2,
                 json.dumps(result),
-                result.get('severity'),
-                result.get('confidence', 0.0),
-                result.get('pubmed_papers', 0),
-                result.get('fda_reports', 0),
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_reports,
+                fda_sec_count,
                 d1, d2,
-                result.get('severity'),
-                result.get('confidence', 0.0),
-                result.get('pubmed_papers', 0),
-                result.get('fda_reports', 0),
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_reports,
+                fda_sec_count,
                 json.dumps(result)
             )
             conn.commit()
@@ -133,7 +192,9 @@ class AzureSQLCacheService:
 
     # ── Drug-Disease Cache ────────────────────────────────────────────────────
 
-    def get_drug_disease(self, drug: str, disease: str) -> Optional[Dict]:
+    def get_drug_disease(
+        self, drug: str, disease: str
+    ) -> Optional[Dict]:
         if not self.available:
             return None
         d, dis = drug.lower(), disease.lower()
@@ -150,54 +211,112 @@ class AzureSQLCacheService:
             if row:
                 cur.execute("""
                     UPDATE disease_cache
-                    SET access_count = access_count + 1,
+                    SET access_count  = access_count + 1,
                         last_accessed = GETDATE()
                     WHERE drug = ? AND disease = ?
                 """, d, dis)
                 conn.commit()
                 age = (datetime.now() - row.cached_at).days
-                print(f"      💾 Cache HIT: {d}+{dis} (cached {age}d ago)")
-                return json.loads(row.full_result)
+                print(f"      💾 Cache HIT: {d}+{dis} "
+                      f"(cached {age}d ago)")
+                result = json.loads(row.full_result)
+
+                # ── Normalise evidence{} — same as get_drug_drug ───
+                # Previously this was missing, so fda_label_sections
+                # _count was never in evidence{} on cache reads, and
+                # the frontend badge never rendered for disease pairs.
+                # Disease blobs store pubmed count as "pubmed_count"
+                # at the top level — different from DDI blobs which
+                # use "pubmed_papers". Check both fallback names.
+                ev = result.get("evidence", {})
+                if not isinstance(ev, dict):
+                    ev = {}
+
+                if not ev.get("pubmed_papers"):
+                    ev["pubmed_papers"] = (
+                        result.get("pubmed_papers")
+                        or result.get("pubmed_count", 0)
+                    )
+                if not ev.get("fda_label_sections_count"):
+                    ev["fda_label_sections_count"] = (
+                        result.get("fda_label_sections_count", 0)
+                    )
+                if not ev.get("fda_label_sections_found"):
+                    ev["fda_label_sections_found"] = (
+                        result.get("fda_label_sections_found", [])
+                    )
+                result["evidence"] = ev
+                return result
             print(f"      ❌ Cache MISS: {d}+{dis}")
             return None
         except Exception as e:
             print(f"      ⚠️  Cache read error: {e}")
             return None
 
-    def save_drug_disease(self, drug: str, disease: str, result: Dict):
+    def save_drug_disease(
+        self, drug: str, disease: str, result: Dict
+    ):
         if not self.available:
             return
         d, dis = drug.lower(), disease.lower()
         try:
             conn = self._conn()
             cur  = conn.cursor()
+
+            # ── Read evidence counts from nested evidence{} first,
+            # fall back to top-level fields for older result shapes.
+            ev            = result.get("evidence", {})
+            pubmed_papers = (
+                ev.get("pubmed_papers")
+                or result.get("pubmed_papers")
+                or result.get("pubmed_count", 0)
+            )
+            fda_sec_count = (
+                ev.get("fda_label_sections_count")
+                or result.get("fda_label_sections_count", 0)
+            )
+            sections_found = (
+                ev.get("fda_label_sections_found")
+                or result.get("fda_label_sections_found", [])
+            )
+
+            # Ensure evidence{} is complete before storing
+            ev["pubmed_papers"]            = pubmed_papers
+            ev["fda_label_sections_count"] = fda_sec_count
+            ev["fda_label_sections_found"] = sections_found
+            result["evidence"]             = ev
+
             cur.execute("""
                 MERGE disease_cache AS t
                 USING (SELECT ? AS drug, ? AS disease) AS s
                 ON t.drug = s.drug AND t.disease = s.disease
                 WHEN MATCHED THEN UPDATE SET
-                    full_result     = ?,
-                    severity        = ?,
-                    confidence      = ?,
-                    pubmed_papers   = ?,
-                    contraindicated = ?,
-                    cached_at       = GETDATE()
+                    full_result              = ?,
+                    severity                 = ?,
+                    confidence               = ?,
+                    pubmed_papers            = ?,
+                    fda_label_sections_count = ?,
+                    contraindicated          = ?,
+                    cached_at                = GETDATE()
                 WHEN NOT MATCHED THEN INSERT
-                    (drug, disease, contraindicated, severity, confidence,
-                     pubmed_papers, full_result)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
+                    (drug, disease, contraindicated, severity,
+                     confidence, pubmed_papers,
+                     fda_label_sections_count, full_result)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
                 d, dis,
                 json.dumps(result),
-                result.get('severity'),
-                result.get('confidence', 0.0),
-                result.get('pubmed_count', 0),
-                1 if result.get('contraindicated') else 0,
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_sec_count,
+                1 if result.get("contraindicated") else 0,
                 d, dis,
-                1 if result.get('contraindicated') else 0,
-                result.get('severity'),
-                result.get('confidence', 0.0),
-                result.get('pubmed_count', 0),
+                1 if result.get("contraindicated") else 0,
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_sec_count,
                 json.dumps(result)
             )
             conn.commit()
@@ -230,7 +349,8 @@ class AzureSQLCacheService:
                 """, d)
                 conn.commit()
                 age = (datetime.now() - row.cached_at).days
-                print(f"      💾 Cache HIT: {d} food (cached {age}d ago)")
+                print(f"      💾 Cache HIT: {d} food "
+                      f"(cached {age}d ago)")
                 return json.loads(row.full_result)
             print(f"      ❌ Cache MISS: {d} food")
             return None
@@ -263,15 +383,15 @@ class AzureSQLCacheService:
             """,
                 d,
                 json.dumps(result),
-                json.dumps(result.get('foods_to_avoid', [])),
-                json.dumps(result.get('foods_to_separate', [])),
-                json.dumps(result.get('foods_to_monitor', [])),
-                result.get('pubmed_count', 0),
+                json.dumps(result.get("foods_to_avoid", [])),
+                json.dumps(result.get("foods_to_separate", [])),
+                json.dumps(result.get("foods_to_monitor", [])),
+                result.get("pubmed_count", 0),
                 d,
-                json.dumps(result.get('foods_to_avoid', [])),
-                json.dumps(result.get('foods_to_separate', [])),
-                json.dumps(result.get('foods_to_monitor', [])),
-                result.get('pubmed_count', 0),
+                json.dumps(result.get("foods_to_avoid", [])),
+                json.dumps(result.get("foods_to_separate", [])),
+                json.dumps(result.get("foods_to_monitor", [])),
+                result.get("pubmed_count", 0),
                 json.dumps(result)
             )
             conn.commit()
@@ -286,30 +406,50 @@ class AzureSQLCacheService:
         if not self.available:
             return
         try:
-            ddi      = results.get('drug_drug', [])
-            severe   = sum(1 for r in ddi if r.get('severity') == 'severe')
-            moderate = sum(1 for r in ddi if r.get('severity') == 'moderate')
-            food_papers = sum(r.get('pubmed_count', 0) for r in results.get('drug_food', []))
-            ddi_papers  = sum(r.get('pubmed_papers', 0) for r in ddi)
-            dis_papers  = sum(r.get('pubmed_count', 0) for r in results.get('drug_disease', []))
-            risk = 'HIGH' if severe > 0 else 'MODERATE' if moderate > 0 else 'LOW'
-
+            ddi      = results.get("drug_drug", [])
+            severe   = sum(
+                1 for r in ddi if r.get("severity") == "severe"
+            )
+            moderate = sum(
+                1 for r in ddi if r.get("severity") == "moderate"
+            )
+            food_papers = sum(
+                r.get("pubmed_count", 0)
+                for r in results.get("drug_food", [])
+            )
+            ddi_papers = sum(
+                r.get("evidence", {}).get("pubmed_papers", 0)
+                or r.get("pubmed_papers", 0)
+                for r in ddi
+            )
+            dis_papers = sum(
+                r.get("evidence", {}).get("pubmed_papers", 0)
+                or r.get("pubmed_count", 0)
+                for r in results.get("drug_disease", [])
+            )
+            risk = (
+                "HIGH"     if severe > 0 else
+                "MODERATE" if moderate > 0 else
+                "LOW"
+            )
             conn = self._conn()
             cur  = conn.cursor()
             cur.execute("""
                 INSERT INTO analysis_log
-                    (session_id, medications, diseases, risk_level,
-                     severe_ddi, moderate_ddi, total_papers)
+                    (session_id, medications, diseases,
+                     risk_level, severe_ddi, moderate_ddi,
+                     total_papers)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
                 session_id,
-                ', '.join(medications),
-                ', '.join(diseases) if diseases else '',
+                ", ".join(medications),
+                ", ".join(diseases) if diseases else "",
                 risk, severe, moderate,
                 ddi_papers + dis_papers + food_papers
             )
             conn.commit()
-            print(f"   📊 Analysis logged (session: {session_id}, risk: {risk})")
+            print(f"   📊 Analysis logged "
+                  f"(session: {session_id}, risk: {risk})")
         except Exception as e:
             print(f"   ⚠️  Log error: {e}")
 
@@ -317,27 +457,36 @@ class AzureSQLCacheService:
 
     def get_stats(self) -> Dict:
         if not self.available:
-            return {'cache_location': 'Azure SQL (not connected)'}
+            return {"cache_location": "Azure SQL (not connected)"}
         try:
             conn = self._conn()
             cur  = conn.cursor()
-
-            cur.execute("SELECT COUNT(*), SUM(access_count) FROM interaction_cache")
+            cur.execute(
+                "SELECT COUNT(*), SUM(access_count) "
+                "FROM interaction_cache"
+            )
             ddi_row  = cur.fetchone()
-            cur.execute("SELECT COUNT(*), SUM(access_count) FROM disease_cache")
+            cur.execute(
+                "SELECT COUNT(*), SUM(access_count) "
+                "FROM disease_cache"
+            )
             dis_row  = cur.fetchone()
             cur.execute("SELECT COUNT(*) FROM food_cache")
             food_row = cur.fetchone()
             cur.execute("SELECT COUNT(*) FROM analysis_log")
             log_row  = cur.fetchone()
-
             return {
-                'drug_drug_cached':    ddi_row[0]  or 0,
-                'drug_disease_cached': dis_row[0]  or 0,
-                'food_cached':         food_row[0] or 0,
-                'total_analyses':      log_row[0]  or 0,
-                'total_cache_hits':    (ddi_row[1] or 0) + (dis_row[1] or 0),
-                'cache_location':      'Azure SQL Database'
+                "drug_drug_cached":    ddi_row[0]  or 0,
+                "drug_disease_cached": dis_row[0]  or 0,
+                "food_cached":         food_row[0] or 0,
+                "total_analyses":      log_row[0]  or 0,
+                "total_cache_hits":    (
+                    (ddi_row[1] or 0) + (dis_row[1] or 0)
+                ),
+                "cache_location":      "Azure SQL Database",
             }
         except Exception as e:
-            return {'error': str(e), 'cache_location': 'Azure SQL (error)'}
+            return {
+                "error":          str(e),
+                "cache_location": "Azure SQL (error)",
+            }

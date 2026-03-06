@@ -1,8 +1,7 @@
 // my-react-app/src/services/agentApi.js
 
-const BASE = '/agent'; // ✅ base prefix only — do NOT repeat "agent" in fetch URLs
+const BASE = '/agent';
 
-// ── Build patient profile from patient record ─────────────────────
 export function buildPatientProfile(patient) {
   const profile = {};
   if (patient?.Smoker    === 'Yes') profile.smokes         = true;
@@ -13,7 +12,6 @@ export function buildPatientProfile(patient) {
   return profile;
 }
 
-// ── Build lab data from lab results record ─────────────────────────
 export function buildPatientLabs(lab, patient) {
   const labs = {};
   if (patient?.Weight_kg)       labs.weight_kg = parseFloat(patient.Weight_kg);
@@ -37,67 +35,141 @@ export function buildPatientLabs(lab, patient) {
     if (!standard.has(k) && v != null && v !== '') other[k] = v;
   }
   if (Object.keys(other).length > 0) labs.other_investigations = other;
-
   return labs;
 }
 
-// ── Safely parse JSON from a fetch response ────────────────────────
 async function safeJson(res) {
   const text = await res.text();
-  if (!text || text.trim() === '') {
+  if (!text || text.trim() === '')
     throw new Error('Server returned an empty response.');
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`Server returned invalid JSON: ${text.slice(0, 120)}`);
-  }
+  try { return JSON.parse(text); }
+  catch { throw new Error(`Server returned invalid JSON: ${text.slice(0, 120)}`); }
 }
 
-// ── Full agent analysis (Safety + Disease + Counseling + Dosing) ───
-export async function runAgentAnalysis({
-  medications,
-  diseases,
-  age,
-  sex,
-  doseMap,
-  patientProfile,
-  patientLabs,
-  preferredLanguage,
-}) {
-  const res = await fetch(`${BASE}/analyze`, { // ✅ FIXED: was /agent/agent/analyze
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      medications,
-      diseases:           diseases         || [],
-      age:                age              || 45,
-      sex:                sex              || 'unknown',
-      dose_map:           doseMap          || {},
-      patient_profile:    patientProfile   || {},
-      patient_labs:       patientLabs      || {},
-      preferred_language: preferredLanguage || null,
-    }),
+function buildPayload({ medications, diseases, age, sex, doseMap, patientProfile, patientLabs, preferredLanguage }) {
+  return {
+    medications,
+    diseases:           diseases          || [],
+    age:                age               || 45,
+    sex:                sex               || 'unknown',
+    dose_map:           doseMap           || {},
+    patient_profile:    patientProfile    || {},
+    patient_labs:       patientLabs       || {},
+    preferred_language: preferredLanguage || null,
+  };
+}
+
+export async function runAgentAnalysis({ medications, diseases, age, sex, doseMap, patientProfile, patientLabs, preferredLanguage }) {
+  const res  = await fetch(`${BASE}/analyze`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildPayload({ medications, diseases, age, sex, doseMap, patientProfile, patientLabs, preferredLanguage })),
   });
-
-  const data = await safeJson(res); // ✅ safe parse — never crashes on empty body
-
-  if (!res.ok) {
-    throw new Error(data?.detail || data?.message || `Analysis failed (${res.status})`);
-  }
-
-  if (!data.analysis) {
-    throw new Error('Analysis response was empty or missing the "analysis" field.');
-  }
-
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(data?.detail || data?.message || `Analysis failed (${res.status})`);
+  if (!data.analysis) throw new Error('Analysis response was empty or missing the "analysis" field.');
   return data;
 }
 
-// ── Quick drug pair check (when doctor adds a new drug) ────────────
+// ── Phase analysis — ALL phases fire in parallel ──────────────────
+// Each phase calls onPhaseComplete the moment it finishes.
+// The UI updates immediately per phase — no waiting for all.
+//
+// signal (AbortSignal) is accepted and passed to every fetch so the
+// doctor can click Stop at any time and cancel all in-flight requests
+// instantly. Phases that have already completed keep their results.
+// Aborted phases are silently ignored (not treated as errors).
+export async function runPhaseAnalysis({
+  medications, diseases, age, sex,
+  doseMap, patientProfile, patientLabs,
+  preferredLanguage, onPhaseComplete,
+  signal,                                      // 👈 NEW — AbortSignal from parent
+}) {
+  const payload = buildPayload({ medications, diseases, age, sex, doseMap, patientProfile, patientLabs, preferredLanguage });
+  const headers = { 'Content-Type': 'application/json' };
+  const body    = JSON.stringify(payload);
+
+  // Accumulated result — merged as each phase completes
+  const result = {
+    drug_drug:              [],
+    drug_disease:           [],
+    drug_food:              [],
+    dosing_recommendations: [],
+    drug_counseling:        [],
+    condition_counseling:   [],
+    compounding_signals:    {},
+    risk_summary:           {},
+  };
+
+  // Helper — wraps each phase fetch with abort awareness
+  // If aborted: resolves silently with null (not an error)
+  // If failed:  logs error, calls onPhaseComplete with null
+  const makePhase = (name, url, onData) =>
+    fetch(url, { method: 'POST', headers, body, signal })   // 👈 signal passed
+      .then(safeJson)
+      .then(data => {
+        if (signal?.aborted) return null;                   // 👈 stop if aborted after response
+        onData(data);
+        onPhaseComplete?.(name, { ...result });
+        return data;
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return null;         // 👈 silently swallow abort
+        console.error(`${name} phase failed:`, err);
+        onPhaseComplete?.(name, null);
+        return null;
+      });
+
+  // Fire all four phases simultaneously
+  const fetchInteractions = makePhase(
+    'interactions',
+    `${BASE}/analyze/interactions`,
+    data => {
+      result.drug_drug           = data.drug_drug           || [];
+      result.drug_disease        = data.drug_disease        || [];
+      result.drug_food           = data.drug_food           || [];
+      result.compounding_signals = data.compounding_signals || {};
+    }
+  );
+
+  const fetchDosing = makePhase(
+    'dosing',
+    `${BASE}/analyze/dosing`,
+    data => {
+      result.dosing_recommendations = data.dosing_recommendations || [];
+    }
+  );
+
+  const fetchCounselling = makePhase(
+    'counselling',
+    `${BASE}/analyze/counselling`,
+    data => {
+      result.drug_counseling      = data.drug_counseling      || [];
+      result.condition_counseling = data.condition_counseling || [];
+    }
+  );
+
+  const fetchSummary = makePhase(
+    'summary',
+    `${BASE}/analyze/summary`,
+    data => {
+      result.risk_summary = data.risk_summary || {};
+      if (data.compounding_signals && Object.keys(data.compounding_signals).length > 0)
+        result.compounding_signals = data.compounding_signals;
+    }
+  );
+
+  // Wait for all — UI already updated as each arrived
+  await Promise.allSettled([fetchInteractions, fetchDosing, fetchCounselling, fetchSummary]);
+
+  // If aborted, reflect that in the return status
+  if (signal?.aborted) return { status: 'interrupted', analysis: result };
+
+  return { status: 'completed', analysis: result };
+}
+
 export async function quickDrugPairCheck(drug1, drug2) {
-  const res = await fetch(`${BASE}/check/drug-pair`, { // ✅ FIXED: was /agent/check/drug-pair
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const res  = await fetch(`${BASE}/check/drug-pair`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ drug1, drug2 }),
   });
   const data = await safeJson(res);
@@ -105,30 +177,19 @@ export async function quickDrugPairCheck(drug1, drug2) {
   return data;
 }
 
-// ── Validate drug name against FDA (while doctor types) ────────────
 export async function validateDrugName(drugName) {
-  const res = await fetch(`${BASE}/validate/drug`, { // ✅ FIXED: was /agent/validate/drug
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const res = await fetch(`${BASE}/validate/drug`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ drug_name: drugName }),
   });
   if (!res.ok) return { recognised: false };
   return safeJson(res);
 }
 
-// ── Dosing only (without full agent) ──────────────────────────────
 export async function getDosingOnly({ medications, diseases, age, sex, doseMap, patientLabs }) {
-  const res = await fetch(`${BASE}/dosing`, { // ✅ FIXED: was /agent/dosing
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      medications,
-      diseases:     diseases  || [],
-      age,
-      sex,
-      dose_map:     doseMap   || {},
-      patient_labs: patientLabs || {},
-    }),
+  const res  = await fetch(`${BASE}/dosing`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ medications, diseases: diseases || [], age, sex, dose_map: doseMap || {}, patient_labs: patientLabs || {} }),
   });
   const data = await safeJson(res);
   if (!res.ok) throw new Error(data?.detail || 'Dosing request failed');
