@@ -228,6 +228,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Get all users (for referral autocomplete) ────────────────
+  if (req.method === 'GET' && req.url === '/api/users') {
+    try {
+      const pool = await poolPromise;
+      const result = await pool.request()
+        .query('SELECT name, department, designation FROM dbo.users ORDER BY name ASC');
+      sendJSON(res, 200, { users: result.recordset });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
   // ── Get all inpatients ───────────────────────────────────────
   if (req.method === 'GET' && req.url === '/api/patients') {
     try {
@@ -482,6 +493,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/ip-prescriptions/hold') {
+    const { id, held } = await getBody(req);
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('id',   sql.Int, id)
+        .input('held', sql.Bit, held ? 1 : 0)
+        .query(`UPDATE dbo.ip_prescriptions SET Is_Held=@held WHERE ID=@id`);
+      sendJSON(res, 200, { message: 'Hold state updated.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
   // ── OP Prescriptions ─────────────────────────────────────────
   if (req.method === 'GET' && req.url.startsWith('/api/op-prescriptions/')) {
     const opNo = decodeURIComponent(req.url.split('/api/op-prescriptions/')[1]);
@@ -532,6 +556,19 @@ const server = http.createServer(async (req, res) => {
       await pool.request().input('id', sql.Int, id)
         .query(`DELETE FROM dbo.op_prescriptions WHERE ID = @id`);
       sendJSON(res, 200, { message: 'Deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/op-prescriptions/hold') {
+    const { id, held } = await getBody(req);
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('id',   sql.Int, id)
+        .input('held', sql.Bit, held ? 1 : 0)
+        .query(`UPDATE dbo.op_prescriptions SET Is_Held=@held WHERE ID=@id`);
+      sendJSON(res, 200, { message: 'Hold state updated.' });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
@@ -986,6 +1023,122 @@ const server = http.createServer(async (req, res) => {
           updated_at:            r.Updated_At,
         },
       });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save IP referral ─────────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-referral') {
+    const { ipNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
+    if (!ipNo) return sendJSON(res, 400, { message: 'IP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('ipNo',     sql.VarChar, ipNo)
+        .input('toDept',   sql.VarChar, to_dept    || '')
+        .input('toDoctor', sql.VarChar, to_doctor  || '')
+        .input('urgency',  sql.VarChar, urgency    || 'Routine')
+        .input('date',     sql.Date,    date       || null)
+        .input('reason',   sql.VarChar, reason     || '')
+        .input('notes',    sql.VarChar, notes      || null)
+        .query(`INSERT INTO dbo.ip_refferal
+          (IP_No, Refer_To_Department, Refer_To_Doctor, Urgency, Referral_Date, Reason_For_Referral, Additional_Notes)
+          VALUES (@ipNo, @toDept, @toDoctor, @urgency, @date, @reason, @notes)`);
+      sendJSON(res, 201, { message: 'IP referral saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Delete IP referral ───────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/ip-referral/delete') {
+    const { patientNo, to_doctor, to_dept, date } = await getBody(req);
+    if (!patientNo) return sendJSON(res, 400, { message: 'IP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('ipNo',     sql.VarChar, patientNo)
+        .input('toDoctor', sql.VarChar, to_doctor || '')
+        .input('toDept',   sql.VarChar, to_dept   || '')
+        .input('date',     sql.Date,    date       || null)
+        .query(`DELETE FROM dbo.ip_refferal
+                WHERE IP_No = @ipNo
+                  AND Refer_To_Doctor     = @toDoctor
+                  AND Refer_To_Department = @toDept
+                  AND Referral_Date       = @date`);
+      sendJSON(res, 200, { message: 'IP referral deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get IP referrals ─────────────────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/ip-referral/')) {
+    const ipNo = decodeURIComponent(req.url.split('/api/ip-referral/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('ipNo', sql.VarChar, ipNo)
+        .query(`SELECT IP_No, Refer_To_Department, Refer_To_Doctor, Urgency,
+                       Referral_Date, Reason_For_Referral, Additional_Notes, Created_At
+                FROM dbo.ip_refferal WHERE IP_No = @ipNo ORDER BY Created_At DESC`);
+      sendJSON(res, 200, { referrals: result.recordset });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Save OP referral ─────────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-referral') {
+    const { opNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
+    if (!opNo) return sendJSON(res, 400, { message: 'OP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('opNo',     sql.VarChar, opNo)
+        .input('toDept',   sql.VarChar, to_dept    || '')
+        .input('toDoctor', sql.VarChar, to_doctor  || '')
+        .input('urgency',  sql.VarChar, urgency    || 'Routine')
+        .input('date',     sql.Date,    date       || null)
+        .input('reason',   sql.VarChar, reason     || '')
+        .input('notes',    sql.VarChar, notes      || null)
+        .query(`INSERT INTO dbo.op_refferal
+          (OP_No, Refer_To_Department, Refer_To_Doctor, Urgency, Referral_Date, Reason_For_Referral, Additional_Notes)
+          VALUES (@opNo, @toDept, @toDoctor, @urgency, @date, @reason, @notes)`);
+      sendJSON(res, 201, { message: 'OP referral saved.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Delete OP referral ───────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/op-referral/delete') {
+    const { patientNo, to_doctor, to_dept, date } = await getBody(req);
+    if (!patientNo) return sendJSON(res, 400, { message: 'OP_No required.' });
+    try {
+      const pool = await patientsPoolPromise;
+      await pool.request()
+        .input('opNo',     sql.VarChar, patientNo)
+        .input('toDoctor', sql.VarChar, to_doctor || '')
+        .input('toDept',   sql.VarChar, to_dept   || '')
+        .input('date',     sql.Date,    date       || null)
+        .query(`DELETE FROM dbo.op_refferal
+                WHERE OP_No = @opNo
+                  AND Refer_To_Doctor     = @toDoctor
+                  AND Refer_To_Department = @toDept
+                  AND Referral_Date       = @date`);
+      sendJSON(res, 200, { message: 'OP referral deleted.' });
+    } catch (err) { sendJSON(res, 500, { message: err.message }); }
+    return;
+  }
+
+  // ── Get OP referrals ─────────────────────────────────────────
+  if (req.method === 'GET' && req.url.startsWith('/api/op-referral/')) {
+    const opNo = decodeURIComponent(req.url.split('/api/op-referral/')[1]);
+    try {
+      const pool = await patientsPoolPromise;
+      const result = await pool.request()
+        .input('opNo', sql.VarChar, opNo)
+        .query(`SELECT OP_No, Refer_To_Department, Refer_To_Doctor, Urgency,
+                       Referral_Date, Reason_For_Referral, Additional_Notes, Created_At
+                FROM dbo.op_refferal WHERE OP_No = @opNo ORDER BY Created_At DESC`);
+      sendJSON(res, 200, { referrals: result.recordset });
     } catch (err) { sendJSON(res, 500, { message: err.message }); }
     return;
   }
