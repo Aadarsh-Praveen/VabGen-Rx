@@ -110,7 +110,6 @@ const DiagnosisTab = ({ p, user }) => {
       const res  = await apiFetch(ep);
       const data = await res.json();
       if (res.ok) {
-        // Map Is_Held (DB bit 0/1) → held (boolean) for UI
         setMedications((data.prescriptions || []).map(m => ({
           ...m,
           held: m.Is_Held === true || m.Is_Held === 1,
@@ -168,8 +167,6 @@ const DiagnosisTab = ({ p, user }) => {
   }, [patientNo]);
 
   // ── Load ALL saved data together (MERGED) ──────────────────────
-  // ⚠️ CRITICAL: ALL sources must be fetched in ONE useEffect and
-  // merged into ONE setAgentResult call to avoid race conditions.
   useEffect(() => {
     const load = async () => {
       try {
@@ -183,7 +180,6 @@ const DiagnosisTab = ({ p, user }) => {
           ? `/api/op-patient-counselling/${encodeURIComponent(patientNo)}`
           : `/api/ip-patient-counselling/${encodeURIComponent(patientNo)}`;
 
-        // Fetch all three in parallel
         const [diRes, drRes, pcRes] = await Promise.all([
           apiFetch(diEp),
           apiFetch(drEp),
@@ -194,7 +190,6 @@ const DiagnosisTab = ({ p, user }) => {
         const drData = await drRes.json();
         const pcData = await pcRes.json();
 
-        // Parse interactions
         const s = (diRes.ok && diData.found && diData.data) ? diData.data : null;
         const drug_drug = s ? [
           ...(s.drug_drug.severe   || []),
@@ -208,18 +203,15 @@ const DiagnosisTab = ({ p, user }) => {
         ] : [];
         const drug_food = s ? (s.drug_food || []) : [];
 
-        // Parse dosing
         const d = (drRes.ok && drData.found && drData.data) ? drData.data : null;
         const dosing_recommendations = d
           ? [...(d.high || []), ...(d.medium || [])]
           : [];
 
-        // Parse counselling
         const c = (pcRes.ok && pcData.found && pcData.data) ? pcData.data : null;
         const drug_counseling      = c ? (c.drug_counselling      || []) : [];
         const condition_counseling = c ? (c.condition_counselling || []) : [];
 
-        // Only set state if we have something to show
         if (
           drug_drug.length > 0 || drug_disease.length > 0 ||
           drug_food.length > 0 || dosing_recommendations.length > 0 ||
@@ -239,7 +231,7 @@ const DiagnosisTab = ({ p, user }) => {
       } catch { /* no saved data yet — silently ignore */ }
     };
     load();
-  }, [patientNo]); // ← single effect, single setAgentResult
+  }, [patientNo]);
 
   // ── Save drug interactions whenever agentResult changes ────────
   useEffect(() => {
@@ -417,7 +409,7 @@ const DiagnosisTab = ({ p, user }) => {
         .flatMap(d => d.split(",").map(s => s.trim()).filter(Boolean));
 
       const activeMeds = medications.filter(m => !m.held);
-      if (activeMeds.length === 0) return; // all meds on hold
+      if (activeMeds.length === 0) return;
 
       const doseMap = {};
       activeMeds.forEach(m => {
@@ -480,6 +472,13 @@ const DiagnosisTab = ({ p, user }) => {
         preferredLanguage: null,
         signal:            controller.signal,
         onPhaseComplete,
+        // ── HIPAA audit headers ────────────────────────────────
+        // Identifies the doctor in phi_audit_log so the audit log
+        // records who ran the analysis instead of "anonymous".
+        userId:    user?.id    || user?.email || user?.name || 'unknown',
+        userEmail: user?.email || '',
+        patientNo: patientNo,   // ← ADD THIS LINE ONLY
+
       });
 
       if (response.status === "interrupted") setWasInterrupted(true);
@@ -574,9 +573,6 @@ const DiagnosisTab = ({ p, user }) => {
 
   const handleAutoSave = async () => {
     const errors = {};
-    // For manual entries, newMed is injected via handleSelectDrug just
-    // before this is called — so we allow a brief window for state to settle.
-    // We still validate route/frequency/days as required.
     if (!newMed)                   errors.drug      = "Select or enter a drug.";
     if (!newForm.route.trim())     errors.route     = "Required.";
     if (!newForm.frequency.trim()) errors.frequency = "Required.";
@@ -585,7 +581,6 @@ const DiagnosisTab = ({ p, user }) => {
     setAddSaving(true);
     try {
       const ep   = isOutpatient ? "/api/op-prescriptions" : "/api/ip-prescriptions";
-      // manual flag is just a UI hint — never sent to inventory
       const body = isOutpatient
         ? { opNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days }
         : { ipNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days };
@@ -639,12 +634,10 @@ const DiagnosisTab = ({ p, user }) => {
   };
 
   const handleHold = async (id) => {
-    // Optimistically toggle in UI immediately
     const target  = medications.find(x => x.ID === id);
     const newHeld = !target?.held;
     setMedications(m => m.map(x => x.ID === id ? { ...x, held: newHeld } : x));
     setOpenMenu(null);
-    // Persist to DB
     try {
       const ep = isOutpatient ? "/api/op-prescriptions/hold" : "/api/ip-prescriptions/hold";
       await apiFetch(ep, {

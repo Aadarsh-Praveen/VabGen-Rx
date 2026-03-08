@@ -5,9 +5,10 @@ import Dashboard from "./pages/dashboard";
 import Settings from "./pages/settings";
 import Patients from "./pages/patients";
 import PatientDetails from "./pages/patientDetails";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import SessionTimeoutModal from "./components/sessionTimeoutModal"; // ← ADD
 
 const App = () => {
-  // ── Persist user in localStorage so page refresh doesn't log out ──
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem("user");
@@ -17,34 +18,27 @@ const App = () => {
     }
   });
 
-  // ── Check token validity on app load ────────────────────────
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token && user) {
-      // No token but user exists — clear stale user
-      setUser(null);
-    }
+    if (!token && user) setUser(null);
   }, []);
 
-  // Save user to localStorage whenever it changes
   useEffect(() => {
     if (user) localStorage.setItem("user", JSON.stringify(user));
     else {
       localStorage.removeItem("user");
-      localStorage.removeItem("token"); // clear token on logout too
+      localStorage.removeItem("token");
     }
   }, [user]);
 
-  // Apply saved theme on load
   useEffect(() => {
     const saved = localStorage.getItem("theme") || "light";
     document.documentElement.setAttribute("data-theme", saved);
   }, []);
 
-  const handleLogin = (loggedInUser) => setUser(loggedInUser);
+  const handleLogin     = (loggedInUser) => setUser(loggedInUser);
   const handleUserUpdate = (updatedUser) => setUser(updatedUser);
 
-  // ── Logout — clears user + token ────────────────────────────
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -53,9 +47,14 @@ const App = () => {
 
   return (
     <BrowserRouter>
+      {/* ── Session timeout modal — only active when logged in ── */}
+      {user && <SessionTimeoutModal onLogout={handleLogout} />}
+
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/login" element={<Login onLogin={handleLogin} />} />
+        <Route path="/login"   element={<Login onLogin={handleLogin} />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+
         <Route
           path="/dashboard"
           element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />}
@@ -68,7 +67,6 @@ const App = () => {
               : <Navigate to="/login" replace />
           }
         />
-        {/* ── Patients list ── */}
         <Route
           path="/patients"
           element={
@@ -77,7 +75,6 @@ const App = () => {
               : <Navigate to="/login" replace />
           }
         />
-        {/* ── Patient detail ── */}
         <Route
           path="/patients/:id"
           element={
