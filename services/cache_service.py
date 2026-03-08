@@ -13,6 +13,11 @@ CHANGES:
   dedicated column AND ensures evidence{} is complete before
   storing full_result — same pattern as save_drug_drug.
 - save_drug_drug already had these fixes — unchanged.
+- enforce_retention_policy() added — deletes cache records older
+  than their defined retention period. Called on app startup by
+  the FastAPI startup event in app.py. Reads retention days from
+  CACHE_TTL_DAYS and ANALYSIS_LOG_TTL_DAYS env vars so no
+  hardcoded values in cleanup logic.
 """
 
 import json
@@ -23,7 +28,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", 30))
+CACHE_TTL_DAYS       = int(os.getenv("CACHE_TTL_DAYS", 30))
+ANALYSIS_LOG_TTL_DAYS = int(os.getenv("ANALYSIS_LOG_TTL_DAYS", 365))
 
 
 class AzureSQLCacheService:
@@ -112,8 +118,8 @@ class AzureSQLCacheService:
                       f"{row.access_count} uses)")
                 result = json.loads(row.full_result)
                 result = self._normalise_evidence(result, [
-                    ("pubmed_papers",          "pubmed_papers"),
-                    ("fda_reports",            "fda_reports"),
+                    ("pubmed_papers",           "pubmed_papers"),
+                    ("fda_reports",             "fda_reports"),
                     ("fda_label_sections_count","fda_label_sections_count"),
                 ])
                 return result
@@ -221,10 +227,6 @@ class AzureSQLCacheService:
                       f"(cached {age}d ago)")
                 result = json.loads(row.full_result)
 
-                # ── Normalise evidence{} — same as get_drug_drug ───
-                # Previously this was missing, so fda_label_sections
-                # _count was never in evidence{} on cache reads, and
-                # the frontend badge never rendered for disease pairs.
                 # Disease blobs store pubmed count as "pubmed_count"
                 # at the top level — different from DDI blobs which
                 # use "pubmed_papers". Check both fallback names.
@@ -263,8 +265,6 @@ class AzureSQLCacheService:
             conn = self._conn()
             cur  = conn.cursor()
 
-            # ── Read evidence counts from nested evidence{} first,
-            # fall back to top-level fields for older result shapes.
             ev            = result.get("evidence", {})
             pubmed_papers = (
                 ev.get("pubmed_papers")
@@ -452,6 +452,75 @@ class AzureSQLCacheService:
                   f"(session: {session_id}, risk: {risk})")
         except Exception as e:
             print(f"   ⚠️  Log error: {e}")
+
+    # ── Retention Policy Enforcement ──────────────────────────────────────────
+
+    def enforce_retention_policy(self) -> Dict:
+        """
+        Delete cache and log records older than their defined
+        retention period. Called on app startup by the FastAPI
+        startup event in app.py.
+
+        Retention periods come from env vars — no hardcoded values:
+          CACHE_TTL_DAYS        → cache tables  (default 30 days)
+          ANALYSIS_LOG_TTL_DAYS → analysis_log  (default 365 days)
+
+        PHI audit log retention (6 years) is handled separately
+        by AuditLogService.enforce_retention_policy() in logs/
+        because it lives in a different database.
+
+        Returns dict of {table_name: rows_deleted} for logging.
+        Never raises — retention cleanup must never break startup.
+        """
+        if not self.available:
+            return {}
+
+        results = {}
+        try:
+            conn = self._conn()
+            cur  = conn.cursor()
+
+            # ── Cache tables — CACHE_TTL_DAYS (default 30) ────────
+            for table, col in [
+                ("interaction_cache",          "cached_at"),
+                ("disease_cache",              "cached_at"),
+                ("food_cache",                 "cached_at"),
+                ("drug_counseling_cache",      "cached_at"),
+                ("condition_counseling_cache", "cached_at"),
+            ]:
+                cur.execute(f"""
+                    DELETE FROM {table}
+                    WHERE DATEDIFF(day, {col}, GETUTCDATE())
+                          > ?
+                """, CACHE_TTL_DAYS)
+                deleted         = cur.rowcount
+                results[table]  = deleted
+                if deleted > 0:
+                    print(f"   🗑️  Retention: deleted {deleted} "
+                          f"rows from {table} "
+                          f"(>{CACHE_TTL_DAYS} days old)")
+
+            # ── Analysis log — ANALYSIS_LOG_TTL_DAYS (default 365) ─
+            cur.execute("""
+                DELETE FROM analysis_log
+                WHERE DATEDIFF(day, logged_at, GETUTCDATE())
+                      > ?
+            """, ANALYSIS_LOG_TTL_DAYS)
+            deleted                  = cur.rowcount
+            results["analysis_log"]  = deleted
+            if deleted > 0:
+                print(f"   🗑️  Retention: deleted {deleted} "
+                      f"rows from analysis_log "
+                      f"(>{ANALYSIS_LOG_TTL_DAYS} days old)")
+
+            conn.commit()
+            print(f"   ✅ Cache retention policy enforced — "
+                  f"total deleted: {sum(results.values())} rows")
+            return results
+
+        except Exception as e:
+            print(f"   ⚠️  Cache retention cleanup error: {e}")
+            return {}
 
     # ── Stats ─────────────────────────────────────────────────────────────────
 

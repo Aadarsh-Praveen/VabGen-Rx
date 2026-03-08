@@ -3,23 +3,20 @@ VabGenRx — FastAPI Layer
 Clinical Intelligence Platform for Medication Safety
 
 CHANGES:
-- /agent/analyze/interactions now calls
-  safety_ev_svc.patch_drug_drug_evidence() and
-  disease_ev_svc.patch_drug_disease_evidence() after agent
-  synthesis so evidence badge counts (pubmed_papers,
-  fda_reports, fda_label_sections_count) are correctly
-  populated for cached pairs before the response is returned.
-  Previously the patch was only called inside
-  VabGenRxOrchestrator.analyze() — this route bypasses the
-  orchestrator so the patch was never running here.
-- /agent/analyze/summary no longer calls agent_service.analyze()
-- /agent/translate updated to accept new payload shape
-- All other endpoints unchanged
+- HIPAA Audit Log middleware added — logs every PHI-touching
+  endpoint hit to phi_audit_log in vabgenrx-audit-logs DB.
+- Startup event added — seeds retention policies and runs
+  initial retention cleanup on app start.
+- /health endpoint updated — includes audit log stats.
+- /audit/stats endpoint added — compliance reporting.
+- AuditLogService imported from logs/ folder.
+- All existing endpoints and logic unchanged.
 """
 
 import os
 import sys
 import uuid
+import hashlib  
 from typing          import List, Optional, Dict, Any
 from itertools       import combinations
 from fastapi         import FastAPI, HTTPException, Request
@@ -34,6 +31,10 @@ sys.path.insert(0, os.getcwd())
 from dotenv import load_dotenv
 load_dotenv()
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from keyvault import load_all_secrets
+load_all_secrets()
+
 # ── Service imports ───────────────────────────────────────────────────────────
 from services.pubmed_service              import PubMedService
 from services.fda_service                 import FDAService
@@ -44,6 +45,9 @@ from services.patient.counselling_service import DrugCounselingService
 from services.patient.condition_service   import ConditionCounselingService
 from services.patient.dosing_service      import DosingService
 from services.translation                 import TranslationService
+
+# ── HIPAA Audit Log import ────────────────────────────────────────────────────
+from logs import AuditLogService, AuditAction, ResourceType
 
 # ── A2A imports ───────────────────────────────────────────────────────────────
 from services.a2a import (
@@ -91,6 +95,43 @@ counseling_service  = DrugCounselingService()
 condition_service   = ConditionCounselingService()
 dosing_service      = DosingService()
 translation_service = TranslationService()
+audit               = AuditLogService()   # HIPAA audit log service
+
+# ── PHI endpoints to audit ────────────────────────────────────────────────────
+# Every request to these paths is logged to phi_audit_log.
+# Captures: user, action, endpoint, IP, success/failure.
+_PHI_ENDPOINTS = (
+    "/agent/analyze",    # all analysis phases
+    "/agent/translate",  # contains PHI counselling text
+    "/counseling/",      # drug + condition counselling
+    "/dosing",           # dosing recommendations
+    "/analyze",          # legacy analysis endpoint
+)
+
+
+# ── Startup event ─────────────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    """
+    On startup:
+    1. Retention policies are seeded by AuditLogService.__init__
+       (already runs above when audit = AuditLogService()).
+    2. Run retention cleanup — removes records older than their
+       defined retention period from phi_audit_log.
+    3. Run cache retention cleanup from cache DB.
+    """
+    try:
+        # Audit DB retention cleanup (phi_audit_log > 6 years)
+        audit.enforce_retention_policy()
+
+        # Cache DB retention cleanup (caches > 30 days)
+        cache_cleanup = cache.enforce_retention_policy()
+        if cache_cleanup:
+            print(f"   🗑️  Cache retention: {cache_cleanup}")
+
+        print("✅ Retention policies enforced on startup")
+    except Exception as e:
+        print(f"⚠️  Startup retention cleanup failed: {e}")
 
 
 # ── Request / Response Models ─────────────────────────────────────────────────
@@ -395,6 +436,7 @@ def health():
         "platform":    "VabGenRx",
         "cache":       cache.get_stats(),
         "fda_cache":   fda.get_cache_stats(),
+        "audit":       audit.get_stats(),   # HIPAA audit stats
         "api_version": "3.0.0"
     }
 
@@ -581,14 +623,6 @@ def agent_analyze(req: AnalysisRequest):
 def analyze_interactions(req: AnalysisRequest):
     """
     Phase 1 — Drug interactions only.
-    Runs evidence gathering + Safety + Disease agents.
-    Returns drug_drug, drug_disease, drug_food,
-    compounding_signals.
-
-    FIXED: calls patch_drug_drug_evidence() and
-    patch_drug_disease_evidence() after agent synthesis so
-    evidence badge counts are correctly populated for cached
-    pairs before the response is returned to the frontend.
     """
     if not req.medications:
         raise HTTPException(
@@ -671,10 +705,6 @@ def analyze_interactions(req: AnalysisRequest):
                 disease_r1 = result or {"drug_disease": []}
 
     # ── Patch evidence counts for cached pairs ─────────────────────
-    # The agent copies clinical text correctly for cached pairs but
-    # writes zeros for pubmed_papers, fda_reports, and
-    # fda_label_sections_count. Stamp correct values directly from
-    # raw evidence — bypasses the agent for these numeric fields.
     safety_r1  = safety_ev_svc.patch_drug_drug_evidence(
         safety_r1,
         safety_evidence.get("drug_drug", {})
@@ -944,10 +974,6 @@ def analyze_counselling(req: AnalysisRequest):
 def analyze_summary(req: AnalysisRequest):
     """
     Phase 4 — Clinical summary via OrchestratorAgent only.
-
-    No longer calls agent_service.analyze() (full pipeline).
-    Runs only OrchestratorAgent with patient context.
-    Frontend merges all four phase results client-side.
     """
     if not req.medications:
         raise HTTPException(
@@ -1211,6 +1237,17 @@ def cache_stats():
     }
 
 
+# ── HIPAA Audit Stats Endpoint ────────────────────────────────────────────────
+@app.get("/audit/stats")
+def audit_stats():
+    """
+    HIPAA compliance reporting endpoint.
+    Returns audit log statistics for compliance review.
+    Shows total events, breakdown by action, oldest/newest record.
+    """
+    return audit.get_stats()
+
+
 # ── Translation Endpoint ──────────────────────────────────────────────────────
 
 @app.post("/agent/translate")
@@ -1247,6 +1284,78 @@ def translate_counselling(req: TranslateRequest):
         "language":             req.language,
     }
 
+# ── HIPAA Audit Middleware ────────────────────────────────────────
+@app.middleware("http")
+async def phi_audit_middleware(request: Request, call_next):
+    """
+    Log every PHI-touching endpoint hit to phi_audit_log.
+
+    session_id:  Generated per analysis in agentApi.js —
+                 all 4 phase calls share the same UUID so
+                 one complete analysis = one traceable session.
+
+    resource_id: Patient IP_No / OP_No sent as X-Resource-ID
+                 header. Hashed with SHA-256 here before storage
+                 so raw patient IDs NEVER appear in the audit log.
+                 HIPAA compliant — hash is one-way, irreversible.
+    """
+    response = await call_next(request)
+
+    try:
+        path = request.url.path
+        if any(path.startswith(ep) for ep in _PHI_ENDPOINTS):
+
+            # ── Determine resource type from path ─────────────────
+            if "interact" in path:
+                resource = ResourceType.DRUG_ANALYSIS
+            elif "translate" in path:
+                resource = ResourceType.TRANSLATION
+            elif "counsel" in path:
+                resource = ResourceType.COUNSELLING
+            elif "dosing" in path:
+                resource = ResourceType.DOSING
+            else:
+                resource = ResourceType.DRUG_ANALYSIS
+
+            # ── Hash patient ID — never store raw ────────────────
+            # X-Resource-ID contains IP_No or OP_No sent over HTTPS.
+            # SHA-256 hash truncated to 16 hex chars stored in log.
+            # Raw patient ID never touches the audit database.
+            raw_resource_id = request.headers.get("X-Resource-ID", "")
+            hashed_resource_id = (
+                hashlib.sha256(
+                    raw_resource_id.encode()
+                ).hexdigest()[:16]
+                if raw_resource_id else ""
+            )
+
+            audit.log(
+                action        = AuditAction.ANALYSIS,
+                resource_type = resource,
+                user_id       = request.headers.get(
+                    "X-User-ID", "anonymous"
+                ),
+                user_email    = request.headers.get(
+                    "X-User-Email", ""
+                ),
+                ip_address    = (
+                    request.client.host
+                    if request.client else ""
+                ),
+                session_id    = request.headers.get(
+                    "X-Session-ID", ""   # ← UUID from agentApi.js
+                ),
+                resource_id   = hashed_resource_id,  # ← hashed, never raw
+                endpoint      = path,
+                http_method   = request.method,
+                status_code   = response.status_code,
+                success       = response.status_code < 400,
+                detail        = f"HTTP {response.status_code}",
+            )
+    except Exception as e:
+        print(f"   ⚠️  Audit middleware error: {e}")
+
+    return response
 
 # ── Exception Handlers ────────────────────────────────────────────────────────
 
