@@ -14,19 +14,8 @@ import OutOfStockFinder       from "./outOfStockFinder";
 import PatientCounselling     from "./patientCounselling";
 
 // ── Loading state constants ────────────────────────────────────────
-const LOADING_IDLE = {
-  interactions: false,
-  dosing:       false,
-  counselling:  false,
-  summary:      false,
-};
-
-const LOADING_ALL = {
-  interactions: true,
-  dosing:       true,
-  counselling:  true,
-  summary:      true,
-};
+const LOADING_IDLE = { interactions: false, dosing: false, counselling: false, summary: false };
+const LOADING_ALL  = { interactions: true,  dosing: true,  counselling: true,  summary: true  };
 
 // ── Helper — bucket agentResult into DB shape ─────────────────────
 function buildInteractionPayload(patientNo, isOutpatient, agentResult) {
@@ -111,8 +100,7 @@ const DiagnosisTab = ({ p, user }) => {
       const data = await res.json();
       if (res.ok) {
         setMedications((data.prescriptions || []).map(m => ({
-          ...m,
-          held: m.Is_Held === true || m.Is_Held === 1,
+          ...m, held: m.Is_Held === true || m.Is_Held === 1,
         })));
       }
     } catch { setMedications([]); }
@@ -166,7 +154,7 @@ const DiagnosisTab = ({ p, user }) => {
     load();
   }, [patientNo]);
 
-  // ── Load ALL saved data together (MERGED) ──────────────────────
+  // ── Load ALL saved data together ──────────────────────────────
   useEffect(() => {
     const load = async () => {
       try {
@@ -181,9 +169,7 @@ const DiagnosisTab = ({ p, user }) => {
           : `/api/ip-patient-counselling/${encodeURIComponent(patientNo)}`;
 
         const [diRes, drRes, pcRes] = await Promise.all([
-          apiFetch(diEp),
-          apiFetch(drEp),
-          apiFetch(pcEp),
+          apiFetch(diEp), apiFetch(drEp), apiFetch(pcEp),
         ]);
 
         const diData = await diRes.json();
@@ -204,9 +190,7 @@ const DiagnosisTab = ({ p, user }) => {
         const drug_food = s ? (s.drug_food || []) : [];
 
         const d = (drRes.ok && drData.found && drData.data) ? drData.data : null;
-        const dosing_recommendations = d
-          ? [...(d.high || []), ...(d.medium || [])]
-          : [];
+        const dosing_recommendations = d ? [...(d.high || []), ...(d.medium || [])] : [];
 
         const c = (pcRes.ok && pcData.found && pcData.data) ? pcData.data : null;
         const drug_counseling      = c ? (c.drug_counselling      || []) : [];
@@ -218,39 +202,30 @@ const DiagnosisTab = ({ p, user }) => {
           drug_counseling.length > 0 || condition_counseling.length > 0
         ) {
           setAgentResult({
-            drug_drug,
-            drug_disease,
-            drug_food,
-            dosing_recommendations,
-            drug_counseling,
-            condition_counseling,
-            compounding_signals: {},
-            risk_summary:        {},
+            drug_drug, drug_disease, drug_food,
+            dosing_recommendations, drug_counseling, condition_counseling,
+            compounding_signals: {}, risk_summary: {},
           });
         }
-      } catch { /* no saved data yet — silently ignore */ }
+      } catch {}
     };
     load();
   }, [patientNo]);
 
-  // ── Save drug interactions whenever agentResult changes ────────
+  // ── Save drug interactions ─────────────────────────────────────
   useEffect(() => {
     if (agentLoading || !agentResult) return;
     const save = async () => {
       try {
         const ep      = isOutpatient ? "/api/op-drug-interactions" : "/api/ip-drug-interactions";
         const payload = buildInteractionPayload(patientNo, isOutpatient, agentResult);
-        await apiFetch(ep, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(payload),
-        });
+        await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       } catch (err) { console.error("Failed to save drug interactions:", err); }
     };
     save();
   }, [agentResult, agentLoading]);
 
-  // ── Save dosing recommendations whenever agentResult changes ───
+  // ── Save dosing recommendations ────────────────────────────────
   useEffect(() => {
     if (agentLoading || !agentResult) return;
     const recs = agentResult.dosing_recommendations || [];
@@ -263,17 +238,13 @@ const DiagnosisTab = ({ p, user }) => {
           high:   recs.filter(r => r.urgency === "high"),
           medium: recs.filter(r => r.urgency === "medium" || r.urgency === "moderate"),
         };
-        await apiFetch(ep, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(payload),
-        });
+        await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       } catch (err) { console.error("Failed to save dosing recommendations:", err); }
     };
     save();
   }, [agentResult, agentLoading]);
 
-  // ── Save patient counselling whenever agentResult changes ──────
+  // ── Save patient counselling ───────────────────────────────────
   useEffect(() => {
     if (agentLoading || !agentResult) return;
     const drugC = agentResult.drug_counseling      || [];
@@ -287,11 +258,7 @@ const DiagnosisTab = ({ p, user }) => {
           drug_counselling:      drugC,
           condition_counselling: condC,
         };
-        await apiFetch(ep, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify(payload),
-        });
+        await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       } catch (err) { console.error("Failed to save patient counselling:", err); }
     };
     save();
@@ -301,9 +268,7 @@ const DiagnosisTab = ({ p, user }) => {
   const checkStockForMed = async (med) => {
     if (!med || !med.Generic_Name || !med.Strength) return;
     try {
-      const res  = await apiFetch(
-        `/api/drug-inventory/search?q=${encodeURIComponent(med.Generic_Name.trim())}`
-      );
+      const res  = await apiFetch(`/api/drug-inventory/search?q=${encodeURIComponent(med.Generic_Name.trim())}`);
       const data = await res.json();
       if (!res.ok) return;
       const drugs        = data.drugs || [];
@@ -319,13 +284,13 @@ const DiagnosisTab = ({ p, user }) => {
       const alternatives = sameStrength.filter(d =>
         d.Brand_Name !== med.Brand_Name && parseInt(d.Stocks) > 0
       );
-      const epPres = isOutpatient
+      const epPres  = isOutpatient
         ? `/api/op-prescriptions/${encodeURIComponent(patientNo)}`
         : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`;
       const presRes  = await apiFetch(epPres);
       const presData = await presRes.json();
       const presRow  = (presData.prescriptions || []).find(pr =>
-        pr.Brand_Name?.toLowerCase()  === med.Brand_Name?.toLowerCase() &&
+        pr.Brand_Name?.toLowerCase()   === med.Brand_Name?.toLowerCase() &&
         pr.Generic_Name?.toLowerCase() === med.Generic_Name?.toLowerCase()
       );
       if (!presRow) return;
@@ -340,18 +305,12 @@ const DiagnosisTab = ({ p, user }) => {
   const handleSwitch = async (outMed, altDrug) => {
     try {
       const delEp = isOutpatient ? "/api/op-prescriptions/delete" : "/api/ip-prescriptions/delete";
-      await apiFetch(delEp, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: outMed.ID }),
-      });
+      await apiFetch(delEp, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: outMed.ID }) });
       const addEp   = isOutpatient ? "/api/op-prescriptions" : "/api/ip-prescriptions";
       const addBody = isOutpatient
         ? { opNo: patientNo, brand: altDrug.Brand_Name, generic: altDrug.Generic_Name, strength: altDrug.Strength, route: outMed.Route || "", frequency: outMed.Frequency || "", days: outMed.Days || "" }
         : { ipNo: patientNo, brand: altDrug.Brand_Name, generic: altDrug.Generic_Name, strength: altDrug.Strength, route: outMed.Route || "", frequency: outMed.Frequency || "", days: outMed.Days || "" };
-      await apiFetch(addEp, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addBody),
-      });
+      await apiFetch(addEp, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(addBody) });
       setOutOfStock(prev => prev.filter(o => o.med.Brand_Name !== outMed.Brand_Name));
       await fetchMeds();
     } catch (err) { console.error("Switch failed:", err); }
@@ -365,16 +324,10 @@ const DiagnosisTab = ({ p, user }) => {
       const body = isOutpatient
         ? { opNo: patientNo, primary: diagnosis.primary, secondary: diagnosis.secondary, notes: diagnosis.notes }
         : { ipNo: patientNo, primary: diagnosis.primary, secondary: diagnosis.secondary, notes: diagnosis.notes };
-      const res = await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       setSaveMsg(res.ok ? "success" : "error");
     } catch { setSaveMsg("error"); }
-    finally {
-      setSaving(false);
-      setTimeout(() => setSaveMsg(null), 3000);
-    }
+    finally { setSaving(false); setTimeout(() => setSaveMsg(null), 3000); }
   };
 
   // ── Stop analysis ──────────────────────────────────────────────
@@ -387,16 +340,11 @@ const DiagnosisTab = ({ p, user }) => {
   // ── Agent analysis ─────────────────────────────────────────────
   const triggerAnalysis = async () => {
     if (medications.length === 0) return;
-
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-
-    setAgentResult(null);
-    setAgentError(null);
-    setWasInterrupted(false);
-    setLoadingState(LOADING_ALL);
-
+    setAgentResult(null); setAgentError(null);
+    setWasInterrupted(false); setLoadingState(LOADING_ALL);
     try {
       const labEp = isOutpatient
         ? `/api/op-lab/${encodeURIComponent(patientNo)}`
@@ -421,17 +369,11 @@ const DiagnosisTab = ({ p, user }) => {
         if (controller.signal.aborted) return;
         setLoadingState(prev => ({ ...prev, [phase]: false }));
         if (!data) return;
-
         setAgentResult(prev => {
           const base = prev || {
-            drug_drug:              [],
-            drug_disease:           [],
-            drug_food:              [],
-            dosing_recommendations: [],
-            drug_counseling:        [],
-            condition_counseling:   [],
-            compounding_signals:    {},
-            risk_summary:           {},
+            drug_drug: [], drug_disease: [], drug_food: [],
+            dosing_recommendations: [], drug_counseling: [], condition_counseling: [],
+            compounding_signals: {}, risk_summary: {},
           };
           if (phase === "interactions") return {
             ...base,
@@ -441,8 +383,7 @@ const DiagnosisTab = ({ p, user }) => {
             compounding_signals: data.compounding_signals ?? base.compounding_signals,
           };
           if (phase === "dosing") return {
-            ...base,
-            dosing_recommendations: data.dosing_recommendations ?? base.dosing_recommendations,
+            ...base, dosing_recommendations: data.dosing_recommendations ?? base.dosing_recommendations,
           };
           if (phase === "counselling") return {
             ...base,
@@ -453,8 +394,7 @@ const DiagnosisTab = ({ p, user }) => {
             ...base,
             risk_summary: data.risk_summary ?? base.risk_summary,
             compounding_signals: (
-              data.compounding_signals &&
-              Object.keys(data.compounding_signals).length > 0
+              data.compounding_signals && Object.keys(data.compounding_signals).length > 0
             ) ? data.compounding_signals : base.compounding_signals,
           };
           return base;
@@ -472,17 +412,12 @@ const DiagnosisTab = ({ p, user }) => {
         preferredLanguage: null,
         signal:            controller.signal,
         onPhaseComplete,
-        // ── HIPAA audit headers ────────────────────────────────
-        // Identifies the doctor in phi_audit_log so the audit log
-        // records who ran the analysis instead of "anonymous".
         userId:    user?.id    || user?.email || user?.name || 'unknown',
         userEmail: user?.email || '',
-        patientNo: patientNo,   // ← ADD THIS LINE ONLY
-
+        patientNo: patientNo,
       });
 
       if (response.status === "interrupted") setWasInterrupted(true);
-
     } catch (err) {
       if (err.name !== "AbortError") setAgentError(err.message);
     } finally {
@@ -499,45 +434,27 @@ const DiagnosisTab = ({ p, user }) => {
       const body = isOutpatient
         ? { opNo: patientNo, notes: noteText.trim() }
         : { ipNo: patientNo, notes: noteText.trim() };
-      const res  = await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res  = await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (res.ok) { setNoteText(""); setNoteMsg("success"); fetchNotes(); }
       else setNoteMsg("error");
     } catch { setNoteMsg("error"); }
-    finally {
-      setNoteSaving(false);
-      setTimeout(() => setNoteMsg(null), 3000);
-    }
+    finally { setNoteSaving(false); setTimeout(() => setNoteMsg(null), 3000); }
   };
 
   const handleSaveNoteEdit = async (id) => {
     if (!editNoteText.trim()) return;
     try {
-      const ep = isOutpatient
-        ? "/api/op-prescription-notes/update"
-        : "/api/ip-prescription-notes/update";
-      await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, notes: editNoteText.trim() }),
-      });
-      setPrescriberNotes(ns =>
-        ns.map(n => n.ID === id ? { ...n, Notes: editNoteText.trim() } : n)
-      );
+      const ep = isOutpatient ? "/api/op-prescription-notes/update" : "/api/ip-prescription-notes/update";
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, notes: editNoteText.trim() }) });
+      setPrescriberNotes(ns => ns.map(n => n.ID === id ? { ...n, Notes: editNoteText.trim() } : n));
     } catch {}
     setEditingNoteId(null); setEditNoteText("");
   };
 
   const handleDeleteNote = async (id) => {
     try {
-      const ep = isOutpatient
-        ? "/api/op-prescription-notes/delete"
-        : "/api/ip-prescription-notes/delete";
-      await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+      const ep = isOutpatient ? "/api/op-prescription-notes/delete" : "/api/ip-prescription-notes/delete";
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       setPrescriberNotes(ns => ns.filter(n => n.ID !== id));
     } catch {}
   };
@@ -584,16 +501,11 @@ const DiagnosisTab = ({ p, user }) => {
       const body = isOutpatient
         ? { opNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days }
         : { ipNo: patientNo, brand: newMed.Brand_Name, generic: newMed.Generic_Name, strength: newMed.Strength, route: newForm.route, frequency: newForm.frequency, days: newForm.days };
-      await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const savedMed = { ...newMed, Route: newForm.route, Frequency: newForm.frequency, Days: newForm.days };
       setShowAddRow(false);
       setSearchQ(""); setSearchResults([]);
-      setNewMed(null);
-      setNewForm({ route: "", frequency: "", days: "" });
-      setNewErrors({});
+      setNewMed(null); setNewForm({ route: "", frequency: "", days: "" }); setNewErrors({});
       await fetchMeds();
       await checkStockForMed(savedMed);
     } catch {}
@@ -603,9 +515,7 @@ const DiagnosisTab = ({ p, user }) => {
   const handleCancelAdd = () => {
     setShowAddRow(false);
     setSearchQ(""); setSearchResults([]);
-    setNewMed(null);
-    setNewForm({ route: "", frequency: "", days: "" });
-    setNewErrors({});
+    setNewMed(null); setNewForm({ route: "", frequency: "", days: "" }); setNewErrors({});
   };
 
   const handleEdit = (m) => {
@@ -616,19 +526,9 @@ const DiagnosisTab = ({ p, user }) => {
 
   const handleSaveEdit = async (id) => {
     try {
-      const ep = isOutpatient
-        ? "/api/op-prescriptions/update"
-        : "/api/ip-prescriptions/update";
-      await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, route: editValues.route, frequency: editValues.frequency, days: editValues.days }),
-      });
-      setMedications(m =>
-        m.map(x => x.ID === id
-          ? { ...x, Route: editValues.route, Frequency: editValues.frequency, Days: editValues.days }
-          : x
-        )
-      );
+      const ep = isOutpatient ? "/api/op-prescriptions/update" : "/api/ip-prescriptions/update";
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, route: editValues.route, frequency: editValues.frequency, days: editValues.days }) });
+      setMedications(m => m.map(x => x.ID === id ? { ...x, Route: editValues.route, Frequency: editValues.frequency, Days: editValues.days } : x));
     } catch {}
     setEditingId(null); setEditValues({});
   };
@@ -640,23 +540,14 @@ const DiagnosisTab = ({ p, user }) => {
     setOpenMenu(null);
     try {
       const ep = isOutpatient ? "/api/op-prescriptions/hold" : "/api/ip-prescriptions/hold";
-      await apiFetch(ep, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ id, held: newHeld }),
-      });
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, held: newHeld }) });
     } catch (err) { console.error("Failed to save hold state:", err); }
   };
 
   const handleDelete = async (id) => {
     try {
-      const ep = isOutpatient
-        ? "/api/op-prescriptions/delete"
-        : "/api/ip-prescriptions/delete";
-      await apiFetch(ep, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+      const ep = isOutpatient ? "/api/op-prescriptions/delete" : "/api/ip-prescriptions/delete";
+      await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
       setMedications(m => m.filter(x => x.ID !== id));
     } catch {}
     setOpenMenu(null);
@@ -670,7 +561,6 @@ const DiagnosisTab = ({ p, user }) => {
     setOpenMenu(id);
   };
 
-  // ── Helpers ────────────────────────────────────────────────────
   const formatDate = (s) => s
     ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
@@ -806,37 +696,19 @@ const DiagnosisTab = ({ p, user }) => {
   // ── Agent Banner ───────────────────────────────────────────────
   const AgentBanner = () => {
     if (agentLoading) return (
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10,
-        background: "#eff6ff", border: "1px solid #bfdbfe",
-        borderRadius: 8, padding: "10px 14px",
-        fontSize: "0.82rem", color: "#1a73e8", marginBottom: 12,
-      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 14px", fontSize: "0.82rem", color: "#1a73e8", marginBottom: 12 }}>
         <div className="pd-spinner" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
         🤖 Running VabGenRx Safety analysis...
       </div>
     );
     if (agentError) return (
-      <div style={{
-        background: "#fff5f5", border: "1px solid #fca5a5",
-        borderRadius: 8, padding: "10px 14px",
-        fontSize: "0.82rem", color: "#e05252", marginBottom: 12,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-      }}>
+      <div style={{ background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: "0.82rem", color: "#e05252", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span>⚠️ Analysis error: {agentError}</span>
-        <button onClick={triggerAnalysis} style={{
-          padding: "3px 12px", borderRadius: 6,
-          border: "1px solid #e05252", background: "transparent",
-          color: "#e05252", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600,
-        }}>Retry</button>
+        <button onClick={triggerAnalysis} style={{ padding: "3px 12px", borderRadius: 6, border: "1px solid #e05252", background: "transparent", color: "#e05252", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}>Retry</button>
       </div>
     );
     if (agentResult) return (
-      <div style={{
-        background: "#f0fdf4", border: "1px solid #86efac",
-        borderRadius: 8, padding: "8px 14px",
-        fontSize: "0.78rem", color: "#16a34a", marginBottom: 12,
-      }}>
+      <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "8px 14px", fontSize: "0.78rem", color: "#16a34a", marginBottom: 12 }}>
         ✅ VabGenRx Safety analysis completed
       </div>
     );
@@ -902,56 +774,29 @@ const DiagnosisTab = ({ p, user }) => {
       {/* ── Medication + Prescriber Notes ── */}
       <div className="diag-grid-2">
         <MedicationList
-          medications={medications}
-          medLoading={medLoading}
-          showAddRow={showAddRow}
-          setShowAddRow={setShowAddRow}
-          searchQ={searchQ}
-          searchResults={searchResults}
-          searching={searching}
-          newMed={newMed}
-          newForm={newForm}
-          setNewForm={setNewForm}
-          newErrors={newErrors}
-          setNewErrors={setNewErrors}
-          addSaving={addSaving}
-          editingId={editingId}
-          editValues={editValues}
-          setEditValues={setEditValues}
-          openMenu={openMenu}
-          menuPos={menuPos}
-          dropdownPos={dropdownPos}
-          agentLoading={agentLoading}
-          agentResult={agentResult}
-          wasInterrupted={wasInterrupted}
-          handleSearch={handleSearch}
-          handleSelectDrug={handleSelectDrug}
-          handleAutoSave={handleAutoSave}
-          handleCancelAdd={handleCancelAdd}
-          handleEdit={handleEdit}
-          handleSaveEdit={handleSaveEdit}
-          handleHold={handleHold}
-          handleDelete={handleDelete}
-          handleMenuOpen={handleMenuOpen}
-          updateDropdownPos={updateDropdownPos}
-          triggerAnalysis={triggerAnalysis}
-          onInterrupt={onInterrupt}
+          medications={medications} medLoading={medLoading}
+          showAddRow={showAddRow} setShowAddRow={setShowAddRow}
+          searchQ={searchQ} searchResults={searchResults} searching={searching}
+          newMed={newMed} newForm={newForm} setNewForm={setNewForm}
+          newErrors={newErrors} setNewErrors={setNewErrors} addSaving={addSaving}
+          editingId={editingId} editValues={editValues} setEditValues={setEditValues}
+          openMenu={openMenu} menuPos={menuPos} dropdownPos={dropdownPos}
+          agentLoading={agentLoading} agentResult={agentResult} wasInterrupted={wasInterrupted}
+          handleSearch={handleSearch} handleSelectDrug={handleSelectDrug}
+          handleAutoSave={handleAutoSave} handleCancelAdd={handleCancelAdd}
+          handleEdit={handleEdit} handleSaveEdit={handleSaveEdit}
+          handleHold={handleHold} handleDelete={handleDelete}
+          handleMenuOpen={handleMenuOpen} updateDropdownPos={updateDropdownPos}
+          triggerAnalysis={triggerAnalysis} onInterrupt={onInterrupt}
           searchInputRef={searchInputRef}
         />
         <PrescriberNotes
-          prescriberNotes={prescriberNotes}
-          noteText={noteText}
-          setNoteText={setNoteText}
-          noteSaving={noteSaving}
-          noteMsg={noteMsg}
-          editingNoteId={editingNoteId}
-          editNoteText={editNoteText}
-          setEditNoteText={setEditNoteText}
-          handleSaveNote={handleSaveNote}
-          handleSaveNoteEdit={handleSaveNoteEdit}
-          handleDeleteNote={handleDeleteNote}
-          setEditingNoteId={setEditingNoteId}
-          formatDate={formatDate}
+          prescriberNotes={prescriberNotes} noteText={noteText}
+          setNoteText={setNoteText} noteSaving={noteSaving} noteMsg={noteMsg}
+          editingNoteId={editingNoteId} editNoteText={editNoteText}
+          setEditNoteText={setEditNoteText} handleSaveNote={handleSaveNote}
+          handleSaveNoteEdit={handleSaveNoteEdit} handleDeleteNote={handleDeleteNote}
+          setEditingNoteId={setEditingNoteId} formatDate={formatDate}
         />
       </div>
 
@@ -961,39 +806,28 @@ const DiagnosisTab = ({ p, user }) => {
       {/* ── Drug Interactions + Dosing ── */}
       <div className="diag-grid-2">
         <DrugInteractionWarning
-          agentResult={agentResult}
-          agentLoading={loadingState.interactions}
-          agentError={agentError}
-          intTab={intTab}
-          setIntTab={setIntTab}
-          ddSevTab={ddSevTab}
-          setDdSevTab={setDdSevTab}
-          ddisTab={ddisTab}
-          setDdisTab={setDdisTab}
+          agentResult={agentResult} agentLoading={loadingState.interactions}
+          agentError={agentError} intTab={intTab} setIntTab={setIntTab}
+          ddSevTab={ddSevTab} setDdSevTab={setDdSevTab}
+          ddisTab={ddisTab} setDdisTab={setDdisTab}
         />
         <DosingRecommendation
-          agentResult={agentResult}
-          agentLoading={loadingState.dosing}
-          doseTab={doseTab}
-          setDoseTab={setDoseTab}
+          agentResult={agentResult} agentLoading={loadingState.dosing}
+          doseTab={doseTab} setDoseTab={setDoseTab}
         />
       </div>
 
       {/* ── Out-of-Stock Finder ── */}
       <OutOfStockFinder
-        outOfStock={outOfStock}
-        setOutOfStock={setOutOfStock}
+        outOfStock={outOfStock} setOutOfStock={setOutOfStock}
         handleSwitch={handleSwitch}
       />
 
       {/* ── Patient Counselling ── */}
       <PatientCounselling
-        agentResult={agentResult}
-        agentLoading={loadingState.counselling}
-        counselTab={counselTab}
-        setCounselTab={setCounselTab}
-        p={p}
-        onPrescribe={() => setShowPrescribe(true)}
+        agentResult={agentResult} agentLoading={loadingState.counselling}
+        counselTab={counselTab} setCounselTab={setCounselTab}
+        p={p} onPrescribe={() => setShowPrescribe(true)}
         prescribeDisabled={medications.length === 0}
       />
 
@@ -1063,8 +897,7 @@ const DiagnosisTab = ({ p, user }) => {
               <span className="presc-footer-note">
                 {medications.filter(m => !m.held).length} medication{medications.filter(m => !m.held).length !== 1 ? "s" : ""}
                 {medications.some(m => m.held) ? ` · ${medications.filter(m => m.held).length} on hold` : ""}
-                {" · "}
-                {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
+                {" · "}{new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
               </span>
               <div className="presc-footer-btns">
                 <button className="presc-btn-pdf" onClick={handlePrescriptionPdf} disabled={pdfGenerating}>
@@ -1083,6 +916,21 @@ const DiagnosisTab = ({ p, user }) => {
       {ePrescribeSent && (
         <div className="presc-toast">✅ E-Prescription sent successfully!</div>
       )}
+
+      {/* ── AI + HIPAA Disclaimer Footer ── */}
+   {/* ── AI + HIPAA Disclaimer Footer ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        textAlign: 'center',
+      }}>
+        <span style={{ fontSize: '11px', color: '#64748b', lineHeight: 1.5 }}>
+          VabGen Rx is AI-powered to assist your clinical decisions, please verify before proceeding
+        </span>
+        <span style={{ color: '#cbd5e1', fontSize: '11px' }}>·</span>
+      </div>
 
     </div>
   );

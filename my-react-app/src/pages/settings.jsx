@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Nav from "../components/nav";
 import { apiFetch } from "../services/api";
 import "./settings.css";
+import PageFooter from "../components/pageFooter";
 
 // ── SVG Icons ─────────────────────────────────────────────────
 const ProfileIcon = () => (
@@ -79,6 +80,11 @@ const AlertIcon = () => (
     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
   </svg>
 );
+const ShieldIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+);
 
 // ── Tab config ────────────────────────────────────────────────
 const TABS = [
@@ -88,7 +94,16 @@ const TABS = [
   { id: "appearance", label: "Appearance",      Icon: PaletteIcon  },
 ];
 
-// ── Component ──────────────────────────────────────────────────
+// ── Password expiry colour helper ─────────────────────────────
+const getPwdScheme = (daysLeft, expired) => {
+  if (expired || daysLeft <= 0) return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Expired'  };
+  if (daysLeft <= 5)            return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Critical' };
+  if (daysLeft <= 15)           return { bg: '#fffbeb', border: '#f59e0b', text: '#92400e', bar: '#f59e0b', label: 'Warning'  };
+  if (daysLeft <= 30)           return { bg: '#eff6ff', border: '#3b82f6', text: '#1d4ed8', bar: '#3b82f6', label: 'Notice'   };
+  return                               { bg: '#f0fdf4', border: '#22c55e', text: '#166534', bar: '#22c55e', label: 'Good'     };
+};
+
+// ── Component ─────────────────────────────────────────────────
 const Settings = ({ user, onUserUpdate }) => {
   const [profile,     setProfile]     = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -101,6 +116,7 @@ const Settings = ({ user, onUserUpdate }) => {
   const [pwdMsg,      setPwdMsg]      = useState(null);
   const [pwdLoading,  setPwdLoading]  = useState(false);
   const [showPwd,     setShowPwd]     = useState({ current: false, newPwd: false, confirm: false });
+  const [pwdStatus,   setPwdStatus]   = useState(null); // { daysLeft, expired, lastChanged, daysSinceChange }
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -112,18 +128,28 @@ const Settings = ({ user, onUserUpdate }) => {
           setProfile(data.user);
           if (data.user.address) {
             try {
-              const parsed = typeof data.user.address === "string"
-                ? JSON.parse(data.user.address) : data.user.address;
+              const parsed = typeof data.user.address === "string" ? JSON.parse(data.user.address) : data.user.address;
               setAddress(parsed);
-            } catch {
-              setAddress({ street: data.user.address, city: "", state: "", zip: "", country: "" });
-            }
+            } catch { setAddress({ street: data.user.address, city: "", state: "", zip: "", country: "" }); }
           }
         }
       } catch (err) { console.error("Failed to fetch profile:", err); }
       finally { setLoading(false); }
     };
     fetchProfile();
+  }, [user]);
+
+  // ── Fetch password expiry status ───────────────────────────
+  useEffect(() => {
+    const fetchPwdStatus = async () => {
+      if (!user?.email) return;
+      try {
+        const res  = await apiFetch(`/api/password-expiry-status?email=${encodeURIComponent(user.email)}`);
+        const data = await res.json();
+        if (res.ok) setPwdStatus(data);
+      } catch (err) { console.error('pwd status err:', err); }
+    };
+    fetchPwdStatus();
   }, [user]);
 
   useEffect(() => {
@@ -134,8 +160,7 @@ const Settings = ({ user, onUserUpdate }) => {
   const toggleTheme = () => setTheme(t => t === "light" ? "dark" : "light");
 
   const handleAddressSave = async (e) => {
-    e.preventDefault();
-    setAddrLoading(true); setAddrMsg(null);
+    e.preventDefault(); setAddrLoading(true); setAddrMsg(null);
     try {
       const res  = await apiFetch("/api/profile/update-address", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -170,14 +195,20 @@ const Settings = ({ user, onUserUpdate }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        setPwdMsg({ type: "success", text: "Password changed successfully!" });
+        setPwdMsg({ type: "success", text: "Password changed successfully! Your 90-day clock has been reset." });
         setPwdForm({ current: "", newPwd: "", confirm: "" });
+        // Refresh the status
+        const r2   = await apiFetch(`/api/password-expiry-status?email=${encodeURIComponent(user.email)}`);
+        const d2   = await r2.json();
+        if (r2.ok) setPwdStatus(d2);
       } else { setPwdMsg({ type: "error", text: data.message || "Failed to change password." }); }
     } catch { setPwdMsg({ type: "error", text: "Cannot connect to server." }); }
     finally { setPwdLoading(false); }
   };
 
   const displayUser = profile || user;
+  const scheme = pwdStatus ? getPwdScheme(pwdStatus.daysLeft, pwdStatus.expired) : null;
+  const progress = pwdStatus ? Math.max(0, Math.min(100, (pwdStatus.daysLeft / 90) * 100)) : 100;
 
   return (
     <div className="dash-layout">
@@ -194,7 +225,6 @@ const Settings = ({ user, onUserUpdate }) => {
         </div>
 
         <div className="settings-layout">
-
           {/* Sidebar */}
           <aside className="settings-sidebar">
             <p className="settings-sidebar-label">Account</p>
@@ -206,6 +236,20 @@ const Settings = ({ user, onUserUpdate }) => {
               >
                 <span className="stab-icon"><Icon /></span>
                 {label}
+                {/* Always show days remaining badge on password tab */}
+                {id === "password" && pwdStatus && (
+                  <span style={{
+                    marginLeft: 'auto',
+                    background: pwdStatus.expired || pwdStatus.daysLeft <= 5  ? '#ef4444'
+                              : pwdStatus.daysLeft <= 15 ? '#f59e0b'
+                              : pwdStatus.daysLeft <= 30 ? '#3b82f6'
+                              : '#22c55e',
+                    color: '#fff', fontSize: '10px', fontWeight: 700,
+                    padding: '2px 7px', borderRadius: '9999px',
+                  }}>
+                    {pwdStatus.expired ? 'EXP' : `${pwdStatus.daysLeft}d`}
+                  </span>
+                )}
                 {activeTab === id && <span className="stab-active-bar" />}
               </button>
             ))}
@@ -330,9 +374,85 @@ const Settings = ({ user, onUserUpdate }) => {
                     <p className="settings-card-sub">Keep your account secure with a strong password</p>
                   </div>
                 </div>
+
+                {/* ── Password Expiry Status Card ── */}
+                {pwdStatus && scheme && (
+                  <div style={{
+                    background: scheme.bg,
+                    border: `1.5px solid ${scheme.border}`,
+                    borderRadius: '12px',
+                    padding: '18px 20px',
+                    marginBottom: '24px',
+                  }}>
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                      <ShieldIcon />
+                      <span style={{ fontWeight: 700, fontSize: '14px', color: scheme.text }}>
+                        Password Security Status
+                      </span>
+                      <span style={{
+                        marginLeft: 'auto', background: scheme.border, color: '#fff',
+                        fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px',
+                      }}>{scheme.label}</span>
+                    </div>
+
+                    {/* Main message */}
+                    <p style={{ margin: '0 0 12px', fontSize: '14px', color: '#374151' }}>
+                      {pwdStatus.expired ? (
+                        <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                          🔒 Your password has expired. Please change it immediately.
+                        </span>
+                      ) : (
+                        <>
+                          Your password expires in{' '}
+                          <strong style={{ color: scheme.text, fontSize: '16px' }}>
+                            {pwdStatus.daysLeft} day{pwdStatus.daysLeft !== 1 ? 's' : ''}
+                          </strong>
+                          {pwdStatus.daysLeft <= 5  && ' — change it now to avoid being blocked!'}
+                          {pwdStatus.daysLeft > 5 && pwdStatus.daysLeft <= 15 && ' — please update it soon.'}
+                        </>
+                      )}
+                    </p>
+
+                    {/* Progress bar */}
+                    <div style={{ marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>
+                        <span>0 days</span>
+                        <span style={{ color: scheme.text, fontWeight: 600 }}>{pwdStatus.daysLeft} days remaining</span>
+                        <span>90 days</span>
+                      </div>
+                      <div style={{ height: '8px', background: '#e5e7eb', borderRadius: '9999px', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', width: `${progress}%`,
+                          background: scheme.bar, borderRadius: '9999px',
+                          transition: 'width 0.5s ease',
+                        }} />
+                      </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      {[
+                        ['Last Changed',      pwdStatus.lastChanged],
+                        ['Days Since Change', `${pwdStatus.daysSinceChange} days ago`],
+                        ['Policy',           '90-day rotation'],
+                      ].map(([k, v]) => (
+                        <div key={k} style={{
+                          background: 'rgba(255,255,255,0.7)', borderRadius: '8px',
+                          padding: '8px 14px', flex: 1, minWidth: '120px',
+                        }}>
+                          <span style={{ display: 'block', fontSize: '10px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{k}</span>
+                          <span style={{ display: 'block', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="pwd-tips">
                   <p>Password must be at least <strong>6 characters</strong> and contain a mix of letters and numbers.</p>
                 </div>
+
                 <form onSubmit={handlePasswordSave} className="settings-form">
                   {[
                     { key: "current", label: "Current Password",    placeholder: "Enter your current password" },
@@ -379,14 +499,10 @@ const Settings = ({ user, onUserUpdate }) => {
                 </div>
                 <div className="theme-options">
                   {[
-                    { id: "light", label: "Light Mode",  Icon: SunIcon,  previewClass: "light-preview" },
-                    { id: "dark",  label: "Dark Mode",   Icon: MoonIcon, previewClass: "dark-preview"  },
+                    { id: "light", label: "Light Mode", Icon: SunIcon,  previewClass: "light-preview" },
+                    { id: "dark",  label: "Dark Mode",  Icon: MoonIcon, previewClass: "dark-preview"  },
                   ].map(({ id, label, Icon, previewClass }) => (
-                    <div
-                      key={id}
-                      className={`theme-card${theme === id ? " selected" : ""}`}
-                      onClick={() => setTheme(id)}
-                    >
+                    <div key={id} className={`theme-card${theme === id ? " selected" : ""}`} onClick={() => setTheme(id)}>
                       <div className={`theme-preview ${previewClass}`}>
                         <div className="tp-sidebar" />
                         <div className="tp-body">
@@ -419,6 +535,8 @@ const Settings = ({ user, onUserUpdate }) => {
 
           </section>
         </div>
+        <PageFooter />
+
       </main>
     </div>
   );

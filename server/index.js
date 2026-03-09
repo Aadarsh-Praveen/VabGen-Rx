@@ -6,20 +6,118 @@ require('dotenv').config();
 const { loadSecrets } = require('./secrets');
 
 (async () => {
-  // ── Load secrets from Key Vault first ──────────────────────────
   await loadSecrets();
 
-  // ── All imports that depend on env vars go here ────────────────
-  const http    = require('http');
-  const multer  = require('multer');
-  const jwt     = require('jsonwebtoken');
-  const bcrypt  = require('bcrypt');
+  const http       = require('http');
+  const multer     = require('multer');
+  const jwt        = require('jsonwebtoken');
+  const bcrypt     = require('bcrypt');
+  const nodemailer = require('nodemailer');
   const { BlobServiceClient } = require('@azure/storage-blob');
   const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
-  const SALT_ROUNDS    = 12;
-  const JWT_SECRET     = process.env.JWT_SECRET     || 'vabgenrx_secret';
-  const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+  const SALT_ROUNDS      = 12;
+  const JWT_SECRET       = process.env.JWT_SECRET     || 'vabgenrx_secret';
+  const JWT_EXPIRES_IN   = process.env.JWT_EXPIRES_IN || '8h';
+  const MAX_ATTEMPTS     = 3;
+  const OTP_EXPIRES      = 10 * 60 * 1000; // 10 minutes
+  const PASSWORD_EXPIRY_DAYS  = 90;
+  const WARN_AT_DAYS_LEFT_15  = 15;
+  const WARN_AT_DAYS_LEFT_5   = 5;
+
+  // ── In-memory stores ───────────────────────────────────────────
+  const loginAttempts = {}; // { email: { count, locked } }
+  const otpStore      = {}; // { email: { otp, expiresAt } }
+
+  // ── Email transporter ──────────────────────────────────────────
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.SMTP_EMAIL,
+      pass: process.env.SMTP_PASSWORD,
+    },
+  });
+
+  const sendOTPEmail = async (email, otp) => {
+    await transporter.sendMail({
+      from:    `"VabGen Rx Security" <${process.env.SMTP_EMAIL}>`,
+      to:      email,
+      subject: 'VabGen Rx — Account Unlock Code',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#1e293b;margin-bottom:8px">Account Unlock Request</h2>
+          <p style="color:#475569">Your VabGen Rx account has been temporarily locked due to multiple failed login attempts.</p>
+          <p style="color:#475569">Use the code below to unlock your account and reset your password:</p>
+          <div style="background:#f1f5f9;border-radius:8px;padding:20px;text-align:center;margin:24px 0">
+            <span style="font-size:36px;font-weight:700;letter-spacing:10px;color:#1a73e8">${otp}</span>
+          </div>
+          <p style="color:#94a3b8;font-size:13px">This code expires in <strong>10 minutes</strong>. Do not share it with anyone.</p>
+          <p style="color:#94a3b8;font-size:13px">If you did not request this, please contact your system administrator immediately.</p>
+        </div>
+      `,
+    });
+  };
+
+  // ── Password expiry warning email ─────────────────────────────
+  const sendPasswordExpiryWarningEmail = async (email, name, daysLeft) => {
+    const isUrgent = daysLeft <= 5;
+    await transporter.sendMail({
+      from:    `"VabGen Rx Security" <${process.env.SMTP_EMAIL}>`,
+      to:      email,
+      subject: `VabGen Rx — Password Expires in ${daysLeft} Day${daysLeft !== 1 ? 's' : ''}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#1e293b;margin-bottom:8px">Password Expiry Notice</h2>
+          <p style="color:#475569">Hi <strong>${name}</strong>,</p>
+          <p style="color:#475569">Your VabGen Rx password will expire in <strong style="color:${isUrgent ? '#ef4444' : '#f59e0b'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''}</strong>.</p>
+          <div style="background:${isUrgent ? '#fef2f2' : '#fffbeb'};border:1px solid ${isUrgent ? '#fca5a5' : '#fcd34d'};border-radius:8px;padding:16px;margin:20px 0">
+            <p style="color:${isUrgent ? '#dc2626' : '#92400e'};margin:0;font-size:14px">
+              ${isUrgent ? '🚨 Urgent:' : '⚠️'} Please update your password before it expires to avoid being locked out.
+            </p>
+          </div>
+          <p style="color:#475569">Log in to VabGen Rx and go to <strong>Settings → Change Password</strong> to update it.</p>
+          <p style="color:#94a3b8;font-size:13px">If you need help, contact your system administrator.</p>
+        </div>
+      `,
+    });
+  };
+
+  const sendPasswordExpiredEmail = async (email, name) => {
+    await transporter.sendMail({
+      from:    `"VabGen Rx Security" <${process.env.SMTP_EMAIL}>`,
+      to:      email,
+      subject: 'VabGen Rx — Password Expired — Account Blocked',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#dc2626;margin-bottom:8px">Account Blocked</h2>
+          <p style="color:#475569">Hi <strong>${name}</strong>,</p>
+          <p style="color:#475569">Your VabGen Rx password has not been changed in <strong>90 days</strong> and your account has been <strong style="color:#dc2626">blocked</strong> for security reasons.</p>
+          <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin:20px 0">
+            <p style="color:#dc2626;margin:0;font-size:14px">🔒 To reactivate your account, please contact your system administrator.</p>
+          </div>
+        </div>
+      `,
+    });
+  };
+
+  const sendPasswordChangedEmail = async (email, name) => {
+    await transporter.sendMail({
+      from:    `"VabGen Rx Security" <${process.env.SMTP_EMAIL}>`,
+      to:      email,
+      subject: 'VabGen Rx — Password Changed Successfully',
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#1e293b;margin-bottom:8px">Password Changed</h2>
+          <p style="color:#475569">Hi <strong>${name}</strong>,</p>
+          <p style="color:#475569">Your VabGen Rx password has been changed successfully.</p>
+          <p style="color:#475569">If you did not make this change, please contact your administrator immediately.</p>
+          <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin:20px 0">
+            <p style="color:#166534;margin:0;font-size:14px">✅ Password updated on ${new Date().toLocaleString()}</p>
+          </div>
+        </div>
+      `,
+    });
+  };
 
   const upload = multer({ storage: multer.memoryStorage() });
 
@@ -67,9 +165,12 @@ const { loadSecrets } = require('./secrets');
   };
 
   const PUBLIC_ROUTES = [
-    { method: 'POST', url: '/api/signin'   },
-    { method: 'POST', url: '/api/register' },
-    { method: 'GET',  url: '/'             },
+    { method: 'POST', url: '/api/signin'           },
+    { method: 'POST', url: '/api/register'         },
+    { method: 'POST', url: '/api/send-unlock-otp'  },
+    { method: 'POST', url: '/api/verify-unlock-otp'},
+    { method: 'POST', url: '/api/reset-password'   },
+    { method: 'GET',  url: '/'                     },
   ];
 
   const isPublic = (method, url) =>
@@ -131,11 +232,18 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Sign in ────────────────────────────────────────────────
+    // ── Sign in (with lockout tracking) ───────────────────────
     if (req.method === 'POST' && req.url === '/api/signin') {
       const { email, password } = await getBody(req);
       if (!email || !password)
         return sendJSON(res, 400, { message: 'Email and password required.' });
+
+      // Check if already locked
+      const attempts = loginAttempts[email];
+      if (attempts && attempts.locked) {
+        return sendJSON(res, 423, { message: 'Account locked.', locked: true, email });
+      }
+
       try {
         const pool = await poolPromise;
         const result = await pool.request()
@@ -143,17 +251,133 @@ const { loadSecrets } = require('./secrets');
           .query('SELECT * FROM users WHERE email = @email');
         if (result.recordset.length === 0)
           return sendJSON(res, 401, { message: 'Invalid email or password' });
+
         const user  = result.recordset[0];
         const match = await bcrypt.compare(password, user.password);
-        if (!match)
-          return sendJSON(res, 401, { message: 'Invalid email or password' });
+
+        if (!match) {
+          if (!loginAttempts[email]) loginAttempts[email] = { count: 0, locked: false };
+          loginAttempts[email].count += 1;
+          const remaining = MAX_ATTEMPTS - loginAttempts[email].count;
+          if (loginAttempts[email].count >= MAX_ATTEMPTS) {
+            loginAttempts[email].locked = true;
+            return sendJSON(res, 423, {
+              message: 'Account locked after 3 failed attempts.',
+              locked: true, email,
+            });
+          }
+          return sendJSON(res, 401, {
+            message: `Invalid email or password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`,
+            attemptsLeft: remaining,
+          });
+        }
+
+        // ── Check password expiry ─────────────────────────────
+        const changedAt  = user.password_changed_at ? new Date(user.password_changed_at) : new Date(0);
+        const now        = new Date();
+        const diffMs     = now - changedAt;
+        const diffDays   = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const daysLeft   = PASSWORD_EXPIRY_DAYS - diffDays;
+
+        // Block if expired — send notification email and return expired flag
+        if (daysLeft <= 0) {
+          sendPasswordExpiredEmail(email, user.name).catch(() => {});
+          return sendJSON(res, 403, {
+            message: 'Your password has expired.',
+            passwordExpired: true,
+            email, // send email back so frontend can open the modal
+          });
+        }
+
+        // Success — reset attempts
+        delete loginAttempts[email];
         const token = jwt.sign(
           { id: user.id, email: user.email, name: user.name, role: user.designation || 'doctor' },
           JWT_SECRET,
           { expiresIn: JWT_EXPIRES_IN }
         );
         delete user.password;
-        sendJSON(res, 200, { message: 'Sign in successful', token, user });
+        delete user.password_changed_at;
+
+        // Always send password status so UI can show days remaining from day 1
+        const passwordWarning = { daysLeft, urgent: daysLeft <= WARN_AT_DAYS_LEFT_5 };
+
+        // Send warning email only at exactly 15 or 5 days left (fire and forget)
+        if (daysLeft === WARN_AT_DAYS_LEFT_15 || daysLeft === WARN_AT_DAYS_LEFT_5) {
+          sendPasswordExpiryWarningEmail(email, user.name, daysLeft).catch(() => {});
+        }
+
+        sendJSON(res, 200, {
+          message: 'Sign in successful',
+          token,
+          user,
+          passwordWarning, // always { daysLeft, urgent }
+        });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Send OTP ───────────────────────────────────────────────
+    if (req.method === 'POST' && req.url === '/api/send-unlock-otp') {
+      const { email } = await getBody(req);
+      if (!email) return sendJSON(res, 400, { message: 'Email required.' });
+      try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+          .input('email', sql.VarChar, email)
+          .query('SELECT id, name FROM users WHERE email = @email');
+        if (!result.recordset.length)
+          return sendJSON(res, 404, { message: 'Email not found.' });
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        otpStore[email] = { otp, expiresAt: Date.now() + OTP_EXPIRES };
+        await sendOTPEmail(email, otp);
+        sendJSON(res, 200, { message: 'OTP sent to your email.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Verify OTP ─────────────────────────────────────────────
+    if (req.method === 'POST' && req.url === '/api/verify-unlock-otp') {
+      const { email, otp } = await getBody(req);
+      if (!email || !otp) return sendJSON(res, 400, { message: 'Email and OTP required.' });
+      const record = otpStore[email];
+      if (!record)
+        return sendJSON(res, 400, { message: 'No OTP found. Please request a new one.' });
+      if (Date.now() > record.expiresAt) {
+        delete otpStore[email];
+        return sendJSON(res, 400, { message: 'OTP has expired. Please request a new one.' });
+      }
+      if (record.otp !== otp)
+        return sendJSON(res, 400, { message: 'Invalid OTP. Please try again.' });
+      delete otpStore[email];
+      sendJSON(res, 200, { message: 'OTP verified.' });
+      return;
+    }
+
+    // ── Reset password ─────────────────────────────────────────
+    if (req.method === 'POST' && req.url === '/api/reset-password') {
+      const { email, newPassword } = await getBody(req);
+      if (!email || !newPassword)
+        return sendJSON(res, 400, { message: 'Email and new password required.' });
+      if (newPassword.length < 8)
+        return sendJSON(res, 400, { message: 'Password must be at least 8 characters.' });
+      try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+          .input('email', sql.VarChar, email)
+          .query('SELECT name FROM users WHERE email = @email');
+        if (!result.recordset.length)
+          return sendJSON(res, 404, { message: 'User not found.' });
+        const { name } = result.recordset[0];
+        const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        await pool.request()
+          .input('email',    sql.VarChar,  email)
+          .input('password', sql.VarChar,  hash)
+          .input('now',      sql.DateTime, new Date())
+          .query('UPDATE users SET password = @password, password_changed_at = @now WHERE email = @email');
+        delete loginAttempts[email]; // clear lockout
+        await sendPasswordChangedEmail(email, name);
+        sendJSON(res, 200, { message: 'Password reset successfully. Please login.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
     }
@@ -228,9 +452,10 @@ const { loadSecrets } = require('./secrets');
           return sendJSON(res, 401, { message: 'Current password is incorrect.' });
         const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await pool.request()
-          .input('email',    sql.VarChar, email)
-          .input('password', sql.VarChar, newHash)
-          .query('UPDATE users SET password = @password WHERE email = @email');
+          .input('email',    sql.VarChar,  email)
+          .input('password', sql.VarChar,  newHash)
+          .input('now',      sql.DateTime, new Date())
+          .query('UPDATE users SET password = @password, password_changed_at = @now WHERE email = @email');
         sendJSON(res, 200, { message: 'Password changed successfully.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1147,6 +1372,34 @@ const { loadSecrets } = require('./secrets');
                          Referral_Date, Reason_For_Referral, Additional_Notes, Created_At
                   FROM dbo.op_refferal WHERE OP_No = @opNo ORDER BY Created_At DESC`);
         sendJSON(res, 200, { referrals: result.recordset });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Get password expiry status ─────────────────────────────
+    if (req.method === 'GET' && req.url.startsWith('/api/password-expiry-status')) {
+      const email = decodeURIComponent(req.url.split('?email=')[1] || '');
+      if (!email) return sendJSON(res, 400, { message: 'Email required.' });
+      try {
+        const pool   = await poolPromise;
+        const result = await pool.request()
+          .input('email', sql.VarChar, email)
+          .query('SELECT name, password_changed_at FROM users WHERE email = @email');
+        if (!result.recordset.length)
+          return sendJSON(res, 404, { message: 'User not found.' });
+        const { password_changed_at } = result.recordset[0];
+        const changedAt     = password_changed_at ? new Date(password_changed_at) : new Date(0);
+        const now           = new Date();
+        const diffDays      = Math.floor((now - changedAt) / (1000 * 60 * 60 * 24));
+        const daysLeft      = PASSWORD_EXPIRY_DAYS - diffDays;
+        const expired       = daysLeft <= 0;
+        const lastChanged   = changedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        sendJSON(res, 200, {
+          daysLeft:        Math.max(0, daysLeft),
+          daysSinceChange: diffDays,
+          lastChanged,
+          expired,
+        });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
     }

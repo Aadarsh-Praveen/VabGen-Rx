@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Nav from "../components/nav";
 import { apiFetch } from "../services/api";
 import "./patients.css";
-
+import PageFooter from "../components/pageFooter";
 // ── SVG Icons ─────────────────────────────────────────────────
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -246,6 +246,8 @@ const Patients = ({ user }) => {
             </table>
           </div>
         )}
+        <PageFooter />
+
       </main>
     </div>
   );

@@ -15,6 +15,8 @@ const SECRET_MAP = {
   PORT:                             'PORT',
   AZURE_STORAGE_CONNECTION_STRING:  'AZURE-STORAGE-CONNECTION-STRING',
   AZURE_CONTAINER_NAME:             'AZURE-CONTAINER-NAME',
+  SMTP_EMAIL:                       'VAB-MAIL',
+  SMTP_PASSWORD:                    'VAB-PASSWORD',
 };
 
 async function loadSecrets() {

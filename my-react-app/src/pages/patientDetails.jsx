@@ -4,6 +4,7 @@ import Nav from "../components/nav";
 import DiagnosisTab from "../components/diagnosis";
 import { apiFetch } from "../services/api";
 import "./patientDetails.css";
+import PageFooter from "../components/pageFooter";
 
 // ── SVG Icons ─────────────────────────────────────────────────
 const UserIcon = () => (
@@ -499,6 +500,8 @@ const PatientDetail = ({ user }) => {
             {activeTab === "referral"  && <ReferralTab    p={patient} isOutpatient={isOutpatient} user={user} />}
           </>
         )}
+        <PageFooter />
+
       </main>
     </div>
   );
