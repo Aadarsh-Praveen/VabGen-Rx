@@ -11,16 +11,31 @@ Key principles:
 - Only counsel on confirmed patient habits
 - Never suggest avoiding cultural/religious foods
 - Exercise advice must consider age and physical limitations
+
+CHANGES:
+- Azure Application Insights logging added:
+    Alert 8: LLM failures
+             Custom event: llm_failure
+             Logged in _call_llm() on any exception from
+             Azure OpenAI — covers timeouts, quota errors,
+             auth failures, and JSON parse errors.
+             condition name passed through from
+             get_condition_counseling() so you know exactly
+             which condition triggered the failure.
 """
 
 import os
 import json
+import logging
 import pyodbc
 from typing import Dict, List, Optional
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 def _get_age_group(age: int) -> str:
@@ -278,7 +293,7 @@ Return JSON:
 }}
 """
 
-        result               = self._call_llm(prompt)
+        result               = self._call_llm(prompt, condition)
         result['from_cache'] = False
         self._save_cache(
             cache_key, condition, sex, age_group, result
@@ -311,7 +326,7 @@ Return JSON:
 
     # ── LLM call ──────────────────────────────────────────────────────────────
 
-    def _call_llm(self, prompt: str) -> Dict:
+    def _call_llm(self, prompt: str, condition: str = "") -> Dict:
         try:
             response = self.llm.chat.completions.create(
                 model           = self.deployment,
@@ -340,9 +355,23 @@ Return JSON:
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
+            # ── Alert 8: LLM failure ──────────────────────────────
+            # Covers Azure OpenAI timeouts, quota errors,
+            # auth failures, and JSON parse errors.
+            # condition name included so you know which condition's
+            # counseling failed in the alert.
+            logger.error(
+                "llm_failure",
+                extra={"custom_dimensions": {
+                    "event":     "llm_failure",
+                    "service":   "condition_service",
+                    "condition": condition,
+                    "error":     str(e)[:200],
+                }}
+            )
             print(f"   ❌ LLM error: {e}")
             return {
-                "condition":  "",
+                "condition":  condition,
                 "exercise":   [],
                 "lifestyle":  [],
                 "diet":       [],

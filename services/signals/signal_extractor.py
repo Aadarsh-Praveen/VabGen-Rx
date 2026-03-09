@@ -11,15 +11,30 @@ If 2 or more independent findings point to the same organ system,
 a compounding signal is detected and Round 2 is triggered.
 
 If no compounding signals found — Round 2 is skipped entirely.
+
+CHANGES:
+- Azure Application Insights logging added:
+    Alert 8: LLM failures
+             Custom event: llm_failure
+             Logged in _call_llm() on any exception from
+             Azure OpenAI — covers timeouts, quota errors,
+             auth failures, and JSON parse errors.
+             When signal extractor fails, Round 2 is silently
+             skipped — this alert means you know when that
+             happens so you can investigate.
 """
 
 import os
 import json
+import logging
 from typing import Dict, List
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 class SignalExtractor:
@@ -304,6 +319,21 @@ If no compounding signals:
             return data.get("signals", {})
 
         except Exception as e:
+            # ── Alert 8: LLM failure ──────────────────────────────
+            # When signal extractor fails, Round 2 is silently
+            # skipped — compounding risks go undetected.
+            # This alert tells you when that silent skip happens
+            # so you can investigate why GPT-4o failed.
+            logger.error(
+                "llm_failure",
+                extra={"custom_dimensions": {
+                    "event":   "llm_failure",
+                    "service": "signal_extractor",
+                    "ddi_count": len(findings.get("drug_drug", [])),
+                    "dd_count":  len(findings.get("drug_disease", [])),
+                    "error":   str(e)[:200],
+                }}
+            )
             print(f"   ⚠️  Signal Extractor LLM error: {e}")
             # On error — return empty, Round 2 simply won't run
             # Never fail the main pipeline because of signal extraction

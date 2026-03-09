@@ -15,15 +15,36 @@ Key principles:
 - NO cache — dosing always fresh
 - Compounding signals flow through other_investigations
   when injected by DosingAgent Round 2
+
+CHANGES:
+- Azure Application Insights logging added:
+    Alert 8: LLM failures
+             Custom event: llm_failure
+             Logged in _call_llm() on any exception from
+             Azure OpenAI — covers timeouts, quota errors,
+             auth failures, and JSON parse errors.
+             drug name included in custom_dimensions so
+             you know exactly which drug triggered the failure.
+- Prompt fix added:
+    CRITICAL RULE added to TASK section — forces LLM to set
+    adjustment_required: true whenever recommended_dose differs
+    from current_dose. Fixes cases where LLM correctly identifies
+    a dose issue but incorrectly sets adjustment_required: false
+    (e.g. Amlodipine 10mg tid → 5mg once daily showing as
+    "NONE ADJUSTMENT" in the UI).
 """
 
 import os
 import json
+import logging
 from typing import Dict, List
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 def _get_age_group(age: int) -> str:
@@ -249,6 +270,15 @@ ADJUSTMENT TYPES TO CHECK:
 - DRUG_LEVEL: If therapeutic monitoring required
 - NONE:       Current dose appropriate — state why
 
+CRITICAL RULE — strictly enforced:
+If recommended_dose differs from current_dose in ANY way,
+you MUST set adjustment_required: true and set
+adjustment_type to the correct type (renal/hepatic/age/etc).
+NEVER set adjustment_required: false when you are recommending
+a different dose than the current dose.
+Only set adjustment_required: false when recommended_dose
+is exactly "No change required".
+
 Return JSON:
 {{
   "drug": "{drug}",
@@ -280,7 +310,7 @@ Return JSON:
 }}
 """
 
-        result                    = self._call_llm(prompt)
+        result                    = self._call_llm(prompt, drug)
         result['evidence_tier_info'] = evidence_tier
         result['from_cache']         = False
         return result
@@ -310,7 +340,7 @@ Return JSON:
 
     # ── LLM Call ──────────────────────────────────────────────────────────────
 
-    def _call_llm(self, prompt: str) -> Dict:
+    def _call_llm(self, prompt: str, drug: str = "") -> Dict:
         try:
             response = self.llm.chat.completions.create(
                 model    = self.deployment,
@@ -336,7 +366,12 @@ Return JSON:
                             "OTHER INVESTIGATIONS — consider whether"
                             " standard single risk factor FDA tables"
                             " are sufficient given multiple "
-                            "converging risks."
+                            "converging risks. "
+                            "CRITICAL: If recommended_dose differs "
+                            "from current_dose, you MUST set "
+                            "adjustment_required to true. Never set "
+                            "adjustment_required to false when you "
+                            "are recommending a dose change."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -347,9 +382,19 @@ Return JSON:
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
+            # ── Alert 8: LLM failure ──────────────────────────────
+            logger.error(
+                "llm_failure",
+                extra={"custom_dimensions": {
+                    "event":   "llm_failure",
+                    "service": "dosing_service",
+                    "drug":    drug,
+                    "error":   str(e)[:200],
+                }}
+            )
             print(f"   ❌ LLM error: {e}")
             return {
-                "drug":                "",
+                "drug":                drug,
                 "current_dose":        "",
                 "recommended_dose":    "Consult pharmacist",
                 "adjustment_required": False,

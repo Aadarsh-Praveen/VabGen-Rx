@@ -13,16 +13,26 @@ CHANGES:
   (safety_evidence.py, disease_evidence.py). This service does
   not acquire it directly.
 - Sleep between esearch and efetch kept at 0.15s with API key.
+- Azure Application Insights logging added:
+    Alert 7: PubMed API failures and rate limits
+             Custom events: pubmed_api_failure, pubmed_rate_limit
+             Logged on 429 rate limits after retry exhausted,
+             non-JSON responses, efetch 429 after retry,
+             and unexpected exceptions in _search_and_fetch.
 """
 
 import os
 import time
+import logging
 import requests
 import xml.etree.ElementTree as ET
 from typing import Dict, List
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 class PubMedService:
@@ -126,6 +136,16 @@ class PubMedService:
                     return self._search_and_fetch(
                         query, max_results, _retry=False
                     )
+                # ── Alert 7: esearch 429 after retry exhausted ────
+                logger.error(
+                    "pubmed_rate_limit",
+                    extra={"custom_dimensions": {
+                        "event":  "pubmed_rate_limit",
+                        "stage":  "esearch",
+                        "query":  query[:100],
+                        "status": 429,
+                    }}
+                )
                 print("PubMed rate limit hit — retry exhausted")
                 return empty
 
@@ -141,6 +161,16 @@ class PubMedService:
                     return self._search_and_fetch(
                         query, max_results, _retry=False
                     )
+                # ── Alert 7: non-JSON / rate limit after retry ────
+                logger.error(
+                    "pubmed_api_failure",
+                    extra={"custom_dimensions": {
+                        "event":  "pubmed_api_failure",
+                        "stage":  "esearch_json_parse",
+                        "query":  query[:100],
+                        "raw":    raw[:100],
+                    }}
+                )
                 print(f"PubMed non-JSON response: {raw}")
                 return empty
 
@@ -183,6 +213,16 @@ class PubMedService:
                     return self._search_and_fetch(
                         query, max_results, _retry=False
                     )
+                # ── Alert 7: efetch 429 after retry exhausted ─────
+                logger.error(
+                    "pubmed_rate_limit",
+                    extra={"custom_dimensions": {
+                        "event":  "pubmed_rate_limit",
+                        "stage":  "efetch",
+                        "query":  query[:100],
+                        "status": 429,
+                    }}
+                )
                 return {**empty, 'count': count}
 
             abstracts        = self._parse_abstracts(
@@ -202,6 +242,16 @@ class PubMedService:
             }
 
         except Exception as e:
+            # ── Alert 7: unexpected exception ─────────────────────
+            logger.error(
+                "pubmed_api_failure",
+                extra={"custom_dimensions": {
+                    "event": "pubmed_api_failure",
+                    "stage": "unknown",
+                    "query": query[:100],
+                    "error": str(e)[:200],
+                }}
+            )
             print(f"PubMed Error: {e}")
             return empty
 

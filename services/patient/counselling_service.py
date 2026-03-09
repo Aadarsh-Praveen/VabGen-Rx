@@ -10,16 +10,30 @@ Key principles:
 - Only counsel on habits the patient has confirmed
 - Never suggest avoiding cultural/religious foods
 - Focus only on pharmacological drug interactions
+
+CHANGES:
+- Azure Application Insights logging added:
+    Alert 8: LLM failures
+             Custom event: llm_failure
+             Logged in _call_llm() on any exception from
+             Azure OpenAI — covers timeouts, quota errors,
+             auth failures, and JSON parse errors.
+             drug name passed through from get_drug_counseling()
+             so you know exactly which drug triggered the failure.
 """
 
 import os
 import json
+import logging
 import pyodbc
 from typing import Dict, List, Optional
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 def _get_age_group(age: int) -> str:
@@ -261,7 +275,7 @@ Return JSON:
 }}
 """
 
-        result               = self._call_llm(prompt)
+        result               = self._call_llm(prompt, drug)
         result['from_cache'] = False
         self._save_cache(cache_key, drug, sex, age_group, result)
         return result
@@ -295,7 +309,7 @@ Return JSON:
 
     # ── LLM call ──────────────────────────────────────────────────────────────
 
-    def _call_llm(self, prompt: str) -> Dict:
+    def _call_llm(self, prompt: str, drug: str = "") -> Dict:
         try:
             response = self.llm.chat.completions.create(
                 model           = self.deployment,
@@ -322,9 +336,23 @@ Return JSON:
             )
             return json.loads(response.choices[0].message.content)
         except Exception as e:
+            # ── Alert 8: LLM failure ──────────────────────────────
+            # Covers Azure OpenAI timeouts, quota errors,
+            # auth failures, and JSON parse errors.
+            # drug name included so you know which drug's
+            # counseling failed in the alert.
+            logger.error(
+                "llm_failure",
+                extra={"custom_dimensions": {
+                    "event":   "llm_failure",
+                    "service": "counselling_service",
+                    "drug":    drug,
+                    "error":   str(e)[:200],
+                }}
+            )
             print(f"   ❌ LLM error: {e}")
             return {
-                "drug":              "",
+                "drug":              drug,
                 "counseling_points": [],
                 "key_monitoring":    "Consult pharmacist",
                 "patient_summary":   "Unable to generate counseling",

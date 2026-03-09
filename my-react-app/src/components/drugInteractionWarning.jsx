@@ -365,12 +365,9 @@ export default DrugInteractionWarning;*/
 
 
 import "../components/styles/drugInteractionWarning.css";
-
 import { useState, useCallback } from "react";
 
 // ── Evidence URL builders ─────────────────────────────────────────
-
-// PubMed search for a drug pair or single drug
 const pubmedUrl = (drug1, drug2 = null) => {
   const query = drug2
     ? `${drug1.trim()} ${drug2.trim()} drug interaction`
@@ -378,14 +375,19 @@ const pubmedUrl = (drug1, drug2 = null) => {
   return `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(query)}&sort=relevance`;
 };
 
-// FDA adverse reports — FAERS info page (no deep link available publicly)
 const fdaReportsUrl = () =>
   `https://www.fda.gov/drugs/drug-approvals-and-databases/fda-adverse-event-reporting-system-faers`;
 
 // ── Smart FDA Label Link ──────────────────────────────────────────
-// Calls OpenFDA API to get the exact DailyMed set_id for the drug,
-// then opens the precise label page — not a search page.
-// Falls back to DailyMed search if API call fails.
+// Queries OpenFDA with limit=5 and picks the best non-combination
+// match — avoids returning combination products like KEYTRUDA QLEX
+// when searching for "pembrolizumab".
+// Strategy:
+//   1. Prefer result whose generic_name exactly matches drug name
+//   2. Prefer result whose generic_name contains drug name but
+//      has no " and " (not a combination product)
+//   3. Fall back to first result
+//   4. Fall back to DailyMed search if all else fails
 const FdaLabelLink = ({ drug, children, className }) => {
   const [loading, setLoading] = useState(false);
 
@@ -393,28 +395,47 @@ const FdaLabelLink = ({ drug, children, className }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Query OpenFDA for the drug label — prefers Rx label
-      const url = `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent(drug.trim())}"&limit=1`;
-      const res  = await fetch(url);
-      const data = await res.json();
-      const result = data?.results?.[0];
+      const url     = `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent(drug.trim())}"&limit=5`;
+      const res     = await fetch(url);
+      const data    = await res.json();
+      const results = data?.results || [];
 
-      if (result?.openfda?.spl_set_id?.[0]) {
-        // Exact DailyMed label page using set_id
-        const setId = result.openfda.spl_set_id[0];
+      // ── Pick best match — avoid combination products ──────────
+      const drugLower = drug.trim().toLowerCase();
+
+      // Pass 1: exact match on generic_name
+      let best = results.find(r =>
+        (r?.openfda?.generic_name || []).some(
+          n => n.toLowerCase() === drugLower
+        )
+      );
+
+      // Pass 2: contains drug name but NOT a combination (" and ")
+      if (!best) {
+        best = results.find(r =>
+          (r?.openfda?.generic_name || []).some(
+            n => n.toLowerCase().includes(drugLower) &&
+                 !n.toLowerCase().includes(" and ")
+          )
+        );
+      }
+
+      // Pass 3: first result as fallback
+      if (!best) best = results[0];
+
+      const setId = best?.openfda?.spl_set_id?.[0];
+      if (setId) {
         window.open(
           `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${setId}`,
           "_blank"
         );
       } else {
-        // Fallback — DailyMed search
         window.open(
           `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.trim())}`,
           "_blank"
         );
       }
     } catch {
-      // Fallback on network error
       window.open(
         `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.trim())}`,
         "_blank"
@@ -429,11 +450,14 @@ const FdaLabelLink = ({ drug, children, className }) => {
       onClick={handleClick}
       className={className || "dint-source-tag"}
       style={{
-        background: "none", border: "1px solid #e0e3ef",
-        cursor: loading ? "wait" : "pointer",
-        opacity: loading ? 0.7 : 1,
-        textDecoration: "none", padding: "2px 8px",
-        borderRadius: 20, fontSize: "0.75rem",
+        background:     "none",
+        border:         "1px solid #e0e3ef",
+        cursor:         loading ? "wait" : "pointer",
+        opacity:        loading ? 0.7 : 1,
+        textDecoration: "none",
+        padding:        "2px 8px",
+        borderRadius:   20,
+        fontSize:       "0.75rem",
       }}
       title="Click to view FDA label"
       disabled={loading}
@@ -443,7 +467,7 @@ const FdaLabelLink = ({ drug, children, className }) => {
   );
 };
 
-// ── Simple clickable evidence tag (for PubMed + FDA reports) ─────
+// ── Simple clickable evidence tag ────────────────────────────────
 const EvidenceLink = ({ href, children }) => (
   <a
     href={href}
@@ -518,9 +542,9 @@ const DrugInteractionWarning = ({
     { key: "minor",           label: "Minor",           color: "#888",    bg: "#f0f0f8", border: "#e0e3ef", items: disMap.minor           },
   ];
 
-  const getPubmedCount  = (item) => item?.evidence?.pubmed_papers          ?? item?.pubmed_papers          ?? 0;
-  const getFdaReports   = (item) => item?.evidence?.fda_reports             ?? item?.fda_reports             ?? 0;
-  const getFdaSections  = (item) => item?.evidence?.fda_label_sections_count ?? item?.fda_label_sections_count ?? 0;
+  const getPubmedCount = (item) => item?.evidence?.pubmed_papers           ?? item?.pubmed_papers           ?? 0;
+  const getFdaReports  = (item) => item?.evidence?.fda_reports              ?? item?.fda_reports              ?? 0;
+  const getFdaSections = (item) => item?.evidence?.fda_label_sections_count ?? item?.fda_label_sections_count ?? 0;
 
   const getConfidenceLabel = (item) => {
     if (item.confidence != null) return `${Math.round(item.confidence * 100)}% confidence`;
@@ -559,7 +583,6 @@ const DrugInteractionWarning = ({
 
       <div className="dint-body">
 
-        {/* ── Loading ── */}
         {agentLoading && (
           <div className="dint-loading">
             <div className="pd-spinner" style={{ margin: "0 auto 0.75rem" }} />
@@ -567,14 +590,12 @@ const DrugInteractionWarning = ({
           </div>
         )}
 
-        {/* ── Empty state ── */}
         {!agentLoading && !agentResult && !agentError && (
           <p className="dint-empty">
             Add medications and click <strong>Done — Run Analysis</strong> to see results.
           </p>
         )}
 
-        {/* ── Results ── */}
         {!agentLoading && agentResult && (
           <>
             {/* ════ DRUG-DRUG ════ */}
@@ -587,15 +608,10 @@ const DrugInteractionWarning = ({
                   <div key={i} className="dint-item">
                     <div className="dint-item-top">
                       <div className="dint-item-left">
-                        <span className="dint-item-name">
-                          {item.drug1} + {item.drug2}
-                        </span>
-                        <span className="dint-badge-gray">
-                          {getConfidenceLabel(item)}
-                        </span>
+                        <span className="dint-item-name">{item.drug1} + {item.drug2}</span>
+                        <span className="dint-badge-gray">{getConfidenceLabel(item)}</span>
                       </div>
                       <div className="dint-item-right">
-                        {/* ── Clickable evidence links ── */}
                         {getPubmedCount(item) > 0 && (
                           <EvidenceLink href={pubmedUrl(item.drug1, item.drug2)}>
                             📚 {getPubmedCount(item)} PubMed
@@ -634,15 +650,10 @@ const DrugInteractionWarning = ({
                   <div key={i} className="dint-item">
                     <div className="dint-item-top">
                       <div className="dint-item-left">
-                        <span className="dint-item-name">
-                          {item.drug} + {item.disease}
-                        </span>
-                        <span className="dint-badge-gray">
-                          {getConfidenceLabel(item)}
-                        </span>
+                        <span className="dint-item-name">{item.drug} + {item.disease}</span>
+                        <span className="dint-badge-gray">{getConfidenceLabel(item)}</span>
                       </div>
                       <div className="dint-item-right">
-                        {/* ── Clickable evidence links ── */}
                         {getPubmedCount(item) > 0 && (
                           <EvidenceLink href={pubmedUrl(item.drug, item.disease)}>
                             📚 {getPubmedCount(item)} PubMed
@@ -677,11 +688,8 @@ const DrugInteractionWarning = ({
               ) : drugFood.map((item, i) => (
                 <div key={i} className="dint-item">
                   <div className="dint-item-top">
-                    <div className="dint-item-name" style={{ marginBottom: 0 }}>
-                      {item.drug}
-                    </div>
+                    <div className="dint-item-name" style={{ marginBottom: 0 }}>{item.drug}</div>
                     <div className="dint-item-right">
-                      {/* ── Evidence link for food tab ── */}
                       <EvidenceLink href={pubmedUrl(item.drug, "food interaction")}>
                         📚 PubMed
                       </EvidenceLink>

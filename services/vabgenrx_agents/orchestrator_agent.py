@@ -8,14 +8,32 @@ reasoning across multiple specialist domains simultaneously to
 surface compounding risk patterns no single specialist could find.
 
 No tool calls. Pure GPT-4o reasoning over combined results.
+
+CHANGES:
+- Azure Application Insights logging added:
+    Alert 9: Orchestrator fallback triggered
+             Custom event: orchestrator_fallback
+             Logged in synthesize() when _run() returns empty
+             and fallback summary is used instead.
+             Includes ddi_count, disease_count, dosing_count,
+             signals_count in custom_dimensions so you know
+             the complexity of the analysis that failed.
+             When fallback triggers, the doctor gets a basic
+             risk summary instead of the full cross-domain
+             clinical intelligence — this alert tells you when
+             that silent degradation happens.
 """
 
 import json
+import logging
 from typing import Dict, List
 
 from azure.ai.agents import AgentsClient
 
 from .base_agent import _BaseAgent
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 class VabGenRxOrchestratorAgent(_BaseAgent):
@@ -162,6 +180,30 @@ Return ONLY valid JSON:
 
         # Fallback — if orchestrator fails return basic summary
         if not result:
+            # ── Alert 9: Orchestrator fallback triggered ───────────
+            # When this fires, the doctor gets a basic risk summary
+            # instead of full cross-domain clinical intelligence.
+            # Compounding patterns and priority actions are empty.
+            # This is a silent quality degradation — this alert
+            # means you know when it happens.
+            logger.error(
+                "orchestrator_fallback",
+                extra={"custom_dimensions": {
+                    "event":         "orchestrator_fallback",
+                    "ddi_count":     len(
+                        safety_result.get("drug_drug", [])
+                    ),
+                    "disease_count": len(
+                        disease_result.get("drug_disease", [])
+                    ),
+                    "dosing_count":  len(
+                        dosing_result.get(
+                            "dosing_recommendations", []
+                        )
+                    ),
+                    "signals_count": len(compounding_signals),
+                }}
+            )
             print("   ⚠️  Orchestrator Agent failed — "
                   "returning basic risk summary")
             return self._build_fallback_summary(

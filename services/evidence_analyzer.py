@@ -16,16 +16,27 @@ CHANGES from original:
 3. _build_evidence_text updated — removes AI knowledge fallback
    text when no evidence found
 
+4. Azure Application Insights logging added:
+   Alert 8: LLM failures
+            Custom event: llm_failure
+            Logged in _call_gpt4o() on any exception from
+            Azure OpenAI — covers timeouts, quota errors,
+            auth failures, and JSON parse errors.
+
 Everything else identical to original.
 """
 
 from openai import AzureOpenAI
 import json
 import os
+import logging
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Shared logger — Application Insights handler attached in app.py
+logger = logging.getLogger("vabgenrx")
 
 
 class EvidenceAnalyzer:
@@ -650,6 +661,20 @@ If none found: {{"no_significant_interactions": true}}
             )
 
         except Exception as e:
+            # ── Alert 8: LLM failure ──────────────────────────────
+            # Covers Azure OpenAI timeouts, quota errors,
+            # auth failures, and JSON parse errors.
+            # evidence_analyzer is the most critical LLM caller —
+            # failures here mean drug interaction analysis returned
+            # an error result to the doctor.
+            logger.error(
+                "llm_failure",
+                extra={"custom_dimensions": {
+                    "event":   "llm_failure",
+                    "service": "evidence_analyzer",
+                    "error":   str(e)[:200],
+                }}
+            )
             print(f"\n   ❌ GPT-4o Error: {e}")
             return {
                 'severity':   'error',
