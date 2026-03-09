@@ -1,50 +1,29 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import logo from "../assets/vabgen_logo.png";
+import logo         from "../assets/vabgen_logo.png";
+import dashboardIcon from "../assets/dashboard.png";
+import patientIcon   from "../assets/patient.png";
+import settingsIcon  from "../assets/settings.png";
+import logoutIcon    from "../assets/logout.png";
 import "../components/styles/nav.css";
 
-// ── SVG Icons ────────────────────────────────────────────────
-const DashboardIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-  </svg>
+// ── PNG Icon helper ───────────────────────────────────────────
+// Inverts icon to white in dark mode, keeps natural color in light mode
+const NavPngIcon = ({ src, alt, active }) => (
+  <img
+    src={src}
+    alt={alt}
+    style={{
+      width: 18, height: 18,
+      objectFit: "contain",
+      filter: "brightness(0) invert(1)",   // always white — sidebar is dark blue
+      opacity: active ? 1 : 1,           // active = full, inactive = dimmed
+      flexShrink: 0,
+    }}
+  />
 );
 
-const PatientsIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-    <circle cx="9" cy="7" r="4"/>
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-  </svg>
-);
-
-const SettingsIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33
-      1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06
-      a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
-      A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
-      A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51
-      a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9
-      a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-  </svg>
-);
-
-const LogoutIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-    <polyline points="16 17 21 12 16 7"/>
-    <line x1="21" y1="12" x2="9" y2="12"/>
-  </svg>
-);
-
+// Logout modal icon (large, always red tint)
 const LogoutModalIcon = () => (
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
     stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -57,26 +36,32 @@ const LogoutModalIcon = () => (
 // ── Nav Items ─────────────────────────────────────────────────
 const NAV_ITEMS = {
   MAIN: [
-    { label: "Dashboard",   icon: <DashboardIcon />, path: "/dashboard" },
-    { label: "My Patients", icon: <PatientsIcon />,  path: "/patients"  },
+    { label: "Dashboard",   icon: dashboardIcon, alt: "dashboard", path: "/dashboard" },
+    { label: "My Patients", icon: patientIcon,   alt: "patients",  path: "/patients"  },
   ],
   TOOLS: [
-    { label: "Settings",    icon: <SettingsIcon />,  path: "/settings"  },
+    { label: "Settings",    icon: settingsIcon,  alt: "settings",  path: "/settings"  },
   ],
 };
 
 const NavSection = ({ title, items }) => (
   <div className="nav-section">
     <p className="nav-section-title">{title}</p>
-    {items.map(({ label, icon, path, badge }) => (
+    {items.map(({ label, icon, alt, path, badge }) => (
       <NavLink
         key={path}
         to={path}
         className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
       >
-        <span className="nav-icon">{icon}</span>
-        <span className="nav-label">{label}</span>
-        {badge && <span className="nav-badge">{badge}</span>}
+        {({ isActive }) => (
+          <>
+            <span className="nav-icon">
+              <NavPngIcon src={icon} alt={alt} active={isActive} />
+            </span>
+            <span className="nav-label">{label}</span>
+            {badge && <span className="nav-badge">{badge}</span>}
+          </>
+        )}
       </NavLink>
     ))}
   </div>
@@ -86,6 +71,7 @@ const Nav = ({ user }) => {
   const navigate = useNavigate();
   const [profile, setProfile]               = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -116,12 +102,27 @@ const Nav = ({ user }) => {
 
         {/* Links */}
         <nav className="nav-links">
-          <NavSection title="MAIN"  items={NAV_ITEMS.MAIN} />
+          <NavSection title="MAIN"  items={NAV_ITEMS.MAIN}  />
           <NavSection title="TOOLS" items={NAV_ITEMS.TOOLS} />
 
+          {/* Logout button */}
           <div className="nav-section">
-            <button className="nav-item nav-logout-btn" onClick={() => setShowLogoutModal(true)}>
-              <span className="nav-icon"><LogoutIcon /></span>
+            <button
+              className="nav-item nav-logout-btn"
+              onClick={() => setShowLogoutModal(true)}
+            >
+              <span className="nav-icon">
+                <img
+                  src={logoutIcon}
+                  alt="logout"
+                  style={{
+                    width: 17, height: 17,
+                    objectFit: "contain",
+                    filter: "brightness(0) invert(1)",
+                    opacity: 0.6,
+                  }}
+                />
+              </span>
               <span className="nav-label">Logout</span>
             </button>
           </div>
@@ -166,12 +167,8 @@ const Nav = ({ user }) => {
             <h3 className="logout-title">Confirm Logout</h3>
             <p className="logout-msg">Are you sure you want to logout from VabGen Rx?</p>
             <div className="logout-actions">
-              <button className="logout-cancel" onClick={() => setShowLogoutModal(false)}>
-                Cancel
-              </button>
-              <button className="logout-confirm" onClick={handleLogoutConfirm}>
-                Yes, Logout
-              </button>
+              <button className="logout-cancel"  onClick={() => setShowLogoutModal(false)}>Cancel</button>
+              <button className="logout-confirm" onClick={handleLogoutConfirm}>Yes, Logout</button>
             </div>
           </div>
         </div>

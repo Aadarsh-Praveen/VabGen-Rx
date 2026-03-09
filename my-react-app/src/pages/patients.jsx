@@ -4,6 +4,11 @@ import Nav from "../components/nav";
 import { apiFetch } from "../services/api";
 import "./patients.css";
 import PageFooter from "../components/pageFooter";
+
+import patientIcon    from "../assets/patient.png";
+import inPatientIcon  from "../assets/in_patient.png";
+import outPatientIcon from "../assets/out_patient.png";
+
 // ── SVG Icons ─────────────────────────────────────────────────
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -14,21 +19,6 @@ const SearchIcon = () => (
 const FilterIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-  </svg>
-);
-
-const InPatientIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-    <polyline points="9 22 9 12 15 12 15 22"/>
-  </svg>
-);
-
-const OutPatientIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="4" r="2"/>
-    <path d="M12 6v6l-2 4"/><path d="M12 12l2 4"/>
-    <path d="M9 20l1-4"/><path d="M15 20l-1-4"/>
   </svg>
 );
 
@@ -49,15 +39,6 @@ const EyeIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
     <circle cx="12" cy="12" r="3"/>
-  </svg>
-);
-
-const UsersIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-    <circle cx="9" cy="7" r="4"/>
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
   </svg>
 );
 
@@ -90,6 +71,9 @@ const Patients = ({ user }) => {
   const [deptFilter,  setDeptFilter]  = useState("All");
   const [showFilter,  setShowFilter]  = useState(false);
 
+  // Detect dark mode for icon filter
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+
   useEffect(() => {
     const fetchPatients = async () => {
       setLoading(true); setError(null); setPatients([]); setDeptFilter("All");
@@ -121,37 +105,69 @@ const Patients = ({ user }) => {
 
   const getSexBadge = sex => sex === "M" ? "blue" : "pink";
 
+  // Icon style — invert to white in dark mode
+  const iconStyle = {
+    width: 20, height: 20,
+    objectFit: 'contain',
+    filter: isDark ? 'brightness(0) invert(1)' : 'none',
+    opacity: isDark ? 0.9 : 1,
+  };
+
   return (
     <div className="pt-layout">
       <Nav user={user} />
       <main className="pt-main">
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div className="pt-header">
           <div className="pt-header-left">
-            <div className="pt-header-icon"><UsersIcon /></div>
+            <div className="pt-header-icon">
+              <img src={patientIcon} alt="patients" style={iconStyle} />
+            </div>
             <div>
               <h1 className="pt-title">My Patients</h1>
               <p className="pt-subtitle">{patients.length} patients in the database</p>
             </div>
           </div>
+
+          {/* ── IP / OP Toggle with PNG icons ── */}
           <div className="pt-type-toggle">
             <button
               className={`pt-type-btn${patientType === "inpatient" ? " active" : ""}`}
               onClick={() => setPatientType("inpatient")}
             >
-              <InPatientIcon /> In-Patients
+              <img
+                src={inPatientIcon}
+                alt="In-Patients"
+                style={{
+                  width: 16, height: 16, objectFit: 'contain',
+                  filter: patientType === "inpatient"
+                    ? 'none'
+                    : isDark ? 'brightness(0) invert(0.5)' : 'brightness(0) invert(0.5)',
+                }}
+              />
+              In-Patients
             </button>
             <button
               className={`pt-type-btn${patientType === "outpatient" ? " active" : ""}`}
               onClick={() => setPatientType("outpatient")}
             >
-              <OutPatientIcon /> Out-Patients
+              <img
+                src={outPatientIcon}
+                alt="Out-Patients"
+                style={{
+                  width: 16, height: 16, objectFit: 'contain',
+                  filter: patientType === "outpatient"
+                    ? 'none'
+                    : isDark ? 'brightness(0) invert(0.5)' : 'brightness(0) invert(0.5)',
+                }}
+              />
+              Out-Patients
             </button>
           </div>
         </div>
 
-        {/* Filters */}
+        {/* ── Filters ── */}
         <div className="pt-filters">
           <div className="pt-search-wrap">
             <span className="pt-search-icon"><SearchIcon /></span>
@@ -183,7 +199,7 @@ const Patients = ({ user }) => {
           </div>
         </div>
 
-        {/* Active Filter Chip */}
+        {/* ── Active Filter Chip ── */}
         {deptFilter !== "All" && (
           <div className="pt-active-filter">
             <span>Dept: <strong>{deptFilter}</strong></span>
@@ -191,7 +207,7 @@ const Patients = ({ user }) => {
           </div>
         )}
 
-        {/* States */}
+        {/* ── States ── */}
         {loading && <div className="pt-state"><div className="pt-spinner" /><p>Loading patients...</p></div>}
         {error   && (
           <div className="pt-state pt-error">
@@ -199,7 +215,7 @@ const Patients = ({ user }) => {
           </div>
         )}
 
-        {/* Table */}
+        {/* ── Table ── */}
         {!loading && !error && (
           <div className="pt-table-wrap">
             <table className="pt-table">

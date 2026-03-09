@@ -160,13 +160,8 @@ const Login = ({ onLogin }) => {
               VabGen <span className="rx-r">R</span><span className="rx-x">x</span>
             </h1>
             <p className="login-tagline">Medication Safety Platform</p>
-            <div className="login-divider" />
-            <ul className="login-features">
-              <li><span className="feature-dot" />AI-powered drug interaction analysis</li>
-              <li><span className="feature-dot" />Real-time dosing recommendations</li>
-              <li><span className="feature-dot" />Integrated patient counselling</li>
-              <li><span className="feature-dot" />JWT-secured, access control</li>
-            </ul>
+           
+           
           </div>
         </div>
 
@@ -174,7 +169,7 @@ const Login = ({ onLogin }) => {
         <div className="login-panel-right">
           <div className="login-form-wrap">
             <div className="login-form-header">
-              <h2 className="form-title">Welcome back</h2>
+              <h2 className="form-title">Welcome, Doctor!</h2>
               <p className="form-subtitle">Sign in to your account to continue</p>
             </div>
 

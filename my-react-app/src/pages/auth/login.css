@@ -91,8 +91,8 @@ html, body, #root {
 }
 
 .login-logo {
-  width: 90px;
-  height: 90px;
+  width: 160px;
+  height: 160px;
   object-fit: contain;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.15);
@@ -113,7 +113,7 @@ html, body, #root {
 .rx-x { color: #74c0fc; }
 
 .login-tagline {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 2px;
