@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Pill, Search, Pencil, Trash2, PauseCircle, PlayCircle, Save, X, ChevronDown, AlertTriangle, RotateCcw, StopCircle, CheckCircle2, Plus } from "lucide-react";
 import "../components/styles/medicationList.css";
@@ -20,6 +20,30 @@ const MedicationList = ({
   const [manualGeneric,  setManualGeneric] = useState("");
   const [manualStrength, setManualStrength]= useState("");
   const [dupWarning,     setDupWarning]    = useState(false);
+
+  // ── Recalculate dropdown position on scroll ───────────────────
+  // When showAddRow is open and the user scrolls, update the
+  // dropdown coordinates so it tracks the input field correctly.
+  useEffect(() => {
+    if (!showAddRow) return;
+
+    const handleScroll = () => updateDropdownPos();
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    // Also listen on any scrollable parent containers
+    document.querySelectorAll("*").forEach(el => {
+      if (el.scrollHeight > el.clientHeight) {
+        el.addEventListener("scroll", handleScroll, { passive: true });
+      }
+    });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      document.querySelectorAll("*").forEach(el => {
+        el.removeEventListener("scroll", handleScroll);
+      });
+    };
+  }, [showAddRow, updateDropdownPos]);
 
   const handleCancelAddFull = () => {
     setManualMode(false); setManualBrand(""); setManualGeneric(""); setManualStrength("");
@@ -145,42 +169,64 @@ const MedicationList = ({
                         <>
                           <div style={{ position: "relative" }}>
                             <Search size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "#aaa", pointerEvents: "none" }} />
-                            <input ref={searchInputRef} className="med-search-inp" style={{ paddingLeft: 26 }} placeholder="Search brand or generic name..." value={searchQ}
-                              onChange={e => { handleSearch(e.target.value); updateDropdownPos(); }} onFocus={updateDropdownPos} />
+                            <input
+                              ref={searchInputRef}
+                              className="med-search-inp"
+                              style={{ paddingLeft: 26 }}
+                              placeholder="Search brand or generic name..."
+                              value={searchQ}
+                              onChange={e => { handleSearch(e.target.value); updateDropdownPos(); }}
+                              onFocus={updateDropdownPos}
+                            />
                           </div>
                           {newErrors.drug && <div className="med-inline-error">{newErrors.drug}</div>}
-                          {(searching || searchResults.length > 0 || showManualTrigger) && (
-                            <div className="med-search-dropdown" style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width || 320 }}>
+                          {(searching || searchResults.length > 0 || showManualTrigger) && createPortal(
+                            <div
+                              className="med-search-dropdown"
+                              style={{
+                                position: "fixed",
+                                top:      dropdownPos.top,
+                                left:     dropdownPos.left,
+                                width:    dropdownPos.width || 320,
+                              }}
+                            >
                               {searching && <div className="med-search-loading">Searching...</div>}
                               {!searching && searchResults.map((d, i) => (
                                 <div key={i} className="med-search-option" onClick={() => handleSelectDrug(d)}>
                                   <div className="med-search-brand">{d.Brand_Name}</div>
-                                  {/* ✅ Route now shown in dropdown meta */}
                                   <div className="med-search-meta">{d.Generic_Name} · {d.Strength} · {d.Route} · Stock: {d.Stocks}</div>
                                 </div>
                               ))}
                               {showManualTrigger && (
                                 <div style={{ borderTop: searchResults.length > 0 ? "1px solid #f0f0f8" : "none" }}>
                                   <div className="med-search-loading" style={{ color: "#aaa" }}>No results for "{searchQ}"</div>
-                                  <div className="med-search-option" style={{ color: "#1a73e8", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 6 }}
-                                    onClick={() => { setManualMode(true); setManualBrand(searchQ.trim()); }}>
+                                  <div
+                                    className="med-search-option"
+                                    style={{ color: "#1a73e8", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 6 }}
+                                    onClick={() => { setManualMode(true); setManualBrand(searchQ.trim()); }}
+                                  >
                                     <Pencil size={12} />Add "{searchQ}" manually
                                   </div>
                                 </div>
                               )}
-                            </div>
+                            </div>,
+                            document.body
                           )}
                         </>
                       ) : (
-                        <input className="med-inline-inp" style={{ width: "100%", background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.drug ? "#e05252" : "#1a73e8" }}
-                          placeholder="Brand Name *" value={manualBrand} autoFocus
-                          onChange={e => { setManualBrand(e.target.value); setNewErrors(er => ({ ...er, drug: "" })); }} />
+                        <input
+                          className="med-inline-inp"
+                          style={{ width: "100%", background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.drug ? "#e05252" : "#1a73e8" }}
+                          placeholder="Brand Name *"
+                          value={manualBrand}
+                          autoFocus
+                          onChange={e => { setManualBrand(e.target.value); setNewErrors(er => ({ ...er, drug: "" })); }}
+                        />
                       )}
                     </td>
                     {manualMode && <td><input className="med-inline-inp" style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }} placeholder="Generic Name" value={manualGeneric} onChange={e => setManualGeneric(e.target.value)} /></td>}
                     {manualMode && <td><input className="med-inline-inp" style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }} placeholder="Strength" value={manualStrength} onChange={e => setManualStrength(e.target.value)} /></td>}
                     <td>
-                      {/* ✅ Route input — pre-filled from DB via newForm.route set in handleSelectDrug */}
                       <input className={`med-inline-inp${newErrors.route ? " med-inline-inp-error" : ""}`} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.route ? "#e05252" : "#e0e3ef" }} placeholder="Route *" value={newForm.route} onChange={e => { setNewForm(f => ({ ...f, route: e.target.value })); setNewErrors(er => ({ ...er, route: "" })); }} />
                       {newErrors.route && <div className="med-inline-error">{newErrors.route}</div>}
                     </td>

@@ -31,7 +31,7 @@ openai_key = os.getenv("AZURE_OPENAI_KEY")
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  
+load_dotenv()
 
 _kv_client = None
 
@@ -79,7 +79,6 @@ def get_secret(secret_name: str, env_fallback: str) -> str:
         except Exception as e:
             print(f"⚠️  Key Vault: could not fetch '{secret_name}': {e}")
 
-    # Fall back to .env
     value = os.environ.get(env_fallback)
     if not value:
         print(f"❌ Secret '{env_fallback}' not found in .env either!")
@@ -151,6 +150,11 @@ def load_all_secrets() -> dict:
             get_secret("NCBI-API-KEY-4", "NCBI_API_KEY_4"),
         "FDA_API_KEY":
             get_secret("FDA-API-KEY",    "FDA_API_KEY"),
+
+        # ── Azure AI Content Safety ───────────────────────────────
+        "AZURE_CONTENT_SAFETY_ENDPOINT":
+            get_secret("AZURE-CONTENT-SAFETY-ENDPOINT",
+                       "AZURE_CONTENT_SAFETY_ENDPOINT"),
     }
 
     loaded = 0

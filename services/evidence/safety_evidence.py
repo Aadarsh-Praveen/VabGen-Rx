@@ -79,6 +79,8 @@ counts remain accurate even when agent outputs omit or
 misreport evidence metrics.
 """
 
+
+
 import re
 import itertools
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -118,15 +120,14 @@ def _split_combination_drug(drug_name: str) -> list:
     """
     Split a combination drug name into individual components.
 
-    The FDA adverse events API (FAERS) stores individual drug names,
-    not combination product names. Searching for
-    "rosiglitazone maleate/Metformin" returns ~1 report because no
-    product is filed under that exact combined string in FAERS.
+    FDA FAERS stores individual drug names, not combination product
+    names. Searching for "rosiglitazone maleate/Metformin" returns
+    ~1 report. Splitting and searching components individually
+    finds the correct adverse event signal.
 
     Examples:
-        "rosiglitazone maleate/Metformin"  → ["rosiglitazone maleate", "Metformin"]
-        "rosiglitazone maleate\\Metformin" → ["rosiglitazone maleate", "Metformin"]
-        "Levothyroxine"                    → ["Levothyroxine"]  (unchanged)
+        "rosiglitazone maleate/Metformin" → ["rosiglitazone maleate", "Metformin"]
+        "Levothyroxine"                   → ["Levothyroxine"]
     """
     parts = re.split(r'\s*[/\\|+]\s*', drug_name.strip())
     return [p.strip() for p in parts if p.strip()]
@@ -161,32 +162,16 @@ class SafetyEvidenceService:
         """
         Search FDA adverse events handling combination drug names.
 
-        The FAERS database stores individual drug names, not
-        combination product names. Searching for
-        "rosiglitazone maleate/Metformin" returns ~1 report because
-        no product is filed under that exact combined name.
-
-        Strategy:
-        1. Split each drug into components if it's a combination.
-        2. Search all component pairs and take the MAX total_reports
-           result — this finds the most clinically relevant signal.
-
-        Example:
-            drug1 = "Levothyroxine"
-            drug2 = "rosiglitazone maleate/Metformin"
-            → searches:
-                Levothyroxine × rosiglitazone maleate → N reports
-                Levothyroxine × Metformin             → N reports
-            → returns whichever has highest total_reports
+        Splits combination drugs into components and searches all
+        component pairs, returning the result with the highest
+        total_reports.
         """
         components1 = _split_combination_drug(drug1)
         components2 = _split_combination_drug(drug2)
 
-        # Both single drugs — standard search, no overhead
         if len(components1) == 1 and len(components2) == 1:
             return self.fda.search_adverse_events(drug1, drug2)
 
-        # Combination drug — search all component pairs
         best_result = {"found": False, "total_reports": 0}
 
         for c1 in components1:
@@ -216,26 +201,24 @@ class SafetyEvidenceService:
     ) -> Dict:
         """
         Stamp correct evidence counts onto ALL drug-drug pairs —
-        both cached and fresh.
+        both cached and fresh — after SafetyAgent synthesis.
 
-        Why ALL pairs (not just cached):
-          For fresh pairs the agent reads fda_reports from the prompt
-          and writes it into evidence{}. But the agent can write the
-          seriousness term flag (1 or 2) instead of the actual total
-          count. Stamping from raw_evidence for ALL pairs is the
-          safest approach — raw_evidence["fda_reports"] always holds
-          the correct total_reports from _search_adverse_events_smart.
+        For cached pairs:
+            The agent copies clinical text correctly but can write
+            incorrect evidence numbers. fda_serious and severity_ratio
+            are read from the nested evidence{} blob in the SQL record,
+            which is where the correct values are stored.
 
-          For cached pairs the cached blob may have been written with
-          fda_reports=1 (the seriousness term flag). The fix detects
-          this by treating values of 0, 1, or 2 as flags and falling
-          back to raw_fda_total instead.
+        For fresh pairs:
+            The agent may write the FAERS seriousness term flag
+            (1 or 2) instead of the actual total count. Raw evidence
+            always holds the correct total_reports from
+            _search_adverse_events_smart.
         """
         ddi_results = agent_result.get("drug_drug", [])
         if not ddi_results:
             return agent_result
 
-        # Build lookup for ALL pairs (cached and fresh)
         ev_lookup = {}
         for pair_key, ev in raw_evidence.items():
             d1, d2 = sorted([
@@ -257,24 +240,17 @@ class SafetyEvidenceService:
             cached_data = raw_ev.get("cached_data", {}) if is_cached else {}
             cached_ev   = cached_data.get("evidence", {})
 
-            # ── fda_reports: always use total from raw FDA call ───────
-            # raw_ev["fda_reports"] = fda_ev.get("total_reports") from
-            # _search_adverse_events_smart — always the correct total.
-            # For cached pairs check cached_data but treat 0/1/2 as
-            # seriousness flags and ignore them.
+            # ── fda_reports: always use total from raw FDA call ────
             raw_fda_total = raw_ev.get("fda_reports", 0)
-
-            cached_fda = (
+            cached_fda    = (
                 cached_ev.get("fda_reports")
                 or cached_data.get("fda_reports")
                 or 0
             )
             if cached_fda in (0, 1, 2):
                 cached_fda = 0
-
             fda_reports = raw_fda_total or cached_fda
 
-            # Other evidence fields
             pubmed_papers = (
                 cached_ev.get("pubmed_papers")
                 or cached_data.get("pubmed_papers")
@@ -285,10 +261,23 @@ class SafetyEvidenceService:
                 or cached_data.get("fda_label_sections_count")
                 or raw_ev.get("fda_label_sections_count", 0)
             )
-            fda_serious    = raw_ev.get("fda_serious",    0)
-            severity_ratio = raw_ev.get("severity_ratio", 0.0)
 
-            # Stamp ALL evidence counts directly
+            # ── fda_serious and severity_ratio ─────────────────────
+            # Read from nested evidence{} blob first — this is where
+            # save_drug_drug() stores the correct values from the
+            # original FAERS call. Top-level fda_serious_reports may
+            # not exist in older cache entries.
+            fda_serious    = (
+                cached_ev.get("fda_serious")
+                or cached_data.get("fda_serious_reports")
+                or raw_ev.get("fda_serious", 0)
+            )
+            severity_ratio = (
+                cached_ev.get("severity_ratio")
+                or cached_data.get("severity_ratio")
+                or raw_ev.get("severity_ratio", 0.0)
+            )
+
             ev_out = item.get("evidence", {})
             if not isinstance(ev_out, dict):
                 ev_out = {}
@@ -300,7 +289,6 @@ class SafetyEvidenceService:
             ev_out["fda_label_sections_count"] = fda_sections
             item["evidence"]                   = ev_out
 
-            # For cached pairs: also stamp clinical fields
             if is_cached and cached_data:
                 if cached_data.get("confidence") is not None:
                     item["confidence"] = cached_data["confidence"]
@@ -309,13 +297,9 @@ class SafetyEvidenceService:
                 if cached_data.get("mechanism"):
                     item["mechanism"] = cached_data["mechanism"]
                 if cached_data.get("clinical_effects"):
-                    item["clinical_effects"] = (
-                        cached_data["clinical_effects"]
-                    )
+                    item["clinical_effects"] = cached_data["clinical_effects"]
                 if cached_data.get("recommendation"):
-                    item["recommendation"] = (
-                        cached_data["recommendation"]
-                    )
+                    item["recommendation"] = cached_data["recommendation"]
 
             print(
                 f"   🔧 {'Cached' if is_cached else 'Fresh'} DDI patched: "
@@ -367,6 +351,18 @@ class SafetyEvidenceService:
                     cached_ev.get("fda_reports")
                     or cached.get("fda_reports", 0)
                 )
+                # Read fda_serious and severity_ratio from nested
+                # evidence{} blob — correct values stored there by
+                # save_drug_drug(). Top-level fields may be absent
+                # in older cache entries.
+                cached_fda_serious    = (
+                    cached_ev.get("fda_serious")
+                    or cached.get("fda_serious_reports", 0)
+                )
+                cached_severity_ratio = (
+                    cached_ev.get("severity_ratio")
+                    or cached.get("severity_ratio", 0)
+                )
                 evidence[pair] = {
                     "cache_hit":                True,
                     "cached_data":              cached,
@@ -374,8 +370,8 @@ class SafetyEvidenceService:
                     "pubmed_pmids":             cached.get("pmids", []),
                     "abstracts":                cached.get("abstracts", []),
                     "fda_reports":              cached_fda,
-                    "fda_serious":              cached.get("fda_serious_reports", 0),
-                    "severity_ratio":           cached.get("severity_ratio", 0),
+                    "fda_serious":              cached_fda_serious,
+                    "severity_ratio":           cached_severity_ratio,
                     "fda_label_sections_count": cached_sec_count,
                     "fda_label_drug1":          {},
                     "fda_label_drug2":          {},
@@ -404,15 +400,9 @@ class SafetyEvidenceService:
         with ThreadPoolExecutor(
             max_workers=min(len(unique_drugs) * 2, 10)
         ) as ex:
-            dl_futures = {
-                ex.submit(_get_dosing, d): d
-                for d in unique_drugs
-            }
-            cl_futures = {
-                ex.submit(_get_contra, d): d
-                for d in unique_drugs
-            }
-            all_f = {**dl_futures, **cl_futures}
+            dl_futures = {ex.submit(_get_dosing, d): d for d in unique_drugs}
+            cl_futures = {ex.submit(_get_contra, d): d for d in unique_drugs}
+            all_f      = {**dl_futures, **cl_futures}
             for future in as_completed(all_f):
                 try:
                     result = future.result()
@@ -433,11 +423,9 @@ class SafetyEvidenceService:
                 return self.pubmed.search_drug_interaction(d1, d2)
 
         def _merge_labels(drug: str) -> dict:
-            dl = dosing_labels.get(drug, {})
-            cl = contra_labels.get(drug, {})
-            merged = {"found": (
-                dl.get("found", False) or cl.get("found", False)
-            )}
+            dl     = dosing_labels.get(drug, {})
+            cl     = contra_labels.get(drug, {})
+            merged = {"found": dl.get("found", False) or cl.get("found", False)}
             for k, v in dl.items():
                 if k not in _SKIP and v:
                     merged[k] = v
@@ -452,13 +440,8 @@ class SafetyEvidenceService:
             futures_map = {}
             for pair in miss_pairs:
                 d1, d2 = pair
-                futures_map[
-                    ex.submit(_pubmed_search, d1, d2)
-                ] = ("pubmed", pair)
-                # ── Use smart search — handles combination drug names ──
-                futures_map[
-                    ex.submit(self._search_adverse_events_smart, d1, d2)
-                ] = ("fda_events", pair)
+                futures_map[ex.submit(_pubmed_search, d1, d2)]                         = ("pubmed",     pair)
+                futures_map[ex.submit(self._search_adverse_events_smart, d1, d2)]      = ("fda_events", pair)
 
             raw = {p: {} for p in miss_pairs}
             for future in as_completed(futures_map):
@@ -466,8 +449,7 @@ class SafetyEvidenceService:
                 try:
                     raw[pair][kind] = future.result()
                 except Exception as e:
-                    print(f"      ⚠️  Evidence fetch error "
-                          f"{kind} {pair}: {e}")
+                    print(f"      ⚠️  Evidence fetch error {kind} {pair}: {e}")
                     raw[pair][kind] = {}
 
         for pair in miss_pairs:
@@ -486,13 +468,12 @@ class SafetyEvidenceService:
             evidence[pair] = {
                 "cache_hit":                False,
                 "cached_data":              None,
-                "pubmed_count":             pubmed.get("count",          0),
-                "pubmed_pmids":             pubmed.get("pmids",          [])[:5],
+                "pubmed_count":             pubmed.get("count",           0),
+                "pubmed_pmids":             pubmed.get("pmids",           [])[:5],
                 "abstracts":               [
                     a["text"][:400]
                     for a in pubmed.get("abstracts", [])[:2]
                 ],
-                # Always total_reports — never serious_reports
                 "fda_reports":              fda_ev.get("total_reports",  0),
                 "fda_serious":              fda_ev.get("serious_reports", 0),
                 "severity_ratio":           fda_ev.get("severity_ratio", 0),
@@ -554,9 +535,7 @@ class SafetyEvidenceService:
 
         def _food_search(drug):
             with PUBMED_SEMAPHORE:
-                return self.pubmed.search_all_food_interactions_for_drug(
-                    drug, 5
-                )
+                return self.pubmed.search_all_food_interactions_for_drug(drug, 5)
 
         with ThreadPoolExecutor(
             max_workers=min(len(miss_drugs), 7)

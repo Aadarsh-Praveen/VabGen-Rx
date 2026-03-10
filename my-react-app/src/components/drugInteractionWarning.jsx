@@ -1,13 +1,26 @@
 import "../components/styles/drugInteractionWarning.css";
 import { useState, useCallback } from "react";
-import { BookOpen, Building2, Pill, ClipboardList, XCircle, Utensils, Clock, Eye, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
+import {
+  BookOpen, Building2, Pill, ClipboardList,
+  XCircle, Utensils, Clock, Eye,
+  CheckCircle2, ExternalLink, Loader2,
+} from "lucide-react";
+
+// ── External link helpers ─────────────────────────────────────────────────────
 
 const pubmedUrl = (drug1, drug2 = null) => {
-  const query = drug2 ? `${drug1.trim()} ${drug2.trim()} drug interaction` : `${drug1.trim()} drug interaction`;
+  const d1    = (drug1 || "").trim();
+  const d2    = (drug2 || "").trim();
+  const query = d2
+    ? `${d1} ${d2} drug interaction`
+    : `${d1} drug interaction`;
   return `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(query)}&sort=relevance`;
 };
 
-const fdaReportsUrl = () => `https://www.fda.gov/drugs/drug-approvals-and-databases/fda-adverse-event-reporting-system-faers`;
+const fdaReportsUrl = () =>
+  `https://www.fda.gov/drugs/drug-approvals-and-databases/fda-adverse-event-reporting-system-faers`;
+
+// ── FDA label dynamic link ────────────────────────────────────────────────────
 
 const FdaLabelLink = ({ drug, children, className }) => {
   const [loading, setLoading] = useState(false);
@@ -16,19 +29,43 @@ const FdaLabelLink = ({ drug, children, className }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res     = await fetch(`https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent(drug.trim())}"&limit=5`);
+      const res     = await fetch(
+        `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent((drug || "").trim())}"&limit=5`
+      );
       const data    = await res.json();
       const results = data?.results || [];
-      const lower   = drug.trim().toLowerCase();
-      let best = results.find(r => (r?.openfda?.generic_name || []).some(n => n.toLowerCase() === lower));
-      if (!best) best = results.find(r => (r?.openfda?.generic_name || []).some(n => n.toLowerCase().includes(lower) && !n.toLowerCase().includes(" and ")));
+      const lower   = (drug || "").trim().toLowerCase();
+
+      let best = results.find(r =>
+        (r?.openfda?.generic_name || []).some(n => n.toLowerCase() === lower)
+      );
+      if (!best) best = results.find(r =>
+        (r?.openfda?.generic_name || []).some(
+          n => n.toLowerCase().includes(lower) && !n.toLowerCase().includes(" and ")
+        )
+      );
       if (!best) best = results[0];
+
       const setId = best?.openfda?.spl_set_id?.[0];
-      if (setId) window.open(`https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${setId}`, "_blank");
-      else window.open(`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.trim())}`, "_blank");
+      if (setId) {
+        window.open(
+          `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${setId}`,
+          "_blank"
+        );
+      } else {
+        window.open(
+          `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent((drug || "").trim())}`,
+          "_blank"
+        );
+      }
     } catch {
-      window.open(`https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent(drug.trim())}`, "_blank");
-    } finally { setLoading(false); }
+      window.open(
+        `https://dailymed.nlm.nih.gov/dailymed/search.cfm?labeltype=all&query=${encodeURIComponent((drug || "").trim())}`,
+        "_blank"
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [drug]);
 
   return (
@@ -37,14 +74,29 @@ const FdaLabelLink = ({ drug, children, className }) => {
       className={className || "dint-source-tag"}
       title="Click to view FDA label"
       disabled={loading}
-      style={{ background: "none", border: "1px solid #e0e3ef", cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1, textDecoration: "none", padding: "2px 8px", borderRadius: 20, fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: 4 }}
+      style={{
+        background:    "none",
+        border:        "1px solid #e0e3ef",
+        cursor:        loading ? "wait" : "pointer",
+        opacity:       loading ? 0.7 : 1,
+        textDecoration:"none",
+        padding:       "2px 8px",
+        borderRadius:  20,
+        fontSize:      "0.75rem",
+        display:       "inline-flex",
+        alignItems:    "center",
+        gap:           4,
+      }}
     >
       {loading
         ? <><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />Loading...</>
-        : <>{children}<ExternalLink size={10} /></>}
+        : <>{children}<ExternalLink size={10} /></>
+      }
     </button>
   );
 };
+
+// ── Generic evidence link ─────────────────────────────────────────────────────
 
 const EvidenceLink = ({ href, children }) => (
   <a
@@ -53,11 +105,19 @@ const EvidenceLink = ({ href, children }) => (
     rel="noreferrer"
     className="dint-source-tag"
     title="Click to view evidence"
-    style={{ textDecoration: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+    style={{
+      textDecoration: "none",
+      cursor:         "pointer",
+      display:        "inline-flex",
+      alignItems:     "center",
+      gap:            4,
+    }}
   >
     {children}<ExternalLink size={10} />
   </a>
 );
+
+// ── Severity pill tabs ────────────────────────────────────────────────────────
 
 const SevPills = ({ tabs, active, onSelect }) => (
   <div className="dint-pills">
@@ -87,20 +147,25 @@ const SevPills = ({ tabs, active, onSelect }) => (
   </div>
 );
 
+// ── Main component ────────────────────────────────────────────────────────────
+
 const DrugInteractionWarning = ({
   agentResult, agentLoading, agentError,
-  intTab, setIntTab,
-  ddSevTab, setDdSevTab,
-  ddisTab, setDdisTab,
+  intTab,    setIntTab,
+  ddSevTab,  setDdSevTab,
+  ddisTab,   setDdisTab,
 }) => {
   const drugDrug    = agentResult?.drug_drug    || [];
   const drugDisease = agentResult?.drug_disease || [];
   const drugFood    = agentResult?.drug_food    || [];
 
+  // ── Drug-drug severity buckets ────────────────────────────────
   const ddMap = {
     severe:   drugDrug.filter(i => i.severity === "severe"),
     moderate: drugDrug.filter(i => i.severity === "moderate"),
-    minor:    drugDrug.filter(i => i.severity !== "severe" && i.severity !== "moderate"),
+    minor:    drugDrug.filter(
+      i => i.severity !== "severe" && i.severity !== "moderate"
+    ),
   };
   const ddTabs = [
     { key: "severe",   label: "Severe",   color: "#e05252", bg: "#fff0f0", border: "#fca5a5", items: ddMap.severe   },
@@ -108,10 +173,19 @@ const DrugInteractionWarning = ({
     { key: "minor",    label: "Minor",    color: "#888",    bg: "#f0f0f8", border: "#e0e3ef", items: ddMap.minor    },
   ];
 
+  // ── Drug-disease severity buckets ─────────────────────────────
+  // Filter out empty drug/disease fields — these are stale cached
+  // blobs where the agent bypass ran before the cache fix.
   const disMap = {
-    contraindicated: drugDisease.filter(i => i.contraindicated),
-    moderate:        drugDisease.filter(i => !i.contraindicated && i.severity === "moderate"),
-    minor:           drugDisease.filter(i => !i.contraindicated && i.severity !== "moderate"),
+    contraindicated: drugDisease.filter(
+      i => i.contraindicated && i.drug && i.disease
+    ),
+    moderate: drugDisease.filter(
+      i => !i.contraindicated && i.severity === "moderate" && i.drug && i.disease
+    ),
+    minor: drugDisease.filter(
+      i => !i.contraindicated && i.severity !== "moderate" && i.drug && i.disease
+    ),
   };
   const disTabs = [
     { key: "contraindicated", label: "Contraindicated", color: "#e05252", bg: "#fff0f0", border: "#fca5a5", items: disMap.contraindicated },
@@ -119,9 +193,13 @@ const DrugInteractionWarning = ({
     { key: "minor",           label: "Minor",           color: "#888",    bg: "#f0f0f8", border: "#e0e3ef", items: disMap.minor           },
   ];
 
-  const getPubmedCount = (item) => item?.evidence?.pubmed_papers            ?? item?.pubmed_papers            ?? 0;
-  const getFdaReports  = (item) => item?.evidence?.fda_reports              ?? item?.fda_reports              ?? 0;
-  const getFdaSections = (item) => item?.evidence?.fda_label_sections_count ?? item?.fda_label_sections_count ?? 0;
+  // ── Evidence field helpers ────────────────────────────────────
+  const getPubmedCount = (item) =>
+    item?.evidence?.pubmed_papers            ?? item?.pubmed_papers            ?? 0;
+  const getFdaReports  = (item) =>
+    item?.evidence?.fda_reports              ?? item?.fda_reports              ?? 0;
+  const getFdaSections = (item) =>
+    item?.evidence?.fda_label_sections_count ?? item?.fda_label_sections_count ?? 0;
 
   const getConfidenceLabel = (item) => {
     if (item.confidence != null) return `${Math.round(item.confidence * 100)}% confidence`;
@@ -135,6 +213,7 @@ const DrugInteractionWarning = ({
     </p>
   );
 
+  // ── Render ────────────────────────────────────────────────────
   return (
     <div className="dint-card">
       {agentResult && (drugDrug.length > 0 || drugDisease.length > 0 || drugFood.length > 0) && (
@@ -146,7 +225,7 @@ const DrugInteractionWarning = ({
         <div className="dint-tabs">
           {[
             { key: "drug-drug",    label: "Drug–Drug",    Icon: Pill,     count: drugDrug.length    },
-            { key: "drug-disease", label: "Drug–Disease", Icon: XCircle,  count: drugDisease.length },
+            { key: "drug-disease", label: "Drug–Disease", Icon: XCircle,  count: drugDisease.filter(i => i.drug && i.disease).length },
             { key: "drug-food",    label: "Drug–Food",    Icon: Utensils, count: drugFood.length    },
           ].map(t => (
             <button
@@ -164,6 +243,8 @@ const DrugInteractionWarning = ({
       </div>
 
       <div className="dint-body">
+
+        {/* Loading state */}
         {agentLoading && (
           <div className="dint-loading">
             <div className="pd-spinner" style={{ margin: "0 auto 0.75rem" }} />
@@ -171,14 +252,17 @@ const DrugInteractionWarning = ({
           </div>
         )}
 
+        {/* Empty state */}
         {!agentLoading && !agentResult && !agentError && (
           <p className="dint-empty">
             Add medications and click <strong>Done — Run Analysis</strong> to see results.
           </p>
         )}
 
+        {/* Results */}
         {!agentLoading && agentResult && (
           <>
+            {/* ── Drug-Drug tab ── */}
             {intTab === "drug-drug" && (
               <>
                 <SevPills tabs={ddTabs} active={ddSevTab} onSelect={setDdSevTab} />
@@ -216,10 +300,12 @@ const DrugInteractionWarning = ({
                         <div className="dint-rec-text">{item.recommendation}</div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                }
               </>
             )}
 
+            {/* ── Drug-Disease tab ── */}
             {intTab === "drug-disease" && (
               <>
                 <SevPills tabs={disTabs} active={ddisTab} onSelect={setDdisTab} />
@@ -250,14 +336,18 @@ const DrugInteractionWarning = ({
                         <div className="dint-rec-label">Recommendation</div>
                         <div className="dint-rec-text">{item.recommendation}</div>
                         {item.alternative_drugs?.length > 0 && (
-                          <div className="dint-rec-note">Alternatives: {item.alternative_drugs.join(", ")}</div>
+                          <div className="dint-rec-note">
+                            Alternatives: {item.alternative_drugs.join(", ")}
+                          </div>
                         )}
                       </div>
                     </div>
-                  ))}
+                  ))
+                }
               </>
             )}
 
+            {/* ── Drug-Food tab ── */}
             {intTab === "drug-food" && (
               drugFood.length === 0
                 ? <OkMessage text="No significant drug-food interactions found." />

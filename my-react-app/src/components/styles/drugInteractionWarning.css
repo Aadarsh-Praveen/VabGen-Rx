@@ -74,7 +74,7 @@
 }
 
 .dint-body {
-  padding: 0 1.1rem 1rem;
+  padding: 12px 1.1rem 1rem;   
   overflow-y: auto;
   min-height: 600px;
   max-height: 800px;

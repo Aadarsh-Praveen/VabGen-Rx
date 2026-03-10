@@ -900,7 +900,7 @@ def analyze_counselling(req: AnalysisRequest):
 
 
 @app.post("/agent/analyze/summary")
-def analyze_summary(req: AnalysisRequest):
+def analyze_summary(req: AnalysisRequest, request: Request):
     """Phase 4 — cross-domain clinical summary via OrchestratorAgent."""
     if not req.medications:
         raise HTTPException(
@@ -916,6 +916,12 @@ def analyze_summary(req: AnalysisRequest):
             status_code = 400,
             detail      = "No valid medication names provided"
         )
+
+    # Use session_id from request header for trace correlation.
+    # This ties the orchestrator trace to the same session as the
+    # interactions and dosing phase calls from the frontend.
+    # Falls back to a new UUID if header is not present.
+    session_id = request.headers.get("X-Session-ID", str(uuid.uuid4()))
 
     labs = _labs_to_dict(req.patient_labs)
 
@@ -934,7 +940,8 @@ def analyze_summary(req: AnalysisRequest):
             "bilirubin":  labs.get("bilirubin"),
             "tsh":        labs.get("tsh"),
             "pulse":      labs.get("pulse"),
-        }
+        },
+        session_id          = session_id,
     )
 
     risk_summary = {
@@ -949,6 +956,7 @@ def analyze_summary(req: AnalysisRequest):
         "compounding_patterns":          orchestrator_result.get("compounding_patterns", []),
         "priority_actions":              orchestrator_result.get("priority_actions", []),
         "evidence_summary":              orchestrator_result.get("evidence_summary", {}),
+        "trace_session_id":              orchestrator_result.get("trace_session_id", ""),
     }
 
     return {
@@ -957,7 +965,6 @@ def analyze_summary(req: AnalysisRequest):
         "phase":               "summary",
         "status":              "completed",
     }
-
 
 # ── Counselling endpoints ─────────────────────────────────────────────────────
 
