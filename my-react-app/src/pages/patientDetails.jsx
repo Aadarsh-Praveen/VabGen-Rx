@@ -70,13 +70,12 @@ const TabPngIcon = ({ src, alt, active }) => {
   const isDark = document.documentElement.getAttribute("data-theme") === "dark";
   return (
     <img
-      src={src}
-      alt={alt}
+      src={src} alt={alt}
       style={{
-        width: 15, height: 15, objectFit: 'contain', flexShrink: 0,
+        width: 15, height: 15, objectFit: "contain", flexShrink: 0,
         filter: active
-          ? isDark ? 'brightness(0) invert(1)' : 'none'
-          : 'brightness(0) invert(0.5)',
+          ? isDark ? "brightness(0) invert(1)" : "none"
+          : "brightness(0) invert(0.5)",
       }}
     />
   );
@@ -263,48 +262,41 @@ const ReferralTab = ({ p, isOutpatient }) => {
     to_dept: "", to_doctor: "", urgency: "Routine",
     reason: "", notes: "", date: new Date().toISOString().split("T")[0],
   });
-  const [allUsers,          setAllUsers]          = useState([]);
-  const [deptSuggestions,   setDeptSuggestions]   = useState([]);
-  const [doctorSuggestions, setDoctorSuggestions] = useState([]);
-  const [showDeptDrop,      setShowDeptDrop]       = useState(false);
-  const [showDoctorDrop,    setShowDoctorDrop]     = useState(false);
+  const [allUsers,    setAllUsers]    = useState([]);
   const [saving,      setSaving]      = useState(false);
   const [saveMsg,     setSaveMsg]     = useState(null);
   const [referrals,   setReferrals]   = useState([]);
   const [loadingList, setLoadingList] = useState(true);
 
+  const allDepts = [...new Set(allUsers.map(u => u.department).filter(Boolean))].sort();
+  const filteredDoctors = allUsers.filter(u =>
+    !referral.to_dept || u.department?.toLowerCase() === referral.to_dept.toLowerCase()
+  );
+
   useEffect(() => {
-    apiFetch("/api/users").then(r => r.json()).then(d => { if (d.users) setAllUsers(d.users); }).catch(() => {});
+    apiFetch("/api/users")
+      .then(r => r.json())
+      .then(d => { if (d.users) setAllUsers(d.users); })
+      .catch(() => {});
   }, []);
 
   const fetchReferrals = async () => {
     setLoadingList(true);
     try {
-      const ep  = isOutpatient ? `/api/op-referral/${encodeURIComponent(patientNo)}` : `/api/ip-referral/${encodeURIComponent(patientNo)}`;
+      const ep  = isOutpatient
+        ? `/api/op-referral/${encodeURIComponent(patientNo)}`
+        : `/api/ip-referral/${encodeURIComponent(patientNo)}`;
       const res = await apiFetch(ep);
       const d   = await res.json();
       if (res.ok) setReferrals(d.referrals || []);
-    } catch {} finally { setLoadingList(false); }
+    } catch {}
+    finally { setLoadingList(false); }
   };
 
   useEffect(() => { fetchReferrals(); }, [patientNo]);
 
   const handleDeptChange = (val) => {
     setReferral(r => ({ ...r, to_dept: val, to_doctor: "" }));
-    if (!val.trim()) { setDeptSuggestions([]); setShowDeptDrop(false); return; }
-    const depts = [...new Set(allUsers.map(u => u.department).filter(d => d?.toLowerCase().includes(val.toLowerCase())))];
-    setDeptSuggestions(depts); setShowDeptDrop(depts.length > 0);
-  };
-
-  const handleDoctorChange = (val) => {
-    setReferral(r => ({ ...r, to_doctor: val }));
-    if (!val.trim()) { setDoctorSuggestions([]); setShowDoctorDrop(false); return; }
-    const filtered = allUsers.filter(u => {
-      const nm = u.name?.toLowerCase().includes(val.toLowerCase());
-      const dm = referral.to_dept ? u.department?.toLowerCase() === referral.to_dept.toLowerCase() : true;
-      return nm && dm;
-    });
-    setDoctorSuggestions(filtered); setShowDoctorDrop(filtered.length > 0);
   };
 
   const handleSend = async () => {
@@ -312,11 +304,20 @@ const ReferralTab = ({ p, isOutpatient }) => {
     setSaving(true); setSaveMsg(null);
     try {
       const ep   = isOutpatient ? "/api/op-referral" : "/api/ip-referral";
-      const body = isOutpatient ? { opNo: patientNo, ...referral } : { ipNo: patientNo, ...referral };
-      const res  = await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const body = isOutpatient
+        ? { opNo: patientNo, ...referral }
+        : { ipNo: patientNo, ...referral };
+      const res  = await apiFetch(ep, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (res.ok) {
         setSaveMsg("success");
-        setReferral({ to_dept: "", to_doctor: "", urgency: "Routine", reason: "", notes: "", date: new Date().toISOString().split("T")[0] });
+        setReferral({
+          to_dept: "", to_doctor: "", urgency: "Routine",
+          reason: "", notes: "", date: new Date().toISOString().split("T")[0],
+        });
         await fetchReferrals();
       } else setSaveMsg("error");
     } catch { setSaveMsg("error"); }
@@ -327,8 +328,21 @@ const ReferralTab = ({ p, isOutpatient }) => {
     if (!window.confirm(`Revoke referral to ${r.Refer_To_Doctor || r.Refer_To_Department}?`)) return;
     try {
       const ep  = isOutpatient ? "/api/op-referral/delete" : "/api/ip-referral/delete";
-      const res = await apiFetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patientNo, to_doctor: r.Refer_To_Doctor, to_dept: r.Refer_To_Department, date: r.Referral_Date }) });
-      if (res.ok) setReferrals(prev => prev.filter(x => !(x.Refer_To_Doctor === r.Refer_To_Doctor && x.Refer_To_Department === r.Refer_To_Department && x.Referral_Date === r.Referral_Date)));
+      const res = await apiFetch(ep, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientNo,
+          to_doctor: r.Refer_To_Doctor,
+          to_dept:   r.Refer_To_Department,
+          date:      r.Referral_Date,
+        }),
+      });
+      if (res.ok) setReferrals(prev => prev.filter(x =>
+        !(x.Refer_To_Doctor     === r.Refer_To_Doctor &&
+          x.Refer_To_Department === r.Refer_To_Department &&
+          x.Referral_Date       === r.Referral_Date)
+      ));
     } catch (err) { console.error(err); }
   };
 
@@ -340,63 +354,72 @@ const ReferralTab = ({ p, isOutpatient }) => {
       <Section title="Referral Form">
         <div className="pd-referral-form">
           <div className="pd-form-grid">
-            <div className="pd-form-group" style={{ position: "relative" }}>
-              <label>Refer To Department</label>
-              <input
+            <div className="pd-form-group">
+              <label>Refer To Department <span style={{ color: "#e05252" }}>*</span></label>
+              <select
                 value={referral.to_dept}
                 onChange={e => handleDeptChange(e.target.value)}
-                onBlur={() => setTimeout(() => setShowDeptDrop(false), 150)}
-                placeholder="e.g. Cardiology"
-                autoComplete="off"
-              />
-              {showDeptDrop && (
-                <ul className="pd-autocomplete-drop">
-                  {deptSuggestions.map((d, i) => (
-                    <li key={i} onMouseDown={() => { setReferral(r => ({ ...r, to_dept: d, to_doctor: "" })); setShowDeptDrop(false); }}>{d}</li>
-                  ))}
-                </ul>
-              )}
+                className={!referral.to_dept && saveMsg === "error-validation" ? "pd-input-error" : ""}
+              >
+                <option value="">— Select Department —</option>
+                {allDepts.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
             </div>
-            <div className="pd-form-group" style={{ position: "relative" }}>
+
+            <div className="pd-form-group">
               <label>Refer To Doctor</label>
-              <input
+              <select
                 value={referral.to_doctor}
-                onChange={e => handleDoctorChange(e.target.value)}
-                onBlur={() => setTimeout(() => setShowDoctorDrop(false), 150)}
-                placeholder="e.g. Dr. Smith"
-                autoComplete="off"
-              />
-              {showDoctorDrop && (
-                <ul className="pd-autocomplete-drop">
-                  {doctorSuggestions.map((u, i) => (
-                    <li key={i} onMouseDown={() => { setReferral(r => ({ ...r, to_doctor: u.name, to_dept: u.department || r.to_dept })); setShowDoctorDrop(false); }}>
-                      <strong>{u.name}</strong>
-                      <span style={{ fontSize: "0.78rem", color: "#888", marginLeft: 6 }}>{u.department} · {u.designation}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                onChange={e => setReferral(r => ({ ...r, to_doctor: e.target.value }))}
+                disabled={!referral.to_dept}
+              >
+                <option value="">— Select Doctor —</option>
+                {filteredDoctors.map((u, i) => (
+                  <option key={i} value={u.name}>
+                    {u.name}{u.designation ? ` (${u.designation})` : ""}
+                  </option>
+                ))}
+              </select>
+              {!referral.to_dept && <span className="pd-form-hint">Select a department first</span>}
             </div>
+
             <div className="pd-form-group">
               <label>Urgency</label>
               <select value={referral.urgency} onChange={e => setReferral(r => ({ ...r, urgency: e.target.value }))}>
-                <option>Routine</option><option>Urgent</option><option>Emergency</option>
+                <option>Routine</option>
+                <option>Urgent</option>
+                <option>Emergency</option>
               </select>
             </div>
+
             <div className="pd-form-group">
               <label>Referral Date</label>
               <input type="date" value={referral.date} onChange={e => setReferral(r => ({ ...r, date: e.target.value }))} />
             </div>
           </div>
+
           <div className="pd-form-group pd-form-full">
-            <label>Reason for Referral</label>
-            <textarea rows={3} value={referral.reason} onChange={e => setReferral(r => ({ ...r, reason: e.target.value }))} placeholder="Describe the clinical reason..." />
+            <label>Reason for Referral <span style={{ color: "#e05252" }}>*</span></label>
+            <textarea
+              rows={3}
+              value={referral.reason}
+              onChange={e => setReferral(r => ({ ...r, reason: e.target.value }))}
+              placeholder="Describe the clinical reason..."
+              className={!referral.reason && saveMsg === "error-validation" ? "pd-input-error" : ""}
+            />
           </div>
+
           <div className="pd-form-group pd-form-full">
             <label>Additional Notes</label>
-            <textarea rows={3} value={referral.notes} onChange={e => setReferral(r => ({ ...r, notes: e.target.value }))} placeholder="Any additional notes..." />
+            <textarea
+              rows={3}
+              value={referral.notes}
+              onChange={e => setReferral(r => ({ ...r, notes: e.target.value }))}
+              placeholder="Any additional notes..."
+            />
           </div>
         </div>
+
         <div className="pd-referral-actions">
           {saveMsg === "error-validation" && <span className="ref-msg ref-msg-error"><WarningIcon /> Department and Reason are required.</span>}
           {saveMsg === "success"          && <span className="ref-msg ref-msg-success"><CheckIcon /> Referral sent successfully!</span>}
@@ -447,7 +470,6 @@ const ReferralTab = ({ p, isOutpatient }) => {
   );
 };
 
-// ✅ Accept onLogout prop
 const PatientDetail = ({ user, onLogout }) => {
   const { id: patientNo } = useParams();
   const navigate          = useNavigate();
@@ -476,10 +498,8 @@ const PatientDetail = ({ user, onLogout }) => {
 
   return (
     <div className="pd-layout">
-      {/* ✅ Pass onLogout to Nav */}
       <Nav user={user} onLogout={onLogout} />
       <main className="pd-main">
-
         <button className="pd-back-btn" onClick={() => navigate(-1)}>
           <BackIcon /> Back to Patients
         </button>

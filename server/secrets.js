@@ -1,11 +1,11 @@
-// secrets.js — Load secrets from Azure Key Vault with .env fallback
+
 require('dotenv').config();
 const { SecretClient } = require('@azure/keyvault-secrets');
 const { DefaultAzureCredential } = require('@azure/identity');
 
 const KEY_VAULT_URL = process.env.KEY_VAULT_URL || 'https://vabgenrx-frontend.vault.azure.net/';
 
-// Mapping: env var name → Key Vault secret name (matches your vault screenshot)
+
 const SECRET_MAP = {
   DB_SERVER:                        'DB-SERVER',
   DB_DATABASE:                      'DB-DATABASE',
@@ -31,7 +31,7 @@ async function loadSecrets() {
         process.env[envKey] = secret.value;
         console.log(`  ✅ Loaded: ${vaultKey}`);
       } catch (err) {
-        // Fall back to .env if already set
+        
         if (process.env[envKey]) {
           console.warn(`  ⚠️  Key Vault miss for '${vaultKey}' — using .env value`);
         } else {

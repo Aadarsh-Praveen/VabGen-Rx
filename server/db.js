@@ -22,7 +22,6 @@ const createPool = (database) => {
       return pool;
     })
     .catch(err => {
-      // Detect firewall block specifically
       if (
         err.message.includes('Cannot open server') ||
         err.message.includes('firewall') ||
@@ -35,12 +34,11 @@ const createPool = (database) => {
       } else {
         console.error(`❌ [${database}] DB connection failed:`, err.message);
       }
-      // Return null so server still starts; individual routes will handle null pool
       return null;
     });
 };
 
-const poolPromise = createPool('credentials');
+const poolPromise         = createPool('credentials');
 const patientsPoolPromise = createPool('patients');
 
 module.exports = { sql, poolPromise, patientsPoolPromise };

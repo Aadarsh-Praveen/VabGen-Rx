@@ -1,7 +1,4 @@
-/**
- * Run this ONCE to hash all existing plain-text passwords in the database.
- * Usage: node scripts/migratePasswords.js
- */
+
 require('dotenv').config({ path: '../.env' });
 const bcrypt = require('bcrypt');
 const { sql, poolPromise } = require('../db');
@@ -13,13 +10,12 @@ const SALT_ROUNDS = 12;
     console.log('🔐 Starting password migration...');
     const pool = await poolPromise;
 
-    // Fetch all users
     const result = await pool.request().query('SELECT id, email, password FROM users');
     const users  = result.recordset;
     console.log(`Found ${users.length} user(s) to migrate.`);
 
     for (const user of users) {
-      // Skip already hashed passwords (bcrypt hashes start with $2b$)
+    
       if (user.password && user.password.startsWith('$2b$')) {
         console.log(`⏭️  Skipping ${user.email} — already hashed`);
         continue;

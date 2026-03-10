@@ -1,6 +1,6 @@
 import "../components/styles/drugInteractionWarning.css";
 import { useState, useCallback } from "react";
-import { AlertTriangle, BookOpen, Building2, Pill, ClipboardList, XCircle, Utensils, Clock, Eye, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
+import { BookOpen, Building2, Pill, ClipboardList, XCircle, Utensils, Clock, Eye, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
 
 const pubmedUrl = (drug1, drug2 = null) => {
   const query = drug2 ? `${drug1.trim()} ${drug2.trim()} drug interaction` : `${drug1.trim()} drug interaction`;
@@ -32,16 +32,29 @@ const FdaLabelLink = ({ drug, children, className }) => {
   }, [drug]);
 
   return (
-    <button onClick={handleClick} className={className || "dint-source-tag"} title="Click to view FDA label" disabled={loading}
-      style={{ background: "none", border: "1px solid #e0e3ef", cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1, textDecoration: "none", padding: "2px 8px", borderRadius: 20, fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
-      {loading ? <><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />Loading...</> : <>{children}<ExternalLink size={10} /></>}
+    <button
+      onClick={handleClick}
+      className={className || "dint-source-tag"}
+      title="Click to view FDA label"
+      disabled={loading}
+      style={{ background: "none", border: "1px solid #e0e3ef", cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1, textDecoration: "none", padding: "2px 8px", borderRadius: 20, fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: 4 }}
+    >
+      {loading
+        ? <><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />Loading...</>
+        : <>{children}<ExternalLink size={10} /></>}
     </button>
   );
 };
 
 const EvidenceLink = ({ href, children }) => (
-  <a href={href} target="_blank" rel="noreferrer" className="dint-source-tag" title="Click to view evidence"
-    style={{ textDecoration: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+  <a
+    href={href}
+    target="_blank"
+    rel="noreferrer"
+    className="dint-source-tag"
+    title="Click to view evidence"
+    style={{ textDecoration: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+  >
     {children}<ExternalLink size={10} />
   </a>
 );
@@ -49,16 +62,37 @@ const EvidenceLink = ({ href, children }) => (
 const SevPills = ({ tabs, active, onSelect }) => (
   <div className="dint-pills">
     {tabs.map(t => (
-      <button key={t.key} className="dint-pill" onClick={() => onSelect(t.key)}
-        style={{ border: `1.5px solid ${active === t.key ? t.border : "#e0e3ef"}`, background: active === t.key ? t.bg : "#fff", color: active === t.key ? t.color : "#888" }}>
+      <button
+        key={t.key}
+        className="dint-pill"
+        onClick={() => onSelect(t.key)}
+        style={{
+          border:     `1.5px solid ${active === t.key ? t.border : "#e0e3ef"}`,
+          background: active === t.key ? t.bg    : "#fff",
+          color:      active === t.key ? t.color : "#888",
+        }}
+      >
         {t.label}
-        {t.items.length > 0 && <span className="dint-pill-count" style={{ background: t.color }}>{t.items.length}</span>}
+        <span
+          className="dint-pill-count"
+          style={{
+            background: t.items.length > 0 ? t.color : "#d0d0e0",
+            opacity:    t.items.length > 0 ? 1 : 0.35,
+          }}
+        >
+          {t.items.length}
+        </span>
       </button>
     ))}
   </div>
 );
 
-const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab, setIntTab, ddSevTab, setDdSevTab, ddisTab, setDdisTab }) => {
+const DrugInteractionWarning = ({
+  agentResult, agentLoading, agentError,
+  intTab, setIntTab,
+  ddSevTab, setDdSevTab,
+  ddisTab, setDdisTab,
+}) => {
   const drugDrug    = agentResult?.drug_drug    || [];
   const drugDisease = agentResult?.drug_disease || [];
   const drugFood    = agentResult?.drug_food    || [];
@@ -85,7 +119,7 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
     { key: "minor",           label: "Minor",           color: "#888",    bg: "#f0f0f8", border: "#e0e3ef", items: disMap.minor           },
   ];
 
-  const getPubmedCount = (item) => item?.evidence?.pubmed_papers           ?? item?.pubmed_papers           ?? 0;
+  const getPubmedCount = (item) => item?.evidence?.pubmed_papers            ?? item?.pubmed_papers            ?? 0;
   const getFdaReports  = (item) => item?.evidence?.fda_reports              ?? item?.fda_reports              ?? 0;
   const getFdaSections = (item) => item?.evidence?.fda_label_sections_count ?? item?.fda_label_sections_count ?? 0;
 
@@ -115,7 +149,11 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
             { key: "drug-disease", label: "Drug–Disease", Icon: XCircle,  count: drugDisease.length },
             { key: "drug-food",    label: "Drug–Food",    Icon: Utensils, count: drugFood.length    },
           ].map(t => (
-            <button key={t.key} className={`dint-tab${intTab === t.key ? " active" : ""}`} onClick={() => setIntTab(t.key)}>
+            <button
+              key={t.key}
+              className={`dint-tab${intTab === t.key ? " active" : ""}`}
+              onClick={() => setIntTab(t.key)}
+            >
               <span className="dint-tab-label">
                 <t.Icon size={11} />{t.label}
                 {t.count > 0 && <span className="dint-tab-badge">{t.count}</span>}
@@ -134,7 +172,9 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
         )}
 
         {!agentLoading && !agentResult && !agentError && (
-          <p className="dint-empty">Add medications and click <strong>Done — Run Analysis</strong> to see results.</p>
+          <p className="dint-empty">
+            Add medications and click <strong>Done — Run Analysis</strong> to see results.
+          </p>
         )}
 
         {!agentLoading && agentResult && (
@@ -152,13 +192,25 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
                           <span className="dint-badge-gray">{getConfidenceLabel(item)}</span>
                         </div>
                         <div className="dint-item-right">
-                          {getPubmedCount(item) > 0 && <EvidenceLink href={pubmedUrl(item.drug1, item.drug2)}><BookOpen size={11} />{getPubmedCount(item)} PubMed</EvidenceLink>}
-                          {getFdaReports(item)  > 0 && <EvidenceLink href={fdaReportsUrl()}><Building2 size={11} />{getFdaReports(item)} FDA reports</EvidenceLink>}
-                          <FdaLabelLink drug={item.drug1}><Pill size={11} />FDA label</FdaLabelLink>
+                          {getPubmedCount(item) > 0 && (
+                            <EvidenceLink href={pubmedUrl(item.drug1, item.drug2)}>
+                              <BookOpen size={11} />{getPubmedCount(item)} PubMed
+                            </EvidenceLink>
+                          )}
+                          {getFdaReports(item) > 0 && (
+                            <EvidenceLink href={fdaReportsUrl()}>
+                              <Building2 size={11} />{getFdaReports(item)} FDA reports
+                            </EvidenceLink>
+                          )}
+                          <FdaLabelLink drug={item.drug1}>
+                            <Pill size={11} />FDA label
+                          </FdaLabelLink>
                         </div>
                       </div>
                       <div className="dint-desc">{item.mechanism}</div>
-                      {item.clinical_effects && <div className="dint-desc dint-desc-warn">{item.clinical_effects}</div>}
+                      {item.clinical_effects && (
+                        <div className="dint-desc dint-desc-warn">{item.clinical_effects}</div>
+                      )}
                       <div className="dint-rec-box">
                         <div className="dint-rec-label">Recommendation</div>
                         <div className="dint-rec-text">{item.recommendation}</div>
@@ -181,15 +233,25 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
                           <span className="dint-badge-gray">{getConfidenceLabel(item)}</span>
                         </div>
                         <div className="dint-item-right">
-                          {getPubmedCount(item) > 0 && <EvidenceLink href={pubmedUrl(item.drug, item.disease)}><BookOpen size={11} />{getPubmedCount(item)} PubMed</EvidenceLink>}
-                          {getFdaSections(item) > 0 && <FdaLabelLink drug={item.drug}><ClipboardList size={11} />{getFdaSections(item)} FDA sections</FdaLabelLink>}
+                          {getPubmedCount(item) > 0 && (
+                            <EvidenceLink href={pubmedUrl(item.drug, item.disease)}>
+                              <BookOpen size={11} />{getPubmedCount(item)} PubMed
+                            </EvidenceLink>
+                          )}
+                          {getFdaSections(item) > 0 && (
+                            <FdaLabelLink drug={item.drug}>
+                              <ClipboardList size={11} />{getFdaSections(item)} FDA sections
+                            </FdaLabelLink>
+                          )}
                         </div>
                       </div>
                       <div className="dint-desc">{item.clinical_evidence}</div>
                       <div className="dint-rec-box">
                         <div className="dint-rec-label">Recommendation</div>
                         <div className="dint-rec-text">{item.recommendation}</div>
-                        {item.alternative_drugs?.length > 0 && <div className="dint-rec-note">Alternatives: {item.alternative_drugs.join(", ")}</div>}
+                        {item.alternative_drugs?.length > 0 && (
+                          <div className="dint-rec-note">Alternatives: {item.alternative_drugs.join(", ")}</div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -206,8 +268,12 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
                         <Pill size={13} />{item.drug}
                       </div>
                       <div className="dint-item-right">
-                        <EvidenceLink href={pubmedUrl(item.drug, "food interaction")}><BookOpen size={11} />PubMed</EvidenceLink>
-                        <FdaLabelLink drug={item.drug}><Pill size={11} />FDA label</FdaLabelLink>
+                        <EvidenceLink href={pubmedUrl(item.drug, "food interaction")}>
+                          <BookOpen size={11} />PubMed
+                        </EvidenceLink>
+                        <FdaLabelLink drug={item.drug}>
+                          <Pill size={11} />FDA label
+                        </FdaLabelLink>
                       </div>
                     </div>
                     {item.foods_to_avoid?.length > 0 && (
@@ -228,7 +294,9 @@ const DrugInteractionWarning = ({ agentResult, agentLoading, agentError, intTab,
                         <span className="dint-food-val">{item.foods_to_monitor.join(", ")}</span>
                       </div>
                     )}
-                    {item.mechanism && <div className="dint-desc">{item.mechanism}</div>}
+                    {item.mechanism && (
+                      <div className="dint-desc">{item.mechanism}</div>
+                    )}
                   </div>
                 ))
             )}

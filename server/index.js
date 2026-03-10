@@ -1,7 +1,3 @@
-// ─── IMPORTANT ───────────────────────────────────────────────────
-// Secrets are loaded from Azure Key Vault BEFORE the server starts.
-// All route handlers are INSIDE the http.createServer callback.
-// ─────────────────────────────────────────────────────────────────
 require('dotenv').config();
 const { loadSecrets } = require('./secrets');
 
@@ -20,16 +16,14 @@ const { loadSecrets } = require('./secrets');
   const JWT_SECRET           = process.env.JWT_SECRET     || 'vabgenrx_secret';
   const JWT_EXPIRES_IN       = process.env.JWT_EXPIRES_IN || '8h';
   const MAX_ATTEMPTS         = 3;
-  const OTP_EXPIRES          = 10 * 60 * 1000; // 10 minutes
+  const OTP_EXPIRES          = 10 * 60 * 1000;
   const PASSWORD_EXPIRY_DAYS = 90;
   const WARN_AT_DAYS_LEFT_15 = 15;
   const WARN_AT_DAYS_LEFT_5  = 5;
 
-  // ── In-memory stores ───────────────────────────────────────────
   const loginAttempts = {};
   const otpStore      = {};
 
-  // ── Department mapping by condition keywords ───────────────────
   const CONDITION_DEPT_MAP = [
     { keywords: ['asthma', 'copd', 'pneumonia', 'respiratory', 'pulmonary', 'lung', 'bronchitis', 'breathing'], dept: 'Pulmonology' },
     { keywords: ['hypertension', 'heart', 'cardiac', 'chest', 'arrhythmia', 'coronary', 'ecg', 'blood pressure'], dept: 'Cardiology' },
@@ -50,7 +44,6 @@ const { loadSecrets } = require('./secrets');
     return 'General Medicine';
   };
 
-  // ── Email transporter ──────────────────────────────────────────
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -148,7 +141,6 @@ const { loadSecrets } = require('./secrets');
     process.env.AZURE_CONTAINER_NAME
   );
 
-  // ── Helpers ────────────────────────────────────────────────────
   const parseMultipart = (req) => new Promise((resolve, reject) => {
     upload.single('image')(req, {}, (err) => {
       if (err) reject(err);
@@ -175,7 +167,6 @@ const { loadSecrets } = require('./secrets');
     res.end(JSON.stringify(data));
   };
 
-  // ── JWT Middleware ─────────────────────────────────────────────
   const verifyToken = (req) => {
     const authHeader = req.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -193,7 +184,6 @@ const { loadSecrets } = require('./secrets');
     { method: 'GET',  url: '/'                      },
   ];
 
-  // prefix-based public routes (startsWith check)
   const PUBLIC_PREFIXES = [
     '/api/profile',
     '/api/password-expiry-status',
@@ -203,23 +193,17 @@ const { loadSecrets } = require('./secrets');
     PUBLIC_ROUTES.some(r => r.method === method && r.url === url) ||
     PUBLIC_PREFIXES.some(p => url.startsWith(p));
 
-  // ── Strip query string for route matching ──────────────────
   const urlPath = (url) => url.split('?')[0];
 
-  // ── RBAC: check if doctor can access patient ───────────────────
-  // Matches doctor's `department` (from users table / JWT)
-  // against patient's `Dept` column (from patient_records / outpatient_records)
   const canAccessPatient = async (pool, patientNo, patientType, doctorDept) => {
-    if (!doctorDept) return true; // no dept in token = legacy token, allow all
+    if (!doctorDept) return true;
     const tbl = patientType === 'IP' ? 'patient_records' : 'outpatient_records';
     const col = patientType === 'IP' ? 'IP_No'           : 'OP_No';
-    // Direct match: patient's Dept = doctor's department
     const direct = await pool.request()
       .input('no',   sql.VarChar, patientNo)
       .input('dept', sql.VarChar, doctorDept)
       .query(`SELECT 1 AS ok FROM dbo.${tbl} WHERE ${col}=@no AND Dept=@dept`);
     if (direct.recordset.length > 0) return true;
-    // Referral access: another dept referred this patient to doctor's dept
     const ref = await pool.request()
       .input('no',   sql.VarChar, patientNo)
       .input('type', sql.VarChar, patientType)
@@ -229,7 +213,6 @@ const { loadSecrets } = require('./secrets');
     return ref.recordset.length > 0;
   };
 
-  // ── Server ─────────────────────────────────────────────────────
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -242,14 +225,12 @@ const { loadSecrets } = require('./secrets');
       res.writeHead(200); res.end('Backend is running!'); return;
     }
 
-    // ── JWT Guard ──────────────────────────────────────────────
     if (!isPublic(req.method, req.url)) {
       const decoded = verifyToken(req);
       if (!decoded) return sendJSON(res, 401, { message: 'Unauthorized: Invalid or expired token' });
       req.user = decoded;
     }
 
-    // ── Upload image ───────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/upload-image') {
       try {
         await parseMultipart(req);
@@ -265,7 +246,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get profile ────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/profile')) {
       const email = decodeURIComponent(req.url.split('?email=')[1] || '');
       try {
@@ -285,7 +265,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Sign in ────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/signin') {
       const { email, password } = await getBody(req);
       if (!email || !password)
@@ -320,7 +299,6 @@ const { loadSecrets } = require('./secrets');
           });
         }
 
-        // ── Password expiry check ──────────────────────────────
         const changedAt = user.password_changed_at ? new Date(user.password_changed_at) : new Date(0);
         const diffDays  = Math.floor((new Date() - changedAt) / (1000 * 60 * 60 * 24));
         const daysLeft  = PASSWORD_EXPIRY_DAYS - diffDays;
@@ -332,14 +310,13 @@ const { loadSecrets } = require('./secrets');
 
         delete loginAttempts[email];
 
-        // ── Include department in JWT for RBAC ─────────────────
         const token = jwt.sign(
           {
             id:         user.id,
             email:      user.email,
             name:       user.name,
             role:       user.designation || 'doctor',
-            department: user.department,  // ← RBAC key
+            department: user.department,
           },
           JWT_SECRET,
           { expiresIn: JWT_EXPIRES_IN }
@@ -358,7 +335,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Send OTP ───────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/send-unlock-otp') {
       const { email } = await getBody(req);
       if (!email) return sendJSON(res, 400, { message: 'Email required.' });
@@ -377,7 +353,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Verify OTP ─────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/verify-unlock-otp') {
       const { email, otp } = await getBody(req);
       if (!email || !otp) return sendJSON(res, 400, { message: 'Email and OTP required.' });
@@ -393,7 +368,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Reset password ─────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/reset-password') {
       const { email, newPassword } = await getBody(req);
       if (!email || !newPassword) return sendJSON(res, 400, { message: 'Email and new password required.' });
@@ -418,7 +392,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Register ───────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/register') {
       const { hospital_id, licence_no, name, designation, department,
               dob, age, sex, address, contact_no, email, password } = await getBody(req);
@@ -455,7 +428,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Update address ─────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/profile/update-address') {
       const { email, address } = await getBody(req);
       if (!email || !address) return sendJSON(res, 400, { message: 'Email and address required.' });
@@ -470,7 +442,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Change password ────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/profile/change-password') {
       const { email, currentPassword, newPassword } = await getBody(req);
       if (!email || !currentPassword || !newPassword)
@@ -494,7 +465,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get all users (referral autocomplete) ──────────────────
     if (req.method === 'GET' && req.url === '/api/users') {
       try {
         const pool = await poolPromise;
@@ -505,7 +475,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get all inpatients (RBAC filtered) ─────────────────────
     if (req.method === 'GET' && req.url === '/api/patients') {
       try {
         const pool       = await patientsPoolPromise;
@@ -530,7 +499,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get single inpatient (RBAC guarded) ───────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/patients/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/patients/')[1]);
       if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
@@ -552,7 +520,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get all outpatients (RBAC filtered) ───────────────────
     if (req.method === 'GET' && req.url === '/api/outpatients') {
       try {
         const pool       = await patientsPoolPromise;
@@ -577,7 +544,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get single outpatient (RBAC guarded) ──────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/outpatients/')) {
       const opNo = decodeURIComponent(req.url.split('/api/outpatients/')[1]);
       if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
@@ -599,7 +565,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Admin: one-time dept migration ────────────────────────
     if (req.method === 'POST' && req.url === '/api/admin/assign-depts') {
       try {
         const pool = await patientsPoolPromise;
@@ -628,7 +593,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get IP diagnosis ───────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-diagnosis/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-diagnosis/')[1]);
       try {
@@ -647,7 +611,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Save IP diagnosis ──────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-diagnosis') {
       const { ipNo, primary, secondary, notes } = await getBody(req);
       if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
@@ -668,7 +631,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get OP diagnosis ───────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-diagnosis/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-diagnosis/')[1]);
       try {
@@ -687,7 +649,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Save OP diagnosis ──────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-diagnosis') {
       const { opNo, primary, secondary, notes } = await getBody(req);
       if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
@@ -708,7 +669,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get IP lab results ─────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/lab/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/lab/')[1]);
       try {
@@ -726,7 +686,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get OP lab results ─────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-lab/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-lab/')[1]);
       try {
@@ -749,7 +708,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Search drug inventory ──────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/drug-inventory/search')) {
       const rawQ = req.url.split('?q=')[1] || '';
       const q    = decodeURIComponent(rawQ.split('&')[0]);
@@ -766,7 +724,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Prescriptions ───────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-prescriptions/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-prescriptions/')[1]);
       try {
@@ -837,7 +794,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Prescriptions ───────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-prescriptions/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-prescriptions/')[1]);
       try {
@@ -908,7 +864,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Prescription Notes ──────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-prescription-notes/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-prescription-notes/')[1]);
       try {
@@ -958,7 +913,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Prescription Notes ──────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-prescription-notes/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-prescription-notes/')[1]);
       try {
@@ -1008,7 +962,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Drug Interactions ───────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-drug-interactions') {
       const { ip_no, dd_severe, dd_moderate, dd_minor,
               ddis_contraindicated, ddis_moderate, ddis_minor, drug_food } = await getBody(req);
@@ -1063,7 +1016,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Drug Interactions ───────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-drug-interactions') {
       const { op_no, dd_severe, dd_moderate, dd_minor,
               ddis_contraindicated, ddis_moderate, ddis_minor, drug_food } = await getBody(req);
@@ -1118,7 +1070,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Dosing Recommendations ──────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-dosing-recommendations') {
       const { ip_no, high, medium } = await getBody(req);
       if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1158,7 +1109,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Dosing Recommendations ──────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-dosing-recommendations') {
       const { op_no, high, medium } = await getBody(req);
       if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1198,7 +1148,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Patient Counselling ─────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-patient-counselling') {
       const { ip_no, drug_counselling, condition_counselling } = await getBody(req);
       if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1242,7 +1191,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Patient Counselling ─────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-patient-counselling') {
       const { op_no, drug_counselling, condition_counselling } = await getBody(req);
       if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1286,7 +1234,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── IP Referral (save + grant referral access) ─────────────
     if (req.method === 'POST' && req.url === '/api/ip-referral') {
       const { ipNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
       if (!ipNo) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1305,7 +1252,6 @@ const { loadSecrets } = require('./secrets');
           .query(`INSERT INTO dbo.ip_refferal
             (IP_No,Refer_To_Department,Refer_To_Doctor,Urgency,Referral_Date,Reason_For_Referral,Additional_Notes)
             VALUES(@ipNo,@toDept,@toDoctor,@urgency,@date,@reason,@notes)`);
-        // Grant cross-dept access
         await pool.request()
           .input('patientNo',  sql.VarChar, ipNo)
           .input('type',       sql.VarChar, 'IP')
@@ -1353,7 +1299,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── OP Referral (save + grant referral access) ─────────────
     if (req.method === 'POST' && req.url === '/api/op-referral') {
       const { opNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
       if (!opNo) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1372,7 +1317,6 @@ const { loadSecrets } = require('./secrets');
           .query(`INSERT INTO dbo.op_refferal
             (OP_No,Refer_To_Department,Refer_To_Doctor,Urgency,Referral_Date,Reason_For_Referral,Additional_Notes)
             VALUES(@opNo,@toDept,@toDoctor,@urgency,@date,@reason,@notes)`);
-        // Grant cross-dept access
         await pool.request()
           .input('patientNo',  sql.VarChar, opNo)
           .input('type',       sql.VarChar, 'OP')
@@ -1420,7 +1364,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Password expiry status ─────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/password-expiry-status')) {
       const email = decodeURIComponent(req.url.split('?email=')[1] || '');
       if (!email) return sendJSON(res, 400, { message: 'Email required.' });
@@ -1440,7 +1383,6 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── 404 ────────────────────────────────────────────────────
     sendJSON(res, 404, { message: 'Route not found' });
   });
 
