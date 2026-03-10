@@ -1,0 +1,135 @@
+.pnote-card {
+  background: #fff;
+  border: 1.5px solid #f0f0f8;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(108,99,255,0.05);
+}
+.pnote-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.65rem 1.1rem;
+  background: #f8f7ff;
+  border-bottom: 1px solid #eeebff;
+}
+.pnote-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1a73e8;
+}
+.pnote-count { margin-left: auto; font-size: 0.75rem; color: #888; }
+
+.pnote-body {
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.pnote-field { display: flex; flex-direction: column; gap: 0.3rem; }
+.pnote-lbl {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+}
+.pnote-ta {
+  background: #f8f7ff;
+  border: 1.5px solid #e0e3ef;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.875rem;
+  color: #1a1a2e;
+  font-family: inherit;
+  outline: none;
+  transition: border 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.pnote-ta:focus { border-color: #1a73e8; }
+
+.pnote-save-row { display: flex; align-items: center; gap: 8px; }
+.pnote-msg-success { font-size: 0.8rem; color: #16a34a; font-weight: 600; }
+.pnote-msg-error   { font-size: 0.8rem; color: #e05252; font-weight: 600; }
+.pnote-save-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: #f0f0f8;
+  border: 1.5px solid #e0e3ef;
+  color: #1a1a2e;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pnote-save-btn:hover    { border-color: #1a73e8; color: #1a73e8; }
+.pnote-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pnote-divider { border: none; border-top: 1px solid #f0f0f8; margin: 0.25rem 0; }
+.pnote-empty   { font-size: 0.82rem; color: #aaa; text-align: center; margin: 0.5rem 0; }
+
+.pnote-item     { margin-bottom: 0.85rem; }
+.pnote-text     { font-size: 0.8rem; color: #555; line-height: 1.55; margin: 4px 0; }
+.pnote-meta-row { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.pnote-meta     { font-size: 0.7rem; color: #aaa; }
+.pnote-actions  { display: flex; gap: 6px; }
+
+.pnote-action-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #e0e3ef;
+  background: #fff;
+  color: #888;
+  transition: all 0.12s;
+}
+.pnote-action-btn:hover  { color: #1a1a2e; border-color: #1a73e8; }
+.pnote-action-btn-del    { color: #e05252 !important; border-color: #fca5a5 !important; }
+
+.pnote-inline-save-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.pnote-inline-save-btn:hover { background: #1558b0; }
+
+.pnote-inline-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: #f0f0f8;
+  color: #888;
+  border: 1px solid #e0e3ef;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pnote-inline-cancel-btn:hover { color: #e05252; border-color: #fca5a5; background: #fff5f5; }
+
+[data-theme="dark"] .pnote-card   { background: #1a1a2e; border-color: #2a2a40; }
+[data-theme="dark"] .pnote-header { background: #16162a; border-color: #2a2a40; }
+[data-theme="dark"] .pnote-ta     { background: #16162a; color: #e0e0f0; border-color: #2a2a40; }
+[data-theme="dark"] .pnote-ta:focus { border-color: #1a73e8; }
+[data-theme="dark"] .pnote-text   { color: #c0c0d8; }
+[data-theme="dark"] .pnote-inline-cancel-btn       { background: #16162a; color: #aaa; border-color: #2a2a40; }
+[data-theme="dark"] .pnote-inline-cancel-btn:hover { color: #e05252; border-color: #fca5a5; background: #2a1a1a; }
