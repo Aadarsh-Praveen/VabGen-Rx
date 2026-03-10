@@ -22,4 +22,4 @@ import threading
 
 # Global cap — 6 concurrent PubMed requests across ALL services
 # Safely under the 10/s NCBI API key limit
-PUBMED_SEMAPHORE = threading.Semaphore(6)
+PUBMED_SEMAPHORE = threading.Semaphore(20)

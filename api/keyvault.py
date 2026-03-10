@@ -122,9 +122,15 @@ def load_all_secrets() -> dict:
 
         # ── External APIs ─────────────────────────────────────────
         "NCBI_API_KEY":
-            get_secret("NCBI-API-KEY",  "NCBI_API_KEY"),
+            get_secret("NCBI-API-KEY",   "NCBI_API_KEY"),
+        "NCBI_API_KEY_2":
+            get_secret("NCBI-API-KEY-2", "NCBI_API_KEY_2"),
+        "NCBI_API_KEY_3":
+            get_secret("NCBI-API-KEY-3", "NCBI_API_KEY_3"),
+        "NCBI_API_KEY_4":
+            get_secret("NCBI-API-KEY-4", "NCBI_API_KEY_4"),
         "FDA_API_KEY":
-            get_secret("FDA-API-KEY",   "FDA_API_KEY"),
+            get_secret("FDA-API-KEY",    "FDA_API_KEY"),
     }
 
     # Inject back into os.environ so all existing os.getenv()

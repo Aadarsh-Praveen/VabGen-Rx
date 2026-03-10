@@ -22,6 +22,9 @@ CHANGES:
              condition name passed through from
              get_condition_counseling() so you know exactly
              which condition triggered the failure.
+- TOP 2 POINTS: Prompt updated to return only the 2 most
+  clinically important points per category (exercise, lifestyle,
+  diet, safety). Keeps output focused and actionable.
 """
 
 import os
@@ -252,9 +255,13 @@ STRICT RULES — READ CAREFULLY:
    - Consider current medications for safety interactions
    - Include emergency warning signs
 
-5. RELEVANCE:
-   - Maximum 3 points per category
-   - Focus on the MOST IMPACTFUL advice
+5. TOP 2 POINTS PER CATEGORY — STRICTLY ENFORCED:
+   - Return EXACTLY 2 points in each of: exercise, lifestyle,
+     diet, safety
+   - Choose the 2 MOST clinically important points per category
+   - Prioritize points that have the highest impact on patient
+     outcomes for this specific condition
+   - Skip anything routine, generic, or low-priority
 
 Return JSON:
 {{
@@ -265,9 +272,18 @@ Return JSON:
       "title": "Short heading",
       "detail": "Specific recommendation with intensity",
       "frequency": "e.g. 5 days/week, 30 min"
+    }},
+    {{
+      "title": "Short heading",
+      "detail": "Specific recommendation with intensity",
+      "frequency": "e.g. 5 days/week, 30 min"
     }}
   ],
   "lifestyle": [
+    {{
+      "title": "Short heading",
+      "detail": "Specific actionable change"
+    }},
     {{
       "title": "Short heading",
       "detail": "Specific actionable change"
@@ -279,9 +295,20 @@ Return JSON:
       "detail": "Nutrient or clinically relevant food guidance",
       "nutrients_to_increase": [],
       "nutrients_to_reduce": []
+    }},
+    {{
+      "title": "Short heading",
+      "detail": "Nutrient or clinically relevant food guidance",
+      "nutrients_to_increase": [],
+      "nutrients_to_reduce": []
     }}
   ],
   "safety": [
+    {{
+      "title": "Short heading",
+      "detail": "Specific safety instruction",
+      "urgency": "high|medium|low"
+    }},
     {{
       "title": "Short heading",
       "detail": "Specific safety instruction",
@@ -345,6 +372,9 @@ Return JSON:
                             " not specific food items. "
                             "Only mention pharmacological food "
                             "interactions when clinically significant."
+                            " Always return exactly 2 points per "
+                            "category — the 2 most clinically "
+                            "important for this patient."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -356,10 +386,6 @@ Return JSON:
             return json.loads(response.choices[0].message.content)
         except Exception as e:
             # ── Alert 8: LLM failure ──────────────────────────────
-            # Covers Azure OpenAI timeouts, quota errors,
-            # auth failures, and JSON parse errors.
-            # condition name included so you know which condition's
-            # counseling failed in the alert.
             logger.error(
                 "llm_failure",
                 extra={"custom_dimensions": {

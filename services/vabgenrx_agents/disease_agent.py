@@ -458,10 +458,15 @@ CHANGES:
   evidence data moves to content — zero quality loss.
 - PARALLEL BATCH FIX: synthesize() splits evidence into batches
   of 15 pairs and fans them out in parallel via ThreadPoolExecutor.
-  All batches run simultaneously — same wall-clock time as one call.
   Works at any scale (20 drugs = 190 pairs = 13 parallel batches).
   Zero truncation. Full 600 chars/section preserved.
-  Only synthesize() changed — everything else identical.
+- CONCURRENCY THROTTLE: Azure Agent Service has a concurrent run
+  limit per project. Firing 6+ agents simultaneously causes
+  RunStatus.FAILED. AGENT_SEMAPHORE (shared with SafetyAgent) caps
+  simultaneous _run() calls to 3 across both agents at any moment.
+  Batches queue and execute as slots free — no failures.
+  Only synthesize() and _synthesize_batch() changed.
+  Everything else identical to previous version.
 """
 
 import json
@@ -471,6 +476,7 @@ from typing import Dict, List
 from azure.ai.agents import AgentsClient
 
 from .base_agent import _BaseAgent
+from .agent_concurrency import AGENT_SEMAPHORE
 
 # Keys that are metadata, not clinical content
 _SKIP = {
@@ -532,11 +538,6 @@ class VabGenRxDiseaseAgent(_BaseAgent):
         print(f"\n   🔬 VabGenRxDiseaseAgent Round 1: "
               f"synthesizing {n_pairs} drug-disease pairs...")
 
-        # ── PARALLEL BATCH FIX ────────────────────────────────────
-        # Split evidence into batches of _BATCH_SIZE pairs.
-        # All batches run simultaneously in parallel threads.
-        # Same wall-clock time as one call, works at any scale.
-        # ─────────────────────────────────────────────────────────
         pairs     = list(evidence.items())
         batches   = [
             dict(pairs[i : i + _BATCH_SIZE])
@@ -550,18 +551,30 @@ class VabGenRxDiseaseAgent(_BaseAgent):
 
         all_drug_disease: List[Dict] = []
 
-        if n_batches == 1:
-            # Single batch — no thread overhead
+        def _run_batch_with_retry(batch, meds_str, dis_str, batch_num):
+            """Run a disease batch — retry once on empty result."""
             result = self._synthesize_batch(
+                batch, meds_str, dis_str, batch_num
+            )
+            if not result.get("drug_disease"):
+                print(f"   ♻️  DiseaseAgent batch {batch_num} "
+                      f"empty — retrying in 5s...")
+                import time; time.sleep(5)
+                result = self._synthesize_batch(
+                    batch, meds_str, dis_str, batch_num
+                )
+            return result
+
+        if n_batches == 1:
+            result = _run_batch_with_retry(
                 batches[0], meds_str, dis_str, batch_num=1
             )
             all_drug_disease = result.get("drug_disease", [])
         else:
-            # Multiple batches — fan out in parallel
             with ThreadPoolExecutor(max_workers=n_batches) as ex:
                 futures = {
                     ex.submit(
-                        self._synthesize_batch,
+                        _run_batch_with_retry,
                         batch, meds_str, dis_str, idx + 1
                     ): idx
                     for idx, batch in enumerate(batches)
@@ -584,16 +597,16 @@ class VabGenRxDiseaseAgent(_BaseAgent):
 
     def _synthesize_batch(
         self,
-        evidence:    Dict,
-        meds_str:    str,
-        dis_str:     str,
-        batch_num:   int = 1
+        evidence:  Dict,
+        meds_str:  str,
+        dis_str:   str,
+        batch_num: int = 1
     ) -> Dict:
         """
         Synthesize one batch of ≤15 drug-disease pairs.
-        Called in parallel by synthesize() for each batch.
-        Instructions = rules only. Content = evidence data.
-        Both well under 256k for any batch of 15 pairs.
+        Acquires AGENT_SEMAPHORE before calling _run() so at most
+        3 agent runs are active across SafetyAgent + DiseaseAgent
+        at any moment — prevents Azure quota RunStatus.FAILED.
         """
         evidence_text = self._build_evidence_text(evidence)
 

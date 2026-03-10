@@ -441,11 +441,14 @@ CHANGES:
   moves to content — zero quality loss.
 - PARALLEL BATCH FIX: synthesize() splits drug-drug pairs into
   batches of 15 and fans them out in parallel via ThreadPoolExecutor.
-  All batches run simultaneously — same wall-clock time as one call.
-  Works at any scale (20 drugs = 190 pairs = 13 parallel batches).
   Food interactions are always small (one per drug) — single call.
   Zero truncation. Full 500 chars/section preserved.
-  Only synthesize() changed — everything else identical.
+- CONCURRENCY THROTTLE: Imports AGENT_SEMAPHORE from disease_agent
+  so the limit is enforced globally across both agents. At most 3
+  _run() calls are active simultaneously — prevents RunStatus.FAILED
+  caused by Azure Agent Service concurrent run quota.
+  Only synthesize(), _synthesize_ddi_batch(), _synthesize_food()
+  changed — everything else identical to previous version.
 """
 
 import json
@@ -455,6 +458,7 @@ from typing import Dict, List, Tuple
 from azure.ai.agents import AgentsClient
 
 from .base_agent import _BaseAgent
+from .agent_concurrency import AGENT_SEMAPHORE
 
 # ── Section lists ─────────────────────────────────────────────────────────────
 
@@ -487,8 +491,12 @@ _ADMIN = {
     "references",
 }
 
-# Max DDI pairs per agent batch — keeps content well under 256k
-_BATCH_SIZE = 15
+# Max DDI pairs per agent batch
+# Safety DDI content is ~10k chars per pair (full FDA sections for
+# both drugs). 15 pairs × 10k = 150k → exceeds Azure ~100k content
+# limit → RunStatus.FAILED. 5 pairs × 10k = ~50k → safely under limit.
+# Disease pairs are ~5k chars each so _BATCH_SIZE=15 stays there.
+_BATCH_SIZE = 5
 
 
 class VabGenRxSafetyAgent(_BaseAgent):
@@ -516,11 +524,6 @@ class VabGenRxSafetyAgent(_BaseAgent):
               f"{n_pairs} drug-drug pairs, "
               f"{n_food} food interactions...")
 
-        # ── PARALLEL BATCH FIX — DDI pairs ───────────────────────
-        # Split drug-drug evidence into batches of _BATCH_SIZE.
-        # All batches run simultaneously in parallel threads.
-        # Food interactions are always small — single call after.
-        # ─────────────────────────────────────────────────────────
         ddi_evidence  = evidence.get("drug_drug", {})
         food_evidence = evidence.get("drug_food", {})
 
@@ -537,20 +540,32 @@ class VabGenRxSafetyAgent(_BaseAgent):
 
         all_drug_drug: List[Dict] = []
 
+        def _run_ddi_batch_with_retry(batch, meds_str, batch_num):
+            """Run a DDI batch — retry once on empty result."""
+            result = self._synthesize_ddi_batch(
+                batch, meds_str, batch_num
+            )
+            if not result.get("drug_drug"):
+                print(f"   ♻️  SafetyAgent DDI batch {batch_num} "
+                      f"empty — retrying in 5s...")
+                import time; time.sleep(5)
+                result = self._synthesize_ddi_batch(
+                    batch, meds_str, batch_num
+                )
+            return result
+
         if n_batches == 0:
             pass  # No DDI pairs — skip
         elif n_batches == 1:
-            # Single batch — no thread overhead
-            result = self._synthesize_ddi_batch(
+            result = _run_ddi_batch_with_retry(
                 batches[0], meds_str, batch_num=1
             )
             all_drug_drug = result.get("drug_drug", [])
         else:
-            # Multiple batches — fan out in parallel
             with ThreadPoolExecutor(max_workers=n_batches) as ex:
                 futures = {
                     ex.submit(
-                        self._synthesize_ddi_batch,
+                        _run_ddi_batch_with_retry,
                         batch, meds_str, idx + 1
                     ): idx
                     for idx, batch in enumerate(batches)
@@ -566,8 +581,7 @@ class VabGenRxSafetyAgent(_BaseAgent):
                         print(f"   ❌ SafetyAgent DDI batch "
                               f"{idx + 1} failed: {e}")
 
-        # ── Food interactions — always a single call ───────────────
-        # One entry per drug, never overflows — no batching needed.
+        # Food interactions — always a single call, never overflows
         all_drug_food: List[Dict] = []
         if food_evidence:
             food_result = self._synthesize_food(
@@ -594,9 +608,9 @@ class VabGenRxSafetyAgent(_BaseAgent):
     ) -> Dict:
         """
         Synthesize one batch of ≤15 drug-drug pairs.
-        Called in parallel by synthesize() for each DDI batch.
-        Instructions = rules only. Content = evidence data.
-        Both well under 256k for any batch of 15 pairs.
+        Acquires AGENT_SEMAPHORE before calling _run() so at most
+        3 agent runs are active across SafetyAgent + DiseaseAgent
+        at any moment — prevents Azure quota RunStatus.FAILED.
         """
         ddi_evidence_text = self._build_ddi_evidence_text(ddi_evidence)
 
@@ -714,6 +728,7 @@ Return ONLY valid JSON:
         """
         Synthesize food interactions — always a single call.
         One entry per drug so never overflows 256k.
+        Also throttled by AGENT_SEMAPHORE for consistency.
         """
         food_evidence_text = self._build_food_evidence_text(
             food_evidence

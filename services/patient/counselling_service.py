@@ -20,6 +20,9 @@ CHANGES:
              auth failures, and JSON parse errors.
              drug name passed through from get_drug_counseling()
              so you know exactly which drug triggered the failure.
+- TOP 2 POINTS: Prompt updated to return only the 2 most
+  clinically important counseling points. Keeps output focused
+  and avoids information overload for the prescriber.
 """
 
 import os
@@ -253,16 +256,25 @@ STRICT RULES — READ CAREFULLY:
    - Adult: focus on standard monitoring
    - Pediatric: focus on weight-based dosing
 
-5. RELEVANCE:
-   - Only include side effects likely at THIS dose
-   - Maximum 5 most clinically important points
-   - Skip theoretical risks unless serious
+5. TOP 2 POINTS ONLY — STRICTLY ENFORCED:
+   - Return EXACTLY 2 counseling points
+   - Choose the 2 MOST clinically important points for THIS
+     patient — the ones a prescriber must not miss
+   - Prioritize: serious adverse effects, critical monitoring,
+     dangerous interactions
+   - Skip anything routine or low-priority
 
 Return JSON:
 {{
   "drug": "{drug}",
   "patient_context": "{age}yo {sex}",
   "counseling_points": [
+    {{
+      "title": "Short heading (5 words max)",
+      "detail": "Specific actionable advice for this patient only",
+      "severity": "high|medium|low",
+      "category": "bleeding|monitoring|timing|renal|cardiac|warning"
+    }},
     {{
       "title": "Short heading (5 words max)",
       "detail": "Specific actionable advice for this patient only",
@@ -325,7 +337,10 @@ Return JSON:
                             "Never mention cultural or religious "
                             "dietary restrictions. "
                             "Only counsel on pharmacological drug "
-                            "interactions with food."
+                            "interactions with food. "
+                            "Always return exactly 2 counseling "
+                            "points — the 2 most clinically "
+                            "important for this patient."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -337,10 +352,6 @@ Return JSON:
             return json.loads(response.choices[0].message.content)
         except Exception as e:
             # ── Alert 8: LLM failure ──────────────────────────────
-            # Covers Azure OpenAI timeouts, quota errors,
-            # auth failures, and JSON parse errors.
-            # drug name included so you know which drug's
-            # counseling failed in the alert.
             logger.error(
                 "llm_failure",
                 extra={"custom_dimensions": {

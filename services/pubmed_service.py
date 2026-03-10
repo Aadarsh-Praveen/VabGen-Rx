@@ -19,6 +19,12 @@ CHANGES:
              Logged on 429 rate limits after retry exhausted,
              non-JSON responses, efetch 429 after retry,
              and unexpected exceptions in _search_and_fetch.
+- API KEY ROTATION: Loads up to 4 NCBI API keys from env.
+  On 429, immediately rotates to the next key and retries —
+  no sleep needed when a fresh key is available.
+  Sleep(2) only used when all keys are exhausted.
+  Keys: NCBI_API_KEY, NCBI_API_KEY_2, NCBI_API_KEY_3,
+        NCBI_API_KEY_4
 """
 
 import os
@@ -38,23 +44,71 @@ logger = logging.getLogger("vabgenrx")
 class PubMedService:
     """
     Interface to PubMed medical research database.
-    With NCBI API key: 10 requests/second.
-    Without key: 3 requests/second.
+    With NCBI API key: 10 requests/second per key.
+    Rotates across up to 4 keys on 429 — effectively
+    40 requests/second total before any sleep needed.
     """
 
     def __init__(self):
         self.base_url = (
             "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
         )
-        self.email   = "aadarsh050999@gmail.com"
-        self.api_key = os.getenv("NCBI_API_KEY", "")
+        self.email = "aadarsh050999@gmail.com"
 
-        if self.api_key:
-            print(f"   ✅ PubMed: NCBI API key loaded "
-                  f"(10 req/s limit)")
+        # ── Load all available API keys ───────────────────────────
+        # Keys are tried in order on 429. If a key is missing from
+        # env it is simply omitted — works with 1, 2, 3, or 4 keys.
+        self._api_keys: List[str] = []
+        for env_name in [
+            "NCBI_API_KEY",
+            "NCBI_API_KEY_2",
+            "NCBI_API_KEY_3",
+            "NCBI_API_KEY_4",
+        ]:
+            key = os.getenv(env_name, "").strip()
+            if key:
+                self._api_keys.append(key)
+
+        # Index of the key that last succeeded — start from 0
+        self._key_index = 0
+
+        if self._api_keys:
+            print(f"   ✅ PubMed: {len(self._api_keys)} NCBI API "
+                  f"key(s) loaded "
+                  f"({len(self._api_keys) * 10} req/s combined)")
         else:
             print(f"   ⚠️  PubMed: No NCBI API key "
                   f"(3 req/s limit)")
+
+    # ── Key helpers ───────────────────────────────────────────────
+
+    @property
+    def _current_key(self) -> str:
+        """Return the currently active API key (or empty string)."""
+        if not self._api_keys:
+            return ""
+        return self._api_keys[self._key_index % len(self._api_keys)]
+
+    def _rotate_key(self) -> bool:
+        """
+        Advance to the next key.
+        Returns True if a new (different) key is now active,
+        False if we've cycled through all keys.
+        """
+        if len(self._api_keys) <= 1:
+            return False
+        next_index = (self._key_index + 1) % len(self._api_keys)
+        if next_index == self._key_index % len(self._api_keys):
+            return False
+        self._key_index = next_index
+        return True
+
+    def _add_key_to_params(self, params: dict) -> dict:
+        """Add current API key to params dict if available."""
+        key = self._current_key
+        if key:
+            params["api_key"] = key
+        return params
 
     # ── Search methods ────────────────────────────────────────────
 
@@ -96,30 +150,51 @@ class PubMedService:
     # ── Core search and fetch ─────────────────────────────────────
 
     def _search_and_fetch(
-        self, query: str, max_results: int, _retry: bool = True
+        self,
+        query:       str,
+        max_results: int,
+        _keys_tried: int = 0
     ) -> Dict:
         """
-        Execute esearch then efetch.
-        On rate limit error — wait 2s and retry once.
-        Semaphore is held by the caller, not here.
+        Execute esearch then efetch with automatic key rotation.
+
+        On 429:
+        - If another key is available → rotate immediately, no sleep
+        - If all keys exhausted → sleep 2s, restart from key 0
+
+        _keys_tried tracks how many keys have been attempted this
+        call so we know when we've cycled through all of them.
         """
         empty = {
             'count': 0, 'pmids': [],
             'abstracts': [], 'evidence_quality': 'none',
         }
 
+        # If we've tried every key and still getting 429 — give up
+        max_attempts = max(len(self._api_keys), 1) * 2
+        if _keys_tried >= max_attempts:
+            logger.error(
+                "pubmed_rate_limit",
+                extra={"custom_dimensions": {
+                    "event":      "pubmed_rate_limit",
+                    "stage":      "all_keys_exhausted",
+                    "query":      query[:100],
+                    "keys_tried": _keys_tried,
+                }}
+            )
+            print("PubMed rate limit hit — all keys exhausted")
+            return empty
+
         try:
             # ── Step 1: esearch ───────────────────────────────────
-            search_params = {
+            search_params = self._add_key_to_params({
                 'db':      'pubmed',
                 'term':    query,
                 'retmax':  max_results,
                 'retmode': 'json',
                 'sort':    'relevance',
                 'email':   self.email,
-            }
-            if self.api_key:
-                search_params['api_key'] = self.api_key
+            })
 
             response = requests.get(
                 f"{self.base_url}esearch.fcgi",
@@ -127,48 +202,45 @@ class PubMedService:
                 timeout = 10
             )
 
-            # ── Rate limit check — retry once ─────────────────────
+            # ── 429 on esearch — rotate key and retry ─────────────
             if response.status_code == 429:
-                if _retry:
+                rotated = self._rotate_key()
+                if rotated:
+                    print(f"PubMed rate limit hit (429) — "
+                          f"rotating to key "
+                          f"{(self._key_index % len(self._api_keys)) + 1}"
+                          f"/{len(self._api_keys)} and retrying...")
+                else:
                     print("PubMed rate limit hit (429) — "
                           "waiting 2s and retrying...")
                     time.sleep(2)
-                    return self._search_and_fetch(
-                        query, max_results, _retry=False
-                    )
-                # ── Alert 7: esearch 429 after retry exhausted ────
-                logger.error(
-                    "pubmed_rate_limit",
-                    extra={"custom_dimensions": {
-                        "event":  "pubmed_rate_limit",
-                        "stage":  "esearch",
-                        "query":  query[:100],
-                        "status": 429,
-                    }}
+                return self._search_and_fetch(
+                    query, max_results, _keys_tried + 1
                 )
-                print("PubMed rate limit hit — retry exhausted")
-                return empty
 
             try:
                 data = response.json()
             except Exception:
                 raw = response.text[:200]
-                # NCBI returns JSON error on rate limit
-                if "rate limit" in raw.lower() and _retry:
-                    print(f"PubMed rate limit (JSON error) — "
-                          f"waiting 2s and retrying...")
-                    time.sleep(2)
+                if "rate limit" in raw.lower():
+                    rotated = self._rotate_key()
+                    if rotated:
+                        print(f"PubMed rate limit (JSON error) — "
+                              f"rotating key and retrying...")
+                    else:
+                        print(f"PubMed rate limit (JSON error) — "
+                              f"waiting 2s and retrying...")
+                        time.sleep(2)
                     return self._search_and_fetch(
-                        query, max_results, _retry=False
+                        query, max_results, _keys_tried + 1
                     )
-                # ── Alert 7: non-JSON / rate limit after retry ────
                 logger.error(
                     "pubmed_api_failure",
                     extra={"custom_dimensions": {
-                        "event":  "pubmed_api_failure",
-                        "stage":  "esearch_json_parse",
-                        "query":  query[:100],
-                        "raw":    raw[:100],
+                        "event": "pubmed_api_failure",
+                        "stage": "esearch_json_parse",
+                        "query": query[:100],
+                        "raw":   raw[:100],
                     }}
                 )
                 print(f"PubMed non-JSON response: {raw}")
@@ -185,18 +257,16 @@ class PubMedService:
                 return {**empty, 'count': count}
 
             # ── Sleep between esearch and efetch ──────────────────
-            sleep_time = 0.15 if self.api_key else 0.4
+            sleep_time = 0.15 if self._api_keys else 0.4
             time.sleep(sleep_time)
 
             # ── Step 2: efetch ────────────────────────────────────
-            fetch_params = {
+            fetch_params = self._add_key_to_params({
                 'db':      'pubmed',
                 'id':      ','.join(pmids),
                 'retmode': 'xml',
                 'email':   self.email,
-            }
-            if self.api_key:
-                fetch_params['api_key'] = self.api_key
+            })
 
             fetch_response = requests.get(
                 f"{self.base_url}efetch.fcgi",
@@ -204,26 +274,21 @@ class PubMedService:
                 timeout = 15
             )
 
-            # ── Rate limit on efetch — retry whole call ───────────
+            # ── 429 on efetch — rotate key and retry whole call ───
             if fetch_response.status_code == 429:
-                if _retry:
+                rotated = self._rotate_key()
+                if rotated:
+                    print(f"PubMed efetch rate limit — "
+                          f"rotating to key "
+                          f"{(self._key_index % len(self._api_keys)) + 1}"
+                          f"/{len(self._api_keys)} and retrying...")
+                else:
                     print("PubMed efetch rate limit — "
                           "waiting 2s and retrying...")
                     time.sleep(2)
-                    return self._search_and_fetch(
-                        query, max_results, _retry=False
-                    )
-                # ── Alert 7: efetch 429 after retry exhausted ─────
-                logger.error(
-                    "pubmed_rate_limit",
-                    extra={"custom_dimensions": {
-                        "event":  "pubmed_rate_limit",
-                        "stage":  "efetch",
-                        "query":  query[:100],
-                        "status": 429,
-                    }}
+                return self._search_and_fetch(
+                    query, max_results, _keys_tried + 1
                 )
-                return {**empty, 'count': count}
 
             abstracts        = self._parse_abstracts(
                 fetch_response.text
@@ -242,7 +307,6 @@ class PubMedService:
             }
 
         except Exception as e:
-            # ── Alert 7: unexpected exception ─────────────────────
             logger.error(
                 "pubmed_api_failure",
                 extra={"custom_dimensions": {
@@ -265,7 +329,6 @@ class PubMedService:
 
         stripped = xml_text.strip()
         if not stripped.startswith('<'):
-            # Check for rate limit in JSON error body
             if "rate limit" in stripped.lower():
                 print(f"PubMed rate limit in efetch response")
             else:
