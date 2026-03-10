@@ -1,28 +1,32 @@
 """
-VabGenRx — Drug Counseling Service
-Generates patient-specific drug counseling points.
+VabGenRx Drug Counseling Service
 
-MOVED from services/counselling_service.py
-ZERO code changes — identical to original.
+Generates personalized drug counseling guidance for patients
+based on confirmed patient characteristics and FDA safety data.
 
-Key principles:
-- Never assume lifestyle habits (alcohol, smoking, diet)
-- Only counsel on habits the patient has confirmed
-- Never suggest avoiding cultural/religious foods
-- Focus only on pharmacological drug interactions
+Capabilities
+------------
+• Generate clinically relevant counseling points
+• Incorporate patient demographics and conditions
+• Respect confirmed patient habits (alcohol, smoking, etc.)
+• Integrate FDA warnings and contraindications
+• Provide concise prescriber-focused summaries
 
-CHANGES:
-- Azure Application Insights logging added:
-    Alert 8: LLM failures
-             Custom event: llm_failure
-             Logged in _call_llm() on any exception from
-             Azure OpenAI — covers timeouts, quota errors,
-             auth failures, and JSON parse errors.
-             drug name passed through from get_drug_counseling()
-             so you know exactly which drug triggered the failure.
-- TOP 2 POINTS: Prompt updated to return only the 2 most
-  clinically important counseling points. Keeps output focused
-  and avoids information overload for the prescriber.
+Design Principles
+-----------------
+• Never assume lifestyle habits not confirmed by the patient
+• Avoid culturally or religiously sensitive food restrictions
+• Focus strictly on pharmacological safety information
+• Limit output to the most clinically important counseling points
+
+Caching
+-------
+Counseling responses are cached using Azure SQL to reduce
+repeated LLM calls and improve response latency.
+
+This service forms part of the VabGenRx patient education
+pipeline and integrates with the counseling agent in the
+multi-agent orchestration workflow.
 """
 
 import os

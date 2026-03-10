@@ -1,29 +1,31 @@
 """
-VabGenRx — Evidence Analyzer
-Uses Azure OpenAI to analyze medical evidence from multiple sources.
+Medical Evidence Analyzer for VabGenRx.
 
-CHANGES from original:
-1. Tier 4 removed — replaced with INSUFFICIENT EVIDENCE response
-   No AI knowledge fallback — evidence-only approach
-   When no PubMed papers and no FDA reports exist:
-   → severity="unknown", confidence=null, insufficient_evidence=true
+This module evaluates scientific evidence from external
+sources such as PubMed and FDA databases to determine
+the clinical significance of drug interactions and
+drug–disease contraindications.
 
-2. Evidence counts added to drug-disease analysis path
-   drug-drug already had pubmed_papers + fda_reports
-   drug-disease now has pubmed_papers + fda_label_sections_found
-   + fda_label_sections_count
+The analyzer uses Azure OpenAI GPT-4o to synthesize
+evidence and produce structured clinical recommendations.
 
-3. _build_evidence_text updated — removes AI knowledge fallback
-   text when no evidence found
+Core Responsibilities
+---------------------
+• Evaluate research evidence tiers based on publication counts
+• Analyze drug–drug interactions
+• Analyze drug–disease contraindications
+• Generate clinical explanations and recommendations
+• Produce structured JSON outputs for downstream agents
 
-4. Azure Application Insights logging added:
-   Alert 8: LLM failures
-            Custom event: llm_failure
-            Logged in _call_gpt4o() on any exception from
-            Azure OpenAI — covers timeouts, quota errors,
-            auth failures, and JSON parse errors.
+Evidence-Only Policy
+--------------------
+The analyzer follows a strict evidence-only approach.
+If no PubMed papers or FDA data exist, the system
+returns an "insufficient evidence" classification
+instead of relying on AI knowledge.
 
-Everything else identical to original.
+This ensures clinical transparency and avoids
+hallucinated medical conclusions.
 """
 
 from openai import AzureOpenAI
@@ -68,7 +70,6 @@ class EvidenceAnalyzer:
         """
         Determine evidence tier based on available data.
 
-        CHANGED: Tier 4 (AI Knowledge) removed entirely.
         When no evidence exists → INSUFFICIENT EVIDENCE.
         Severity will be set to unknown, confidence to null.
         """
@@ -122,7 +123,6 @@ class EvidenceAnalyzer:
             }
 
         else:
-            # CHANGED: No AI knowledge fallback
             # Return insufficient evidence — agent will set
             # severity=unknown and confidence=null
             return {
@@ -153,7 +153,6 @@ class EvidenceAnalyzer:
     ) -> Dict:
         """
         Analyze drug-drug interaction.
-        CHANGED: Tier 4 returns unknown/null instead of AI guess.
         """
         pubmed_data = evidence.get('pubmed', {})
         fda_data    = evidence.get('fda',    {})
@@ -163,8 +162,6 @@ class EvidenceAnalyzer:
             fda_reports  = fda_data.get('total_reports', 0)
         )
 
-        # CHANGED: If insufficient evidence — return structured
-        # unknown result immediately without LLM call
         if tier_info.get('insufficient'):
             return {
                 'severity':           'unknown',
@@ -292,7 +289,7 @@ Return JSON:
         if fda_label.get('drug_interactions'):
             fda_sections_found.append('drug_interactions')
 
-        # CHANGED: If insufficient evidence — return structured
+        # If insufficient evidence — return structured
         # unknown result immediately without LLM call
         if (
             tier_info.get('insufficient')
@@ -507,7 +504,6 @@ If none found: {{"no_significant_interactions": true}}
                 result['source'] = 'FDA label only'
 
         else:
-            # CHANGED: No AI knowledge fallback
             # Return clean no-interaction result
             result = {
                 'foods_to_avoid':            [],
@@ -558,7 +554,6 @@ If none found: {{"no_significant_interactions": true}}
         """
         Build evidence summary for LLM prompt.
 
-        CHANGED: Removed AI knowledge fallback text.
         When no evidence — returns plain statement only.
         insufficient_evidence tier handles this case before
         this method is called now.
@@ -591,8 +586,6 @@ If none found: {{"no_significant_interactions": true}}
                 text += f"Severity ratio: {severity_ratio:.1%}\n"
             text += "\n"
 
-        # CHANGED: No AI knowledge text when no evidence found
-        # This branch should not be reached since
         # insufficient_evidence tier is handled before this call
         # but kept as safety net
         if pubmed_count == 0 and fda_reports == 0:

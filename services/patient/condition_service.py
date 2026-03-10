@@ -1,30 +1,27 @@
 """
-VabGenRx — Condition Counseling Service
-Generates patient-specific lifestyle, diet, exercise and
-safety counseling.
+VabGenRx Condition Counseling Service
 
-MOVED from services/condition_service.py
-ZERO code changes — identical to original.
+Generates patient-specific counseling guidance for medical
+conditions, including lifestyle, diet, exercise and safety
+recommendations.
 
-Key principles:
-- Never assume lifestyle habits
-- Only counsel on confirmed patient habits
-- Never suggest avoiding cultural/religious foods
-- Exercise advice must consider age and physical limitations
+Capabilities
+------------
+• Tailor recommendations to patient age and sex
+• Integrate current medications into safety guidance
+• Adapt exercise advice for mobility limitations
+• Provide clinically relevant monitoring and follow-up
 
-CHANGES:
-- Azure Application Insights logging added:
-    Alert 8: LLM failures
-             Custom event: llm_failure
-             Logged in _call_llm() on any exception from
-             Azure OpenAI — covers timeouts, quota errors,
-             auth failures, and JSON parse errors.
-             condition name passed through from
-             get_condition_counseling() so you know exactly
-             which condition triggered the failure.
-- TOP 2 POINTS: Prompt updated to return only the 2 most
-  clinically important points per category (exercise, lifestyle,
-  diet, safety). Keeps output focused and actionable.
+Design Principles
+-----------------
+• Never assume patient habits without confirmation
+• Avoid culturally or religiously sensitive food advice
+• Focus on clinically relevant lifestyle modifications
+• Prioritize recommendations with the greatest patient impact
+
+The service ensures that lifestyle guidance is medically
+appropriate, patient-specific, and aligned with the broader
+VabGenRx safety analysis pipeline.
 """
 
 import os

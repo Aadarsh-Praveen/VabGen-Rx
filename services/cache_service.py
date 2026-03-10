@@ -1,23 +1,29 @@
 """
-Azure SQL Cache Service — VabGenRx
-Caches drug-drug, drug-disease, and drug-food results
-to avoid redundant PubMed/FDA/OpenAI calls.
+Azure SQL Cache Service for VabGenRx.
 
-CHANGES:
-- get_drug_disease now normalises evidence{} on read — same
-  pattern as get_drug_drug. Ensures pubmed_papers and
-  fda_label_sections_count are always present in the nested
-  evidence{} sub-object so the frontend badge renders correctly
-  for cached disease pairs.
-- save_drug_disease now stores fda_label_sections_count as a
-  dedicated column AND ensures evidence{} is complete before
-  storing full_result — same pattern as save_drug_drug.
-- save_drug_drug already had these fixes — unchanged.
-- enforce_retention_policy() added — deletes cache records older
-  than their defined retention period. Called on app startup by
-  the FastAPI startup event in app.py. Reads retention days from
-  CACHE_TTL_DAYS and ANALYSIS_LOG_TTL_DAYS env vars so no
-  hardcoded values in cleanup logic.
+This module manages the caching layer for drug interaction
+analyses and evidence results using Azure SQL Database.
+
+Purpose
+-------
+The cache prevents redundant calls to external APIs
+(PubMed, FDA) and expensive AI inference operations.
+
+Cached Results
+--------------
+• Drug–drug interaction analyses
+• Drug–disease contraindication analyses
+• Drug–food interaction recommendations
+• Analysis session metadata
+
+Benefits
+--------
+• Reduced latency for repeated queries
+• Lower API usage costs
+• Improved scalability for high request volumes
+
+The cache also includes automated retention policies
+to remove stale records after a configurable time period.
 """
 
 import json

@@ -1,13 +1,48 @@
 """
-VabGenRx — Counselling Agent
-Specialist agent for patient-specific drug and condition counselling.
+VabGenRx Counselling Agent
 
-CHANGED from original:
-- No tool calls — calls services directly
-- Dosing responsibility moved to VabGenRxDosingAgent
-- Receives confirmed interaction results and compounding signals
-  so counselling is aware of what specialist agents found
-- Same JSON output structure as before plus evidence counts
+Specialist agent responsible for generating patient-specific
+drug and condition counseling recommendations.
+
+Purpose
+-------
+Provides personalized guidance to patients based on their
+medications, medical conditions, lifestyle factors, and
+confirmed interaction risks.
+
+Capabilities
+------------
+• Drug-specific patient counseling
+• Condition-specific lifestyle guidance
+• Integration of compounding risk signals
+• Evidence-backed counseling recommendations
+• Parallel generation of drug and condition advice
+
+Inputs
+------
+• Medication list
+• Patient conditions
+• Patient demographics
+• Confirmed interaction findings
+• Compounding risk signals
+
+Architecture Role
+-----------------
+Runs in Phase 5 of the VabGenRx workflow after specialist
+analysis is complete.
+
+Counseling recommendations reflect the full clinical
+context including interactions, contraindications, and
+dosing adjustments identified earlier in the pipeline.
+
+Output
+------
+Produces structured counseling guidance including:
+
+• drug counseling points
+• condition management advice
+• lifestyle recommendations
+• safety precautions
 """
 
 import json

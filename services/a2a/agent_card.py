@@ -1,10 +1,30 @@
 """
-VabGenRx — A2A Agent Card
-Describes VabGenRx capabilities to external agents.
-Served at GET /.well-known/agent.json
+VabGenRx Agent Card
 
-EXTRACTED from a2a_service.py — zero logic changes.
-Updated agent list to reflect new architecture.
+Defines the public capability description for the VabGenRx
+multi-agent clinical intelligence system.
+
+The Agent Card is exposed via the standard A2A discovery
+endpoint:
+/.well-known/agent.json
+
+Purpose
+-------
+• Allow external agents to discover VabGenRx capabilities
+• Describe available agents and supported skills
+• Provide schema definitions for supported requests
+
+Declared Agents
+---------------
+• Safety Agent – drug-drug and drug-food interaction analysis
+• Disease Agent – drug-disease contraindication analysis
+• Dosing Agent – FDA-based dose adjustments
+• Counseling Agent – patient-specific clinical counseling
+• Orchestrator Agent – cross-domain clinical synthesis
+
+The agent card enables interoperability with other
+agent ecosystems and supports agent-to-agent collaboration
+in distributed AI systems.
 """
 
 AGENT_CARD = {

@@ -1,9 +1,28 @@
 """
-VabGenRx — A2A Task Store
-In-memory task store for A2A protocol task lifecycle management.
+VabGenRx A2A Task Store
 
-EXTRACTED from a2a_service.py — zero logic changes.
-Replace with Redis for production multi-instance deployment.
+Implements an in-memory task management system used by the
+Agent-to-Agent (A2A) protocol for asynchronous skill execution.
+
+Responsibilities
+----------------
+• Track lifecycle of A2A tasks
+• Store task input, status, and output artifacts
+• Support state transitions during agent execution
+• Provide retrieval of task results by ID
+
+Task Lifecycle
+--------------
+submitted → working → completed | failed
+
+Design Notes
+------------
+The store currently uses a simple in-memory dictionary for
+simplicity during hackathon development.
+
+For production deployments, this component should be replaced
+with a distributed datastore such as Redis to support
+multi-instance scaling.
 """
 
 from datetime import datetime, timezone
@@ -13,7 +32,6 @@ from .models import TaskState
 
 
 # ── In-memory task store ──────────────────────────────────────────────────────
-# Replace with Redis for production
 _tasks: Dict[str, Dict] = {}
 
 

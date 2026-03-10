@@ -1,14 +1,38 @@
 """
-VabGenRx — Dosing Agent
-Specialist agent for FDA-based dosing recommendations.
+VabGenRx Dosing Agent
 
-NEW file — dosing was previously handled inside CounsellingAgent.
-Splitting it out gives dosing its own agent instance and
-allows Round 2 re-evaluation with compounding context.
+Specialist agent responsible for generating FDA-based dosing
+recommendations tailored to patient-specific clinical data.
 
-Calls DosingService directly — no tool calls through agent framework.
-Round 2 injects compounding signals via patient_data dict so
-DosingService code is completely unchanged.
+Purpose
+-------
+The DosingAgent evaluates whether medication doses should be
+adjusted based on patient characteristics such as renal
+function, age, laboratory results, and comorbidities.
+
+Capabilities
+------------
+• FDA label-based dose evaluation
+• Detection of dose adjustment requirements
+• Monitoring recommendations
+• Parallel processing of medication analyses
+
+Architecture Role
+-----------------
+The DosingAgent participates in both Round 1 and Round 2
+analysis phases.
+
+Round 1:
+    Standard FDA-based dosing evaluation.
+
+Round 2:
+    Re-evaluates dosing when compounding risk signals
+    indicate elevated patient risk.
+
+Design Principle
+----------------
+The agent delegates dosing logic to DosingService to ensure
+clinical rules remain centralized and maintainable.
 """
 
 import json

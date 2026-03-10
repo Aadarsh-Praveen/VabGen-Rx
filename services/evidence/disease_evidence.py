@@ -1,15 +1,77 @@
 """
-VabGenRx — Disease Evidence Service
-Gathers drug-disease contraindication evidence in parallel.
+VabGenRx Disease Evidence Service
 
-CHANGES:
-- patch_drug_disease_evidence() added — mirrors the same pattern
-  as SafetyEvidenceService.patch_drug_drug_evidence().
-  Called by orchestrator after DiseaseAgent Round 1 completes.
-  For cached pairs the agent copies clinical text correctly but
-  writes zeros for evidence counts. This method stamps the correct
-  fda_label_sections_count and pubmed_papers directly from the
-  raw cached_data so the frontend badge always renders.
+Collects and aggregates clinical evidence for evaluating
+drug–disease contraindications within the VabGenRx
+multi-agent clinical safety system.
+
+Purpose
+-------
+This service gathers supporting scientific and regulatory
+evidence to allow the DiseaseAgent to determine whether
+a prescribed medication is contraindicated or risky
+for a patient’s existing medical conditions.
+
+Evidence Sources
+----------------
+1. PubMed
+   • Peer-reviewed medical literature
+   • Clinical studies linking drugs to disease complications
+   • Case reports of adverse outcomes
+
+2. FDA Drug Labels
+   • Contraindications
+   • Warnings and precautions
+   • Clinical pharmacology
+   • Use in specific populations
+
+Capabilities
+------------
+• Parallel evidence retrieval using thread pools
+• Cache-aware evidence retrieval to reduce external API usage
+• Automatic extraction of clinically relevant FDA label sections
+• Structured evidence generation for agent synthesis
+• Patch mechanism to correct evidence counts in cached results
+
+Drug–Disease Evidence Structure
+-------------------------------
+For each drug–disease pair the service provides:
+
+{
+    pubmed_count
+    pubmed_pmids
+    abstracts
+    fda_label_sections_found
+    fda_label_sections_count
+    fda_label
+}
+
+Architecture Role
+-----------------
+This module supplies evidence to the DiseaseAgent within
+the VabGenRx clinical reasoning pipeline.
+
+Pipeline Flow
+
+Patient Conditions + Medications
+        ↓
+DiseaseEvidenceService
+        ↓
+DiseaseAgent synthesis
+        ↓
+Drug-disease risk analysis
+
+Caching Strategy
+----------------
+Drug–disease evidence is cached using Azure SQL to:
+
+• Reduce PubMed API calls
+• Reduce FDA label retrieval latency
+• Ensure deterministic results for repeated analyses
+
+The patch_drug_disease_evidence() method corrects evidence
+counts for cached pairs when the agent output fails to
+reproduce evidence metadata accurately.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed

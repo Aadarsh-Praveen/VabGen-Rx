@@ -1,11 +1,29 @@
 """
-VabGenRx — A2A Skill Router
-Detects which skill to run from incoming A2A task messages
-and routes execution to the appropriate VabGenRx service.
+VabGenRx A2A Skill Router
 
-EXTRACTED from a2a_service.py
-Updated imports to reflect new folder structure.
-Logic identical to original.
+Routes incoming Agent-to-Agent (A2A) tasks to the correct
+VabGenRx service based on detected skill requirements.
+
+Responsibilities
+----------------
+• Detect requested skill from task metadata or natural language
+• Dispatch tasks to the appropriate service implementation
+• Standardize skill invocation across agents
+
+Supported Skills
+----------------
+• full_safety_analysis
+• drug_interaction_analysis
+• dosing_recommendation
+• patient_counseling
+
+Architecture Role
+-----------------
+Acts as the execution layer between external A2A requests
+and internal VabGenRx specialist agents.
+
+This module enables modular orchestration of VabGenRx
+capabilities within a multi-agent clinical reasoning system.
 """
 
 from typing import Dict

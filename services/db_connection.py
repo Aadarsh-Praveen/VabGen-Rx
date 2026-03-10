@@ -1,14 +1,26 @@
 """
-Shared database connection for VabGenRx.
-Uses thread-local storage so each thread gets its own connection.
+Thread-Safe Azure SQL Connection Manager for VabGenRx.
 
-Why thread-local?
-  The multi-agent parallel execution (VabGenRxSafetyAgent +
-  VabGenRxDiseaseAgent running simultaneously) means two threads
-  hit the database at the same time. A single shared connection
-  causes "Connection is busy with results for another command".
-  thread-local gives each thread its own private connection —
-  they never collide.
+This module provides a shared database connection utility
+used by the caching and logging services.
+
+Design Goals
+------------
+• Ensure safe concurrent access from multiple agents
+• Prevent database connection conflicts
+• Maintain high performance under parallel workloads
+
+Implementation
+--------------
+Each thread receives its own database connection using
+thread-local storage. This avoids the "connection busy"
+errors that occur when multiple threads share a single
+database connection.
+
+Typical Usage
+-------------
+Other services call get_connection() whenever they need
+to interact with the Azure SQL database.
 """
 
 import os

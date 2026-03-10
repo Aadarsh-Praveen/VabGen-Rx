@@ -1,206 +1,50 @@
-'''
 """
-VabGenRx — Base Agent
+VabGenRx Base Agent
 
-CHANGES:
-- temperature=0 added to create_agent() call
-  This is the critical fix for non-determinism.
-  All specialist agents (Safety, Disease, Dosing, Orchestrator)
-  inherit from this base — one fix applies everywhere.
-- top_p=1 set explicitly for full determinism alongside temperature=0
-- _run() logic unchanged
-"""
+Shared infrastructure layer for all VabGenRx specialist agents.
 
-import json
-import os
-from typing import Dict
+Purpose
+-------
+Provides a standardized wrapper around the Azure Agent
+Framework to ensure consistent execution, reliability,
+and deterministic behavior across all agents.
 
-from azure.ai.agents        import AgentsClient
-from azure.ai.agents.models import FunctionTool, ToolSet, RunStatus
-from azure.core.rest        import HttpRequest
+Responsibilities
+----------------
+• Azure Agent creation and lifecycle management
+• Thread creation and run execution
+• JSON response parsing
+• Toolset configuration for agent tool calls
+• Concurrency control for Azure agent quotas
+• Deterministic model execution configuration
 
+Deterministic Execution
+-----------------------
+The base agent enforces deterministic model behavior using:
 
-class _BaseAgent:
+temperature = 0
+top_p       = 1
 
-    def __init__(
-        self,
-        client:   AgentsClient,
-        model:    str,
-        endpoint: str
-    ):
-        self.client   = client
-        self.model    = model
-        self.endpoint = endpoint
+This ensures identical inputs always produce identical outputs,
+which is critical for clinical decision support systems.
 
-    def _build_toolset(self, functions: set = None) -> ToolSet:
-        toolset = ToolSet()
-        if functions:
-            toolset.add(FunctionTool(functions=functions))
-        return toolset
+Concurrency Control
+-------------------
+A global semaphore limits concurrent Azure agent runs to prevent
+quota-related failures in Azure Agent Service.
 
-    def _toolset_has_functions(self, toolset: ToolSet) -> bool:
-        if toolset is None:
-            return False
-        tools_list = getattr(toolset, '_tools', None)
-        if tools_list is not None:
-            return any(
-                isinstance(t, FunctionTool)
-                for t in tools_list
-            )
-        try:
-            toolset.get_tool(FunctionTool)
-            return True
-        except (ValueError, AttributeError):
-            return False
+Architecture Role
+-----------------
+All specialist agents inherit from this class:
 
-    def _run(
-        self,
-        name:         str,
-        instructions: str,
-        content:      str,
-        toolset:      ToolSet = None
-    ) -> Dict:
-        if toolset is None:
-            toolset = ToolSet()
+• SafetyAgent
+• DiseaseAgent
+• DosingAgent
+• CounsellingAgent
+• OrchestratorAgent
 
-        agent = self.client.create_agent(
-            model        = self.model,
-            name         = name,
-            instructions = instructions,
-            toolset      = toolset,
-            # ── Determinism fix ───────────────────────────────────
-            # temperature=0 makes GPT-4o deterministic.
-            # Same input always produces same clinical output.
-            # Critical for a healthcare system — severity scores,
-            # contraindication flags, and recommendations must not
-            # vary between runs for the same patient data.
-            temperature  = 0,
-            top_p        = 1,
-        )
-
-        try:
-            has_functions = self._toolset_has_functions(toolset)
-
-            if has_functions:
-                ctx = self.client.enable_auto_function_calls(toolset)
-                if ctx is not None:
-                    with ctx:
-                        run = self.client.create_thread_and_process_run(
-                            agent_id = agent.id,
-                            thread   = {
-                                "messages": [
-                                    {
-                                        "role":    "user",
-                                        "content": content
-                                    }
-                                ]
-                            }
-                        )
-                else:
-                    run = self.client.create_thread_and_process_run(
-                        agent_id = agent.id,
-                        thread   = {
-                            "messages": [
-                                {
-                                    "role":    "user",
-                                    "content": content
-                                }
-                            ]
-                        },
-                        toolset  = toolset
-                    )
-            else:
-                print(f"   ℹ️  {name} running as synthesis-only "
-                      f"(no tool calls)")
-                run = self.client.create_thread_and_process_run(
-                    agent_id = agent.id,
-                    thread   = {
-                        "messages": [
-                            {
-                                "role":    "user",
-                                "content": content
-                            }
-                        ]
-                    }
-                )
-
-            print(f"   ✅ {name} status: {run.status}")
-
-            if run.status == RunStatus.COMPLETED:
-                messages_data = self._get_messages(run.thread_id)
-                for msg in messages_data:
-                    if msg.get("role") == "assistant":
-                        for block in msg.get("content", []):
-                            if block.get("type") == "text":
-                                raw = block["text"]["value"]
-                                try:
-                                    start = raw.find('{')
-                                    if start < 0:
-                                        print(
-                                            f"   ⚠️  {name} no JSON "
-                                            f"found in response"
-                                        )
-                                        return {}
-                                    decoder   = json.JSONDecoder()
-                                    obj, _end = decoder.raw_decode(
-                                        raw, start
-                                    )
-                                    return obj
-                                except Exception as e:
-                                    print(
-                                        f"   ⚠️  {name} JSON parse "
-                                        f"error: {e}"
-                                    )
-                                    return {}
-            else:
-                print(f"   ❌ {name} run failed: {run.status}")
-                return {}
-
-        finally:
-            self.client.delete_agent(agent.id)
-
-        return {}
-
-    def _get_messages(self, thread_id: str) -> list:
-        url = (
-            f"{self.endpoint}/threads/{thread_id}"
-            f"/messages?api-version=2025-05-01"
-        )
-        try:
-            req      = HttpRequest(method="GET", url=url)
-            response = self.client.send_request(req)
-            data     = response.json()
-            if "data" in data:
-                return data["data"]
-            return []
-        except Exception as e:
-            print(f"   ⚠️  Failed to fetch messages: {e}")
-            return []'''
-
-
-"""
-VabGenRx — Base Agent
-
-CHANGES:
-- temperature=0 added to create_agent() call
-  This is the critical fix for non-determinism.
-  All specialist agents (Safety, Disease, Dosing, Orchestrator)
-  inherit from this base — one fix applies everywhere.
-- top_p=1 set explicitly for full determinism alongside temperature=0
-- Azure Application Insights logging added:
-    Alert 4: Azure agent timeout detection
-             Logged as error when create_agent() or
-             create_thread_and_process_run() times out.
-             Custom event: azure_agent_timeout
-             Also logs azure_agent_failed when run status
-             is not COMPLETED.
-- CONCURRENCY THROTTLE: AGENT_SEMAPHORE from agent_concurrency
-  is acquired at the very top of _run() — before create_agent().
-  Azure's concurrent run quota is consumed at create_agent() time,
-  so the semaphore must wrap the entire _run() body, not just the
-  self._run() call site in the batch helpers.
-  This is the correct fix for RunStatus.FAILED on parallel batches.
-- _run() logic otherwise unchanged.
+This design centralizes Azure integration logic so fixes and
+reliability improvements apply system-wide.
 """
 
 import json
@@ -219,9 +63,7 @@ logger = logging.getLogger("vabgenrx")
 
 # ── Concurrency limit ─────────────────────────────────────────────────────────
 # Azure Agent Service enforces a concurrent active run limit per project.
-# We attach a semaphore to the AgentsClient instance at first use so
-# all agents sharing the same client share exactly one semaphore object —
-# regardless of module reload or import order.
+# We attach a semaphore to the AgentsClient instance at first use so all agents sharing the same client share exactly one semaphore object regardless of module reload or import order.
 _AZURE_CONCURRENCY_LIMIT = 1
 
 

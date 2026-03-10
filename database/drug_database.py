@@ -1,6 +1,38 @@
 """
-Run this ONCE to create all tables in Azure SQL Database.
-Place in project root and run: python setup_database.py
+Azure SQL Database Setup for Drug Interaction Caching.
+
+This module initializes the primary caching tables used
+by the VabGenRx clinical intelligence platform.
+
+The caching layer stores results of expensive analyses
+such as drug-drug interactions, drug-disease safety checks,
+and drug-food interactions.
+
+Benefits
+--------
+• Reduces API calls to external medical databases
+• Reduces LLM inference costs
+• Improves system response latency
+• Enables statistical analysis of usage patterns
+
+Tables Created
+--------------
+interaction_cache
+    Stores synthesized drug-drug interaction results.
+
+disease_cache
+    Stores drug-disease contraindication analysis.
+
+food_cache
+    Stores drug-food interaction recommendations.
+
+analysis_log
+    Records analysis session metadata.
+
+Usage
+-----
+Run once during deployment:
+python setup_database.py
 """
 
 import pyodbc

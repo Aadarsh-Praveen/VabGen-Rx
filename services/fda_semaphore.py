@@ -1,13 +1,20 @@
 """
-VabGenRx — Shared FDA Rate Limit Semaphore
+Shared FDA API Semaphore for VabGenRx.
 
-Limits concurrent requests to api.fda.gov across ALL services.
-Safety and Disease evidence services both fetch FDA labels in
-parallel — without a shared cap, 6+ simultaneous requests to
-api.fda.gov cause read timeouts.
+Controls the maximum number of concurrent requests to the
+FDA OpenFDA API across all application services.
 
-Cap of 3 keeps FDA requests well within their rate limits while
-still allowing parallel fetches to benefit from concurrency.
+Purpose
+-------
+When multiple evidence services query FDA endpoints in
+parallel, uncontrolled concurrency can lead to timeouts
+or rate-limit errors. This shared semaphore ensures
+that the application stays within safe request limits.
+
+Concurrency Limit
+-----------------
+The semaphore allows a maximum of three concurrent
+FDA API requests across the entire system.
 """
 
 import threading

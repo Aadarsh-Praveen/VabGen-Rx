@@ -1,23 +1,53 @@
 """
-VabGenRx — Orchestrator
-Coordinates all specialist agents and services.
-Implements the new phase-based architecture with Round 2
-feedback loops and dynamic workflow decisions.
+VabGenRx Orchestrator
 
-Phase 1: Evidence gathering (parallel Python)
-Phase 2: Round 1 specialist synthesis (parallel agents)
-Phase 3: Signal extraction (Python, instant)
-Phase 4: Round 2 re-evaluation (conditional, parallel)
-Phase 5: Counselling + patient services (parallel)
-Phase 6: Orchestrator agent synthesis (cross-domain reasoning)
+Central coordination layer for the VabGenRx multi-agent
+clinical reasoning system.
 
-CHANGES:
-- Phase 2: after SafetyAgent Round 1 completes, calls
-  self.safety_evidence.patch_drug_drug_evidence() to stamp
-  correct pubmed_papers, fda_reports, and fda_label_sections_count
-  onto cached pair results. The agent reliably copies clinical text
-  for cached pairs but writes zeros for evidence counts — this patch
-  bypasses the agent for those three numeric fields entirely.
+Purpose
+-------
+The orchestrator manages the full clinical analysis pipeline,
+coordinating evidence services, specialist agents, and
+cross-domain reasoning.
+
+Workflow Architecture
+---------------------
+The system executes six phases:
+
+Phase 1 — Evidence Gathering
+    Parallel retrieval of interaction and contraindication
+    evidence from PubMed and FDA sources.
+
+Phase 2 — Round 1 Specialist Analysis
+    SafetyAgent, DiseaseAgent, and DosingAgent independently
+    synthesize their domain-specific findings.
+
+Phase 3 — Signal Extraction
+    Python-based analysis detects compounding risk patterns
+    across specialist outputs.
+
+Phase 4 — Round 2 Re-evaluation
+    Specialists re-analyze cases when compounding signals
+    indicate elevated clinical risk.
+
+Phase 5 — Patient Counseling
+    Drug and condition counseling services generate
+    patient-specific guidance.
+
+Phase 6 — Orchestrator Synthesis
+    Cross-domain reasoning produces the final clinical
+    intelligence report.
+
+Architecture Benefits
+---------------------
+• Parallel evidence gathering improves latency
+• Modular specialist agents improve maintainability
+• Conditional Round 2 analysis reduces unnecessary computation
+• Cross-domain orchestration enables detection of complex
+  polypharmacy risks
+
+The orchestrator acts as the central entry point for the
+VabGenRx clinical safety analysis API.
 """
 
 import os
@@ -46,8 +76,6 @@ load_dotenv()
 class VabGenRxOrchestrator:
     """
     Coordinates the VabGenRx multi-agent system.
-
-    New architecture:
     - Evidence gathering in Python (parallel, no agent overhead)
     - Specialist agents do synthesis only (no tool calls)
     - Signal extractor detects compounding risks

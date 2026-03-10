@@ -14,3 +14,7 @@ azure-keyvault-secrets
 opencensus==0.11.4
 opencensus-context==0.1.3
 opencensus-ext-azure==1.1.15
+azure-ai-projects
+opentelemetry-sdk
+azure-monitor-opentelemetry
+azure-ai-contentsafety

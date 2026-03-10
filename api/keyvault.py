@@ -1,17 +1,37 @@
 """
-VabGenRx — Azure Key Vault Secret Loader
-Loads all secrets from Azure Key Vault in production.
-Falls back to .env file locally — dev workflow unchanged.
+Azure Key Vault Integration for VabGenRx.
 
-Vault URI is read from KEY_VAULT_URL environment variable.
-Set KEY_VAULT_URL in .env locally or in Azure App Service
-environment variables in production.
+This module provides a unified mechanism for loading application
+secrets securely from Azure Key Vault in production environments,
+while maintaining compatibility with local development using
+`.env` files.
+
+Key Features
+------------
+• Secure secret retrieval using Azure Key Vault
+• Automatic fallback to `.env` variables for local development
+• Lazy initialization of the Key Vault client
+• Transparent injection of secrets into os.environ
+
+This design allows existing services to continue using
+`os.getenv()` without modification, regardless of whether
+the application is running locally or in Azure.
+
+Environment Variables
+---------------------
+KEY_VAULT_URL
+    URL of the Azure Key Vault instance.
+
+Example
+-------
+secrets = load_all_secrets()
+openai_key = os.getenv("AZURE_OPENAI_KEY")
 """
 
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # always load .env first (local dev fallback)
+load_dotenv()  
 
 _kv_client = None
 
@@ -133,9 +153,6 @@ def load_all_secrets() -> dict:
             get_secret("FDA-API-KEY",    "FDA_API_KEY"),
     }
 
-    # Inject back into os.environ so all existing os.getenv()
-    # calls in services work transparently — zero changes needed
-    # in evidence_analyzer.py, dosing_service.py, etc.
     loaded = 0
     for key, value in secrets.items():
         if value:

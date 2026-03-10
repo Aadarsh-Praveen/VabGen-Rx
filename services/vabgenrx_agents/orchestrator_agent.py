@@ -1,27 +1,54 @@
 """
-VabGenRx — Orchestrator Agent
-The genuine reasoning agent. Receives all specialist results
-and produces cross-domain clinical intelligence.
+VabGenRx Orchestrator Agent
 
-This is where Microsoft Agent Framework genuinely adds value —
-reasoning across multiple specialist domains simultaneously to
-surface compounding risk patterns no single specialist could find.
+Cross-domain clinical reasoning agent that synthesizes the
+outputs of all specialist agents into a unified clinical
+intelligence report.
 
-No tool calls. Pure GPT-4o reasoning over combined results.
+Purpose
+-------
+The OrchestratorAgent performs higher-level reasoning across
+multiple specialist domains to identify compounding risk
+patterns that cannot be detected by any single agent.
 
-CHANGES:
-- Azure Application Insights logging added:
-    Alert 9: Orchestrator fallback triggered
-             Custom event: orchestrator_fallback
-             Logged in synthesize() when _run() returns empty
-             and fallback summary is used instead.
-             Includes ddi_count, disease_count, dosing_count,
-             signals_count in custom_dimensions so you know
-             the complexity of the analysis that failed.
-             When fallback triggers, the doctor gets a basic
-             risk summary instead of the full cross-domain
-             clinical intelligence — this alert tells you when
-             that silent degradation happens.
+Inputs
+------
+• SafetyAgent interaction results
+• DiseaseAgent contraindication results
+• DosingAgent dose adjustment recommendations
+• CounsellingAgent patient guidance
+• Compounding signals detected by the SignalExtractor
+• Patient context information
+
+Capabilities
+------------
+• Cross-domain clinical reasoning
+• Identification of compounding risk patterns
+• Prioritization of clinical actions
+• Unified clinical summary generation
+• Evidence aggregation across domains
+
+Architecture Role
+-----------------
+The OrchestratorAgent executes in the final phase of the
+VabGenRx workflow:
+
+Phase 1: Evidence gathering
+Phase 2: Specialist agent synthesis
+Phase 3: Compounding signal detection
+Phase 4: Optional Round 2 specialist re-evaluation
+Phase 5: Patient counseling
+Phase 6: Orchestrator synthesis
+
+Output
+------
+Produces a unified clinical intelligence report including:
+
+• risk_level classification
+• prescriber clinical summary
+• detected compounding patterns
+• prioritized clinical actions
+• aggregated evidence metrics
 """
 
 import json

@@ -1,30 +1,30 @@
 """
-PubMed Research Service
-Access to 35M+ medical research papers
-U.S. National Library of Medicine
+PubMed Research Service for VabGenRx.
 
-CHANGES:
-- Retry logic added to _search_and_fetch — on rate limit error
-  (HTTP 429 or non-XML JSON error response from NCBI) waits 2s
-  and retries once. This is the correct fix for rate limit errors
-  rather than holding the semaphore longer (which caused timeouts
-  and zero-evidence returns).
-- Semaphore import removed — semaphore is managed by callers
-  (safety_evidence.py, disease_evidence.py). This service does
-  not acquire it directly.
-- Sleep between esearch and efetch kept at 0.15s with API key.
-- Azure Application Insights logging added:
-    Alert 7: PubMed API failures and rate limits
-             Custom events: pubmed_api_failure, pubmed_rate_limit
-             Logged on 429 rate limits after retry exhausted,
-             non-JSON responses, efetch 429 after retry,
-             and unexpected exceptions in _search_and_fetch.
-- API KEY ROTATION: Loads up to 4 NCBI API keys from env.
-  On 429, immediately rotates to the next key and retries —
-  no sleep needed when a fresh key is available.
-  Sleep(2) only used when all keys are exhausted.
-  Keys: NCBI_API_KEY, NCBI_API_KEY_2, NCBI_API_KEY_3,
-        NCBI_API_KEY_4
+This module provides an interface to the PubMed database
+maintained by the U.S. National Library of Medicine. It
+retrieves scientific literature relevant to drug interactions,
+drug–disease contraindications, and pharmacological food
+interactions.
+
+Key Features
+------------
+• Query PubMed using the NCBI E-utilities API
+• Automatic API key rotation across multiple NCBI keys
+• Retry logic for rate-limit errors (HTTP 429)
+• Extraction of PMIDs and abstracts for evidence analysis
+• Application Insights logging for monitoring API failures
+
+Rate Limiting
+-------------
+With API keys enabled, PubMed allows up to 10 requests/second
+per key. The service supports up to four keys, allowing
+approximately 40 requests/second before fallback delays.
+
+Typical Usage
+-------------
+This service is called by the evidence layer to collect
+research evidence before clinical reasoning by the AI agent.
 """
 
 import os

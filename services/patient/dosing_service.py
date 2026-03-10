@@ -1,37 +1,32 @@
 """
-VabGenRx — Dosing Recommendation Service
-Generates patient-specific dose adjustments based on:
-  - FDA drug label
-  - Patient demographics, labs, conditions,
-    and other_investigations
+VabGenRx Dosing Recommendation Service
 
-MOVED from services/dosing_service.py
-ZERO code changes — identical to original.
+Generates patient-specific drug dosing recommendations based
+on FDA drug labeling and individual patient characteristics.
 
-Key principles:
-- FDA label is the ONLY source of dosing truth
-- Patient labs matched against FDA thresholds
-- other_investigations dict passed through automatically
-- NO cache — dosing always fresh
-- Compounding signals flow through other_investigations
-  when injected by DosingAgent Round 2
+Capabilities
+------------
+• Evaluate patient demographics, laboratory results, and
+  comorbidities
+• Match patient values against FDA dosing thresholds
+• Recommend dose adjustments when required
+• Provide monitoring and hold thresholds for clinical safety
 
-CHANGES:
-- Azure Application Insights logging added:
-    Alert 8: LLM failures
-             Custom event: llm_failure
-             Logged in _call_llm() on any exception from
-             Azure OpenAI — covers timeouts, quota errors,
-             auth failures, and JSON parse errors.
-             drug name included in custom_dimensions so
-             you know exactly which drug triggered the failure.
-- Prompt fix added:
-    CRITICAL RULE added to TASK section — forces LLM to set
-    adjustment_required: true whenever recommended_dose differs
-    from current_dose. Fixes cases where LLM correctly identifies
-    a dose issue but incorrectly sets adjustment_required: false
-    (e.g. Amlodipine 10mg tid → 5mg once daily showing as
-    "NONE ADJUSTMENT" in the UI).
+Data Sources
+------------
+• FDA drug labeling data
+• Patient demographics and laboratory values
+• Additional clinical investigations
+
+Design Principles
+-----------------
+• FDA label information is the authoritative dosing source
+• Recommendations must align strictly with FDA guidance
+• When no FDA guidance exists, the system explicitly states so
+• Dosing recommendations are always generated fresh (no caching)
+
+This service powers the VabGenRx Dosing Agent responsible for
+clinical dose optimization in the multi-agent safety pipeline.
 """
 
 import os
