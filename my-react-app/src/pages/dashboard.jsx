@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import morningIcon      from "../assets/morning.png";
-import afternoonIcon   from "../assets/afternoon.png";
-import eveningIcon     from "../assets/evening.png";
-import patientIcon     from "../assets/patient.png";
-import inPatientIcon   from "../assets/in_patient.png";
-import outPatientIcon  from "../assets/out_patient.png";
-import labIcon         from "../assets/lab.png";
-import Nav from "../components/nav";
-import { apiFetch } from "../services/api";
+import morningIcon    from "../assets/morning.png";
+import afternoonIcon  from "../assets/afternoon.png";
+import eveningIcon    from "../assets/evening.png";
+import patientIcon    from "../assets/patient.png";
+import inPatientIcon  from "../assets/in_patient.png";
+import outPatientIcon from "../assets/out_patient.png";
+import labIcon        from "../assets/lab.png";
+import Nav            from "../components/nav";
+import { apiFetch }   from "../services/api";
 import "./dashboard.css";
 import PageFooter from "../components/pageFooter";
 
-// ── SVG Icons ──────────────────────────────────────────────────
 const UsersIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -76,7 +75,6 @@ const TrashIcon = () => (
   </svg>
 );
 
-// ── Time image helper ──────────────────────────────────────────
 const getTimeEmoji = () => {
   const h = new Date().getHours();
   if (h >= 5  && h < 12) return <img src={morningIcon}   alt="morning"   className="dash-time-img" />;
@@ -84,7 +82,6 @@ const getTimeEmoji = () => {
   return <img src={eveningIcon} alt="evening" className="dash-time-img" />;
 };
 
-// ── Animated counter ───────────────────────────────────────────
 const useCountUp = (target, duration = 1200) => {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -99,13 +96,18 @@ const useCountUp = (target, duration = 1200) => {
   }, [target, duration]);
   return count;
 };
-const AnimatedValue = ({ value }) => { const count = useCountUp(value); return <>{count}</>; };
+
+const AnimatedValue = ({ value }) => {
+  const count = useCountUp(value);
+  return <>{count}</>;
+};
 
 const useBarAnimation = (pct) => {
   const [width, setWidth] = useState(0);
   useEffect(() => { const t = setTimeout(() => setWidth(pct), 100); return () => clearTimeout(t); }, [pct]);
   return width;
 };
+
 const AnimatedBar = ({ pct, color, label }) => {
   const width = useBarAnimation(pct);
   const count = useCountUp(pct);
@@ -119,9 +121,9 @@ const AnimatedBar = ({ pct, color, label }) => {
     </div>
   );
 };
+
 const Badge = ({ text, color }) => <span className={`badge badge-${color}`}>{text}</span>;
 
-// ── Static data ────────────────────────────────────────────────
 const statsCards = [
   { title: "TOTAL PATIENTS",      value: 284, sub: "▲ 12 this month",    icon: patientIcon,    color: "blue"   },
   { title: "PATIENTS IN",         value: 21,  sub: "▲ 3 from yesterday", icon: inPatientIcon,  color: "yellow" },
@@ -165,17 +167,12 @@ const monthlyStats = [
 const getGreeting    = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 const getCurrentDate = () => new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-// ── Format DOB cleanly ─────────────────────────────────────────
 const formatDOB = (dob) => {
   if (!dob) return "N/A";
-  try {
-    return new Date(dob).toLocaleDateString("en-US", {
-      year: "numeric", month: "short", day: "numeric"
-    });
-  } catch { return dob; }
+  try { return new Date(dob).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
+  catch { return dob; }
 };
 
-// ── Password scheme helper ─────────────────────────────────────
 const getPwdScheme = (daysLeft, expired) => {
   if (expired || daysLeft <= 0) return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Expired'  };
   if (daysLeft <= 5)            return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Critical' };
@@ -183,53 +180,42 @@ const getPwdScheme = (daysLeft, expired) => {
   return                               { bg: '#f0fdf4', border: '#22c55e', text: '#166534', bar: '#22c55e', label: 'Good'     };
 };
 
-// ── Component ──────────────────────────────────────────────────
-const Dashboard = ({ user }) => {
+// ✅ Accept onLogout prop
+const Dashboard = ({ user, onLogout }) => {
   const [appointments, setAppointments] = useState([]);
   const [currentDate,  setCurrentDate]  = useState(getCurrentDate());
   const [showNotif,    setShowNotif]    = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [pwdStatus,    setPwdStatus]    = useState(null);
-  const [pwdDismissed, setPwdDismissed] = useState(
-    () => sessionStorage.getItem('pwdNotifDismissed') === 'true'
-  );
+  const [pwdDismissed, setPwdDismissed] = useState(() => sessionStorage.getItem('pwdNotifDismissed') === 'true');
   const [heldRows,     setHeldRows]     = useState({});
   const [noteModal,    setNoteModal]    = useState(null);
   const [noteText,     setNoteText]     = useState('');
   const [noteSent,     setNoteSent]     = useState(false);
-  const [openMenu,     setOpenMenu]     = useState(null);   // patient id of open dots menu
-  const menuRef = useRef({});
+  const [openMenu,     setOpenMenu]     = useState(null);
+  const menuRef  = useRef({});
   const notifRef = useRef(null);
 
-  // Close dots menu on outside click
   useEffect(() => {
     const handler = (e) => {
-      const isInsideAnyMenu = Object.values(menuRef.current).some(
-        el => el && el.contains(e.target)
-      );
+      const isInsideAnyMenu = Object.values(menuRef.current).some(el => el && el.contains(e.target));
       if (!isInsideAnyMenu) setOpenMenu(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Close notif on outside click
   useEffect(() => {
-    const handler = e => {
-      if (notifRef.current && !notifRef.current.contains(e.target))
-        setShowNotif(false);
-    };
+    const handler = e => { if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotif(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Update date every minute
   useEffect(() => {
     const tick = setInterval(() => setCurrentDate(getCurrentDate()), 60000);
     return () => clearInterval(tick);
   }, []);
 
-  // Fetch password expiry status
   useEffect(() => {
     const fetchPwdStatus = async () => {
       if (!user?.email) return;
@@ -242,26 +228,18 @@ const Dashboard = ({ user }) => {
     fetchPwdStatus();
   }, [user]);
 
-  // ── Fetch both IP + OP patients (RBAC filtered by dept) ───────
   useEffect(() => {
     const fetchPatients = async () => {
       try {
-        const [ipRes, opRes] = await Promise.all([
-          apiFetch("/api/patients"),
-          apiFetch("/api/outpatients"),
-        ]);
+        const [ipRes, opRes] = await Promise.all([apiFetch("/api/patients"), apiFetch("/api/outpatients")]);
         const ipData = await ipRes.json();
         const opData = await opRes.json();
-
         const ipPatients = (ipRes.ok && ipData.patients) ? ipData.patients : [];
         const opPatients = (opRes.ok && opData.patients) ? opData.patients : [];
-
-        // Combine IP + OP, tag each with type
         const combined = [
           ...ipPatients.map(p => ({ ...p, _type: "IP", _no: p.IP_No })),
           ...opPatients.map(p => ({ ...p, _type: "OP", _no: p.OP_No })),
         ].slice(0, 5);
-
         setAppointments(
           combined.map((p, i) => ({
             initials:    p.Name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase(),
@@ -282,20 +260,11 @@ const Dashboard = ({ user }) => {
   const showPwdNotif = pwdStatus && !pwdDismissed;
   const hasUnread    = showPwdNotif;
 
-  const dismissPwdNotif = () => {
-    sessionStorage.setItem('pwdNotifDismissed', 'true');
-    setPwdDismissed(true);
-  };
+  const dismissPwdNotif = () => { sessionStorage.setItem('pwdNotifDismissed', 'true'); setPwdDismissed(true); };
 
-  // ── Hold / Retrieve handlers ───────────────────────────────
-  const handleHold = (id) => {
-    setHeldRows(prev => ({ ...prev, [id]: true }));
-    setOpenMenu(null);
-    openNoteModal(id);
-  };
+  const handleHold     = (id) => { setHeldRows(prev => ({ ...prev, [id]: true })); setOpenMenu(null); openNoteModal(id); };
   const handleRetrieve = (id) => setHeldRows(prev => { const n = { ...prev }; delete n[id]; return n; });
 
-  // ── Hold notes modal handlers ──────────────────────────────
   const openNoteModal  = (id) => { setNoteModal(id); setNoteText(''); setNoteSent(false); };
   const closeNoteModal = ()   => { setNoteModal(null); setNoteText(''); setNoteSent(false); };
   const sendNote = () => {
@@ -306,10 +275,10 @@ const Dashboard = ({ user }) => {
 
   return (
     <div className="dash-layout">
-      <Nav user={user} />
+      {/* ✅ Pass onLogout to Nav */}
+      <Nav user={user} onLogout={onLogout} />
       <main className="dash-main">
 
-        {/* ── Top Bar ────────────────────────────────────────── */}
         <div className="dash-topbar">
           <div>
             <h1 className="dash-greeting">
@@ -330,7 +299,6 @@ const Dashboard = ({ user }) => {
 
               {showNotif && (
                 <div className="notif-modal">
-                  {/* Header */}
                   <div className="notif-modal-header">
                     <span className="notif-modal-title">Notifications</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -339,9 +307,8 @@ const Dashboard = ({ user }) => {
                           onClick={dismissPwdNotif}
                           title="Clear all notifications"
                           style={{
-                            background: 'none', border: '1px solid #e2e8f0',
-                            borderRadius: '6px', padding: '3px 8px',
-                            cursor: 'pointer', fontSize: '11px', color: '#64748b',
+                            background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px',
+                            padding: '3px 8px', cursor: 'pointer', fontSize: '11px', color: '#64748b',
                             display: 'flex', alignItems: 'center', gap: '4px',
                           }}
                         >
@@ -358,24 +325,18 @@ const Dashboard = ({ user }) => {
                   </div>
 
                   <div className="notif-modal-body">
-                    {/* Password Expiry Notification */}
                     {showPwdNotif && (
                       <div style={{
-                        background: scheme.bg,
-                        border: `1.5px solid ${scheme.border}`,
-                        borderRadius: '10px',
-                        padding: '12px 14px',
-                        marginBottom: '10px',
-                        position: 'relative',
+                        background: scheme.bg, border: `1.5px solid ${scheme.border}`,
+                        borderRadius: '10px', padding: '12px 14px', marginBottom: '10px', position: 'relative',
                       }}>
                         <button
                           onClick={dismissPwdNotif}
                           title="Dismiss"
                           style={{
                             position: 'absolute', top: '8px', right: '8px',
-                            background: 'none', border: 'none',
-                            cursor: 'pointer', color: '#9ca3af', fontSize: '14px',
-                            lineHeight: 1, padding: '2px 4px',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: '#9ca3af', fontSize: '14px', lineHeight: 1, padding: '2px 4px',
                           }}
                         >✕</button>
 
@@ -386,8 +347,7 @@ const Dashboard = ({ user }) => {
                           </span>
                           <span style={{
                             background: scheme.border, color: '#fff',
-                            fontSize: '10px', fontWeight: 700,
-                            padding: '2px 8px', borderRadius: '9999px',
+                            fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '9999px',
                           }}>{scheme.label}</span>
                         </div>
 
@@ -403,14 +363,11 @@ const Dashboard = ({ user }) => {
                                 {pwdStatus.daysLeft} day{pwdStatus.daysLeft !== 1 ? 's' : ''}
                               </strong>.
                               {' '}Last changed: <strong>{pwdStatus.lastChanged}</strong>.
-                              {pwdStatus.daysLeft <= 15 && (
-                                <span style={{ color: scheme.text }}> Please update soon!</span>
-                              )}
+                              {pwdStatus.daysLeft <= 15 && <span style={{ color: scheme.text }}> Please update soon!</span>}
                             </p>
                             <div style={{ height: '5px', background: '#e5e7eb', borderRadius: '9999px', overflow: 'hidden', marginBottom: '10px' }}>
                               <div style={{
-                                height: '100%',
-                                width: `${Math.max(0, (pwdStatus.daysLeft / 90) * 100)}%`,
+                                height: '100%', width: `${Math.max(0, (pwdStatus.daysLeft / 90) * 100)}%`,
                                 background: scheme.bar, borderRadius: '9999px',
                               }} />
                             </div>
@@ -430,7 +387,6 @@ const Dashboard = ({ user }) => {
                       </div>
                     )}
 
-                    {/* Empty state */}
                     {!showPwdNotif && (
                       notifEnabled ? (
                         <div className="notif-empty">
@@ -462,7 +418,6 @@ const Dashboard = ({ user }) => {
           </div>
         </div>
 
-        {/* ── Stat Cards ─────────────────────────────────────── */}
         <div className="dash-cards">
           {statsCards.map(({ title, value, sub, icon, color }) => (
             <div key={title} className={`dash-card dash-card-${color}`}>
@@ -474,9 +429,7 @@ const Dashboard = ({ user }) => {
               </div>
               <p className="dash-card-value"><AnimatedValue value={value} /></p>
               <p className="dash-card-sub">
-                <span style={{
-                  color: sub.startsWith('▲') ? '#16a34a' : sub.startsWith('▼') ? '#dc2626' : 'inherit'
-                }}>
+                <span style={{ color: sub.startsWith('▲') ? '#16a34a' : sub.startsWith('▼') ? '#dc2626' : 'inherit' }}>
                   {sub.charAt(0)}
                 </span>
                 {sub.slice(1)}
@@ -488,7 +441,6 @@ const Dashboard = ({ user }) => {
         <div className="dash-content-grid">
           <div className="dash-left-col">
 
-            {/* ── Today's Appointments ───────────────────────── */}
             <div className="dash-panel dash-appointments">
               <div className="dash-panel-header">
                 <span className="dash-panel-title"><ClipboardIcon /> Today's Appointments</span>
@@ -496,9 +448,7 @@ const Dashboard = ({ user }) => {
               <table className="appt-table">
                 <thead>
                   <tr>
-                    {["PATIENT", "TIME", "TYPE", "STATUS", "DEPT", "ACTIONS"].map(h => (
-                      <th key={h}>{h}</th>
-                    ))}
+                    {["PATIENT", "TIME", "TYPE", "STATUS", "DEPT", "ACTIONS"].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -512,10 +462,8 @@ const Dashboard = ({ user }) => {
                     const isHeld = !!heldRows[a.id];
                     return (
                       <tr key={a.id} style={{
-                        opacity:    isHeld ? 0.4 : 1,
-                        background: isHeld ? '#f8fafc' : '',
-                        filter:     isHeld ? 'grayscale(40%)' : 'none',
-                        transition: 'all 0.3s ease',
+                        opacity: isHeld ? 0.4 : 1, background: isHeld ? '#f8fafc' : '',
+                        filter: isHeld ? 'grayscale(40%)' : 'none', transition: 'all 0.3s ease',
                       }}>
                         <td>
                           <div className="appt-patient">
@@ -536,8 +484,7 @@ const Dashboard = ({ user }) => {
                                   <span style={{
                                     marginLeft: '6px', fontSize: '10px', fontWeight: 700,
                                     padding: '1px 8px', borderRadius: '9999px',
-                                    background: '#fef3c7', color: '#92400e',
-                                    border: '1px solid #fcd34d',
+                                    background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d',
                                   }}>
                                     ON HOLD
                                   </span>
@@ -551,48 +498,30 @@ const Dashboard = ({ user }) => {
                         <td><Badge text={a.status} color={a.statusColor} /></td>
                         <td style={{ fontSize: '12px', color: '#6b7280' }}>{a.dept || '—'}</td>
                         <td className="appt-actions">
-                          <div
-                            style={{ position: 'relative', display: 'inline-block' }}
-                            ref={el => menuRef.current[a.id] = el}
-                          >
-                            {/* Dots trigger button */}
+                          <div style={{ position: 'relative', display: 'inline-block' }} ref={el => menuRef.current[a.id] = el}>
                             <button
                               onClick={() => setOpenMenu(prev => prev === a.id ? null : a.id)}
                               style={{
                                 width: '32px', height: '32px', borderRadius: '8px',
                                 border: '1px solid #e5e7eb', background: openMenu === a.id ? '#f3f4f6' : '#fff',
                                 cursor: 'pointer', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: '16px', color: '#6b7280',
-                                transition: 'background 0.15s',
+                                justifyContent: 'center', fontSize: '16px', color: '#6b7280', transition: 'background 0.15s',
                               }}
-                            >
-                              ⋮
-                            </button>
+                            >⋮</button>
 
-                            {/* Dropdown menu */}
                             {openMenu === a.id && (
                               <div style={{
-                                position: 'absolute', right: 0, top: '38px',
-                                background: '#fff', borderRadius: '10px',
-                                boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                                border: '1px solid #e5e7eb',
-                                minWidth: '160px', zIndex: 999,
-                                overflow: 'hidden',
+                                position: 'absolute', right: 0, top: '38px', background: '#fff',
+                                borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                border: '1px solid #e5e7eb', minWidth: '160px', zIndex: 999, overflow: 'hidden',
                               }}>
-
-                                {/* View */}
                                 <button
-                                  onClick={() => {
-                                    setOpenMenu(null);
-                                    window.location.href = `/patients/${a.id}`;
-                                  }}
+                                  onClick={() => { setOpenMenu(null); window.location.href = `/patients/${a.id}`; }}
                                   style={{
-                                    width: '100%', padding: '10px 14px',
-                                    background: 'none', border: 'none',
+                                    width: '100%', padding: '10px 14px', background: 'none', border: 'none',
                                     display: 'flex', alignItems: 'center', gap: '10px',
                                     fontSize: '13px', fontWeight: 600, color: '#1a73e8',
-                                    cursor: 'pointer', textAlign: 'left',
-                                    transition: 'background 0.15s',
+                                    cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
                                   }}
                                   onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
                                   onMouseLeave={e => e.currentTarget.style.background = 'none'}
@@ -605,17 +534,14 @@ const Dashboard = ({ user }) => {
 
                                 <div style={{ height: '1px', background: '#f3f4f6', margin: '0 10px' }} />
 
-                                {/* Hold / Retrieve */}
                                 {!isHeld ? (
                                   <button
-                                    onClick={() => { handleHold(a.id); }}
+                                    onClick={() => handleHold(a.id)}
                                     style={{
-                                      width: '100%', padding: '10px 14px',
-                                      background: 'none', border: 'none',
+                                      width: '100%', padding: '10px 14px', background: 'none', border: 'none',
                                       display: 'flex', alignItems: 'center', gap: '10px',
                                       fontSize: '13px', fontWeight: 600, color: '#92400e',
-                                      cursor: 'pointer', textAlign: 'left',
-                                      transition: 'background 0.15s',
+                                      cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
                                     }}
                                     onMouseEnter={e => e.currentTarget.style.background = '#fffbeb'}
                                     onMouseLeave={e => e.currentTarget.style.background = 'none'}
@@ -627,16 +553,13 @@ const Dashboard = ({ user }) => {
                                   </button>
                                 ) : (
                                   <>
-                                    {/* Hold Notes */}
                                     <button
                                       onClick={() => { openNoteModal(a.id); setOpenMenu(null); }}
                                       style={{
-                                        width: '100%', padding: '10px 14px',
-                                        background: 'none', border: 'none',
+                                        width: '100%', padding: '10px 14px', background: 'none', border: 'none',
                                         display: 'flex', alignItems: 'center', gap: '10px',
                                         fontSize: '13px', fontWeight: 600, color: '#6d28d9',
-                                        cursor: 'pointer', textAlign: 'left',
-                                        transition: 'background 0.15s',
+                                        cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
                                       }}
                                       onMouseEnter={e => e.currentTarget.style.background = '#f5f3ff'}
                                       onMouseLeave={e => e.currentTarget.style.background = 'none'}
@@ -652,16 +575,13 @@ const Dashboard = ({ user }) => {
 
                                     <div style={{ height: '1px', background: '#f3f4f6', margin: '0 10px' }} />
 
-                                    {/* Retrieve */}
                                     <button
                                       onClick={() => { handleRetrieve(a.id); setOpenMenu(null); }}
                                       style={{
-                                        width: '100%', padding: '10px 14px',
-                                        background: 'none', border: 'none',
+                                        width: '100%', padding: '10px 14px', background: 'none', border: 'none',
                                         display: 'flex', alignItems: 'center', gap: '10px',
                                         fontSize: '13px', fontWeight: 600, color: '#065f46',
-                                        cursor: 'pointer', textAlign: 'left',
-                                        transition: 'background 0.15s',
+                                        cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s',
                                       }}
                                       onMouseEnter={e => e.currentTarget.style.background = '#f0fdf4'}
                                       onMouseLeave={e => e.currentTarget.style.background = 'none'}
@@ -684,10 +604,7 @@ const Dashboard = ({ user }) => {
               </table>
             </div>
 
-            {/* ── Bottom Row ─────────────────────────────────── */}
             <div className="dash-bottom">
-
-              {/* My Profile */}
               <div className="dash-panel dash-profile">
                 <div className="dash-panel-header">
                   <span className="dash-panel-title"><ProfileIcon /> My Profile</span>
@@ -695,12 +612,8 @@ const Dashboard = ({ user }) => {
                 </div>
                 <div className="profile-top">
                   {user?.image_url ? (
-                    <img
-                      src={user.image_url}
-                      alt="Profile"
-                      className="profile-avatar-img"
-                      style={{ width: 60, height: 60, borderRadius: "50%", objectFit: "cover" }}
-                    />
+                    <img src={user.image_url} alt="Profile" className="profile-avatar-img"
+                      style={{ width: 60, height: 60, borderRadius: "50%", objectFit: "cover" }} />
                   ) : (
                     <div className="profile-avatar">
                       {user?.name ? user.name.charAt(0).toUpperCase() : "DR"}
@@ -730,7 +643,6 @@ const Dashboard = ({ user }) => {
                 </div>
               </div>
 
-              {/* Monthly Stats */}
               <div className="dash-panel dash-monthly">
                 <div className="dash-panel-header">
                   <span className="dash-panel-title"><ChartIcon /> Monthly Stats</span>
@@ -765,7 +677,6 @@ const Dashboard = ({ user }) => {
             </div>
           </div>
 
-          {/* ── Timeline ───────────────────────────────────────── */}
           <div className="dash-panel dash-timeline">
             <div className="dash-panel-header">
               <span className="dash-panel-title"><ClockIcon /> Today's Timeline</span>
@@ -785,21 +696,18 @@ const Dashboard = ({ user }) => {
           </div>
         </div>
 
-        {/* ── Hold Notes Modal ───────────────────────────────── */}
         {noteModal && (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 9999,
-          }}
+          <div
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+            }}
             onClick={(e) => { if (e.target === e.currentTarget) closeNoteModal(); }}
           >
             <div style={{
               background: '#fff', borderRadius: '16px', padding: '28px 32px',
-              width: '100%', maxWidth: '420px', boxShadow: '0 24px 48px rgba(0,0,0,0.18)',
-              position: 'relative',
+              width: '100%', maxWidth: '420px', boxShadow: '0 24px 48px rgba(0,0,0,0.18)', position: 'relative',
             }}>
-              {/* Close */}
               <button
                 onClick={closeNoteModal}
                 style={{
@@ -811,11 +719,10 @@ const Dashboard = ({ user }) => {
 
               {!noteSent ? (
                 <>
-                  {/* Header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                     <div style={{
-                      width: '36px', height: '36px', borderRadius: '10px',
-                      background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: '36px', height: '36px', borderRadius: '10px', background: '#f5f3ff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -825,9 +732,7 @@ const Dashboard = ({ user }) => {
                       </svg>
                     </div>
                     <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: '15px', color: '#111827' }}>
-                        Hold Note
-                      </p>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: '15px', color: '#111827' }}>Hold Note</p>
                       <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
                         Patient: <strong>{appointments.find(a => a.id === noteModal)?.name}</strong>
                         &nbsp;·&nbsp;{noteModal}
@@ -849,23 +754,20 @@ const Dashboard = ({ user }) => {
                       width: '100%', padding: '10px 12px', borderRadius: '9px',
                       border: '1.5px solid #d0d5dd', fontSize: '13.5px',
                       fontFamily: 'inherit', resize: 'vertical', outline: 'none',
-                      color: '#111827', boxSizing: 'border-box',
-                      transition: 'border-color 0.2s',
+                      color: '#111827', boxSizing: 'border-box', transition: 'border-color 0.2s',
                     }}
                     onFocus={e => e.target.style.borderColor = '#8b5cf6'}
                     onBlur={e  => e.target.style.borderColor = '#d0d5dd'}
                   />
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                    {/* Skip */}
                     <button
                       onClick={closeNoteModal}
                       style={{
                         flex: 1, padding: '9px', borderRadius: '8px',
                         border: '1.5px solid #e5e7eb', background: '#fff',
                         color: '#374151', fontSize: '13.5px', fontWeight: 600,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', gap: '6px',
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                       }}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -874,22 +776,16 @@ const Dashboard = ({ user }) => {
                       Skip
                     </button>
 
-                    {/* Send to Front Desk */}
                     <button
                       onClick={sendNote}
                       disabled={!noteText.trim()}
                       style={{
-                        flex: 2, padding: '9px', borderRadius: '8px',
-                        border: 'none',
-                        background: noteText.trim()
-                          ? 'linear-gradient(135deg, #8b5cf6, #6d28d9)'
-                          : '#e5e7eb',
+                        flex: 2, padding: '9px', borderRadius: '8px', border: 'none',
+                        background: noteText.trim() ? 'linear-gradient(135deg, #8b5cf6, #6d28d9)' : '#e5e7eb',
                         color: noteText.trim() ? '#fff' : '#9ca3af',
                         fontSize: '13.5px', fontWeight: 600,
                         cursor: noteText.trim() ? 'pointer' : 'not-allowed',
-                        display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', gap: '6px',
-                        transition: 'opacity 0.2s',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'opacity 0.2s',
                       }}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -900,21 +796,16 @@ const Dashboard = ({ user }) => {
                   </div>
                 </>
               ) : (
-                /* Success state */
                 <div style={{ textAlign: 'center', padding: '12px 0' }}>
                   <div style={{
-                    width: '60px', height: '60px', borderRadius: '50%',
-                    background: '#f0fdf4', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    margin: '0 auto 14px',
+                    width: '60px', height: '60px', borderRadius: '50%', background: '#f0fdf4',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
                   }}>
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
                   </div>
-                  <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '16px', color: '#111827' }}>
-                    Note Sent!
-                  </p>
+                  <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '16px', color: '#111827' }}>Note Sent!</p>
                   <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
                     Your hold note has been sent to the front desk successfully.
                   </p>

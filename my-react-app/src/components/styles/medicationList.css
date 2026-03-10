@@ -1,4 +1,3 @@
-/* ── Medication Table ───────────────────────────────────────── */
 .med-card {
   background: #fff;
   border: 1.5px solid #f0f0f8;
@@ -52,33 +51,12 @@
   border-top: 1px solid #f0f0f8;
   vertical-align: middle;
 }
-.med-sno {
-  color: #bbb;
-  font-weight: 700;
-  text-align: center;
-  width: 36px;
-}
-.med-brand {
-  font-weight: 600;
-  white-space: nowrap;
-}
-.med-hold-tag {
-  font-size: 0.65rem;
-  color: #f59e0b;
-  margin-left: 4px;
-  font-weight: 700;
-}
-.med-generic {
-  font-size: 0.75rem;
-  color: #888;
-  font-style: italic;
-}
-.med-strength {
-  font-family: monospace;
-  font-size: 0.78rem;
-}
+.med-sno    { color: #bbb; font-weight: 700; text-align: center; width: 36px; }
+.med-brand  { font-weight: 600; white-space: nowrap; }
+.med-hold-tag { font-size: 0.65rem; color: #f59e0b; margin-left: 4px; font-weight: 700; }
+.med-generic  { font-size: 0.75rem; color: #888; font-style: italic; }
+.med-strength { font-family: monospace; font-size: 0.78rem; }
 
-/* ── Inline edit inputs ─────────────────────────────────────── */
 .med-inline-inp {
   width: 80px;
   padding: 3px 6px;
@@ -92,10 +70,10 @@
   transition: border 0.15s, background 0.15s;
   box-sizing: border-box;
 }
-.med-inline-inp:hover  { border-color: #e0e3ef; background: #f8f7ff; }
-.med-inline-inp:focus  { border-color: #1a73e8; background: #fff; }
+.med-inline-inp:hover       { border-color: #e0e3ef; background: #f8f7ff; }
+.med-inline-inp:focus       { border-color: #1a73e8; background: #fff; }
 .med-inline-inp::placeholder { color: #ccc; }
-.med-inline-inp-error  { border-color: #e05252 !important; }
+.med-inline-inp-error       { border-color: #e05252 !important; }
 .med-inline-error {
   font-size: 0.65rem;
   color: #e05252;
@@ -104,7 +82,6 @@
   white-space: nowrap;
 }
 
-/* ── Action menu ────────────────────────────────────────────── */
 .med-menu-btn {
   background: #f0f0f8;
   border: 1px solid #e0e3ef;
@@ -113,13 +90,13 @@
   height: 26px;
   cursor: pointer;
   color: #888;
-  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.12s;
 }
 .med-menu-btn:hover { color: #1a1a2e; border-color: #1a73e8; }
+
 .med-dropdown {
   position: fixed;
   z-index: 99999;
@@ -129,8 +106,7 @@
   min-width: 150px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   overflow: hidden;
-  /* ── Force full opacity regardless of parent row's hold state ── */
-  opacity: 3 !important;
+  opacity: 1 !important;
   filter: none !important;
 }
 .med-drop-item {
@@ -138,14 +114,13 @@
   font-size: 0.8rem;
   cursor: pointer;
   color: #1a1a2e;
+  display: flex;
+  align-items: center;
   transition: background 0.1s;
-  /* Ensure text inside is also fully opaque */
-  opacity: 4;
 }
 .med-drop-item:hover { background: #f8f7ff; }
-.med-drop-warn { color: #e05252; }
+.med-drop-warn       { color: #e05252; }
 
-/* ── Add inline row ─────────────────────────────────────────── */
 .med-add-row td {
   background: #f0f5ff;
   border-top: 2px solid #bfdbfe;
@@ -164,6 +139,7 @@
   box-sizing: border-box;
 }
 .med-search-inp:focus { border-color: #1558b0; }
+
 .med-search-dropdown {
   position: fixed;
   background: #fff;
@@ -175,12 +151,7 @@
   overflow-y: auto;
   min-width: 320px;
 }
-.med-search-loading {
-  padding: 12px 14px;
-  font-size: 0.8rem;
-  color: #888;
-  text-align: center;
-}
+.med-search-loading { padding: 12px 14px; font-size: 0.8rem; color: #888; text-align: center; }
 .med-search-option {
   padding: 10px 14px;
   cursor: pointer;
@@ -192,7 +163,17 @@
 .med-search-brand { font-size: 0.875rem; font-weight: 600; color: #1a1a2e; }
 .med-search-meta  { font-size: 0.75rem; color: #888; margin-top: 2px; }
 
-/* ── Save / Cancel inline buttons ───────────────────────────── */
+.med-back-to-search {
+  font-size: 0.62rem;
+  color: #f59e0b;
+  margin-top: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .med-save-btn {
   padding: 4px 10px;
   background: #1a73e8;
@@ -204,9 +185,12 @@
   cursor: pointer;
   transition: background 0.2s;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
 }
 .med-save-btn:hover    { background: #1558b0; }
 .med-save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .med-cancel-btn {
   padding: 4px 8px;
   background: #f0f0f8;
@@ -217,10 +201,11 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
 }
 .med-cancel-btn:hover { color: #e05252; border-color: #fca5a5; background: #fff5f5; }
 
-/* ── Footer ─────────────────────────────────────────────────── */
 .med-footer {
   display: flex;
   align-items: center;
@@ -229,7 +214,10 @@
 }
 .med-add-btn {
   flex: 1;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 10px;
   color: #1a73e8;
   font-size: 0.8rem;
@@ -237,7 +225,6 @@
 }
 .med-add-btn:hover { background: #eff6ff; }
 
-/* ── Analyse button (idle / done state) ─────────────────────── */
 .med-analyse-btn {
   display: flex;
   align-items: center;
@@ -254,7 +241,6 @@
 }
 .med-analyse-btn:disabled { cursor: not-allowed; }
 
-/* ── Stop / Interrupt button (loading state) ────────────────── */
 .med-stop-btn {
   display: flex;
   align-items: center;
@@ -271,12 +257,8 @@
   transition: all 0.15s;
   white-space: nowrap;
 }
-.med-stop-btn:hover {
-  background: #fee2e2;
-  border-color: #e05252;
-}
+.med-stop-btn:hover { background: #fee2e2; border-color: #e05252; }
 
-/* ── Spinner (shared) ───────────────────────────────────────── */
 .med-analyse-spinner {
   width: 12px;
   height: 12px;
@@ -288,32 +270,71 @@
 }
 @keyframes med-spin { to { transform: rotate(360deg); } }
 
-/* ── Empty state ────────────────────────────────────────────── */
-.med-empty {
+.med-empty { text-align: center; color: #aaa; padding: 2rem; font-size: 0.85rem; }
+
+.med-dup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.med-dup-modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px 32px;
+  max-width: 360px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
   text-align: center;
-  color: #aaa;
-  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.med-dup-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #1a1a2e;
+  margin-bottom: 8px;
+}
+.med-dup-body {
   font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 20px;
+}
+.med-dup-btn {
+  background: linear-gradient(135deg, #1a73e8, #1558b0);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 28px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
-/* ── Dark Mode ──────────────────────────────────────────────── */
-[data-theme="dark"] .med-card              { background: #1a1a2e; border-color: #2a2a40; }
-[data-theme="dark"] .med-header            { background: #16162a; border-color: #2a2a40; }
-[data-theme="dark"] .med-table th          { background: #16162a; color: #888; }
-[data-theme="dark"] .med-table td          { border-color: #2a2a40; color: #e0e0f0; }
-[data-theme="dark"] .med-dropdown          { background: #1a1a2e; border-color: #2a2a40; }
-[data-theme="dark"] .med-drop-item         { color: #e0e0f0; }
-[data-theme="dark"] .med-drop-item:hover   { background: #16162a; }
-[data-theme="dark"] .med-inline-inp        { color: #e0e0f0; }
-[data-theme="dark"] .med-inline-inp:hover  { background: #16162a; border-color: #2a2a40; }
-[data-theme="dark"] .med-inline-inp:focus  { background: #0f0f1a; border-color: #1a73e8; }
-[data-theme="dark"] .med-add-row td        { background: #16162a; border-top-color: #2a2a40; }
-[data-theme="dark"] .med-search-inp        { background: #0f0f1a; color: #e0e0f0; border-color: #1a73e8; }
-[data-theme="dark"] .med-search-dropdown   { background: #1a1a2e; border-color: #2a2a40; }
-[data-theme="dark"] .med-search-option     { border-color: #2a2a40; }
+[data-theme="dark"] .med-card             { background: #1a1a2e; border-color: #2a2a40; }
+[data-theme="dark"] .med-header           { background: #16162a; border-color: #2a2a40; }
+[data-theme="dark"] .med-table th         { background: #16162a; color: #888; }
+[data-theme="dark"] .med-table td         { border-color: #2a2a40; color: #e0e0f0; }
+[data-theme="dark"] .med-dropdown         { background: #1a1a2e; border-color: #2a2a40; }
+[data-theme="dark"] .med-drop-item        { color: #e0e0f0; }
+[data-theme="dark"] .med-drop-item:hover  { background: #16162a; }
+[data-theme="dark"] .med-inline-inp       { color: #e0e0f0; }
+[data-theme="dark"] .med-inline-inp:hover { background: #16162a; border-color: #2a2a40; }
+[data-theme="dark"] .med-inline-inp:focus { background: #0f0f1a; border-color: #1a73e8; }
+[data-theme="dark"] .med-add-row td       { background: #16162a; border-top-color: #2a2a40; }
+[data-theme="dark"] .med-search-inp       { background: #0f0f1a; color: #e0e0f0; border-color: #1a73e8; }
+[data-theme="dark"] .med-search-dropdown  { background: #1a1a2e; border-color: #2a2a40; }
+[data-theme="dark"] .med-search-option    { border-color: #2a2a40; }
 [data-theme="dark"] .med-search-option:hover { background: #16162a; }
-[data-theme="dark"] .med-search-brand      { color: #e0e0f0; }
-[data-theme="dark"] .med-cancel-btn        { background: #16162a; color: #aaa; border-color: #2a2a40; }
-[data-theme="dark"] .med-cancel-btn:hover  { color: #e05252; border-color: #fca5a5; background: #2a1a1a; }
-[data-theme="dark"] .med-stop-btn          { background: #2a1a1a; border-color: #7f1d1d; color: #fca5a5; }
-[data-theme="dark"] .med-stop-btn:hover    { background: #3b1a1a; border-color: #e05252; }
+[data-theme="dark"] .med-search-brand     { color: #e0e0f0; }
+[data-theme="dark"] .med-cancel-btn       { background: #16162a; color: #aaa; border-color: #2a2a40; }
+[data-theme="dark"] .med-cancel-btn:hover { color: #e05252; border-color: #fca5a5; background: #2a1a1a; }
+[data-theme="dark"] .med-stop-btn         { background: #2a1a1a; border-color: #7f1d1d; color: #fca5a5; }
+[data-theme="dark"] .med-stop-btn:hover   { background: #3b1a1a; border-color: #e05252; }
+[data-theme="dark"] .med-dup-modal        { background: #1a1a2e; }
+[data-theme="dark"] .med-dup-title        { color: #e0e0f0; }
+[data-theme="dark"] .med-dup-body         { color: #a0a0b8; }

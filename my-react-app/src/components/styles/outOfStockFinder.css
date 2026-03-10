@@ -1,4 +1,3 @@
-/* ── Out-of-Stock Finder Card ───────────────────────────────── */
 .oos-card {
   background: #fff;
   border: 1.5px solid #f0f0f8;
@@ -7,65 +6,48 @@
   box-shadow: 0 1px 6px rgba(108,99,255,0.05);
 }
 .oos-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   padding: 0.65rem 1.1rem;
   background: #f8f7ff;
   border-bottom: 1px solid #eeebff;
 }
 .oos-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.8rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
   color: #1a73e8;
 }
 .oos-close-btn {
-  background: transparent;
-  border: none;
-  color: #aaa;
-  font-size: 1rem;
-  cursor: pointer;
-  line-height: 1;
+  display: flex; align-items: center;
+  background: transparent; border: none;
+  color: #aaa; cursor: pointer;
 }
 .oos-close-btn:hover { color: #e05252; }
-.oos-body { padding: 1rem 1.1rem; }
+
+.oos-body  { padding: 1rem 1.1rem; }
 .oos-entry { margin-bottom: 1.5rem; }
 .oos-entry:last-child { margin-bottom: 0; }
 
-/* ── Out-of-stock drug row ──────────────────────────────────── */
 .oos-drug-row {
-  background: #fff5f5;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 1rem;
-  border: 1px solid #fca5a5;
-  flex-wrap: wrap;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: #fff5f5; border: 1px solid #fca5a5;
+  border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;
 }
 .oos-drug-name   { color: #e05252; font-weight: 700; font-size: 0.9rem; }
 .oos-drug-detail { color: #888; font-size: 0.8rem; }
 .oos-drug-badge  {
+  display: inline-flex; align-items: center; gap: 5px;
   margin-left: auto;
-  background: #fff0f0;
-  color: #e05252;
-  border: 1px solid #fca5a5;
-  border-radius: 20px;
-  padding: 3px 12px;
-  font-size: 0.72rem;
-  font-weight: 700;
+  background: #fff0f0; color: #e05252;
+  border: 1px solid #fca5a5; border-radius: 20px;
+  padding: 3px 12px; font-size: 0.72rem; font-weight: 700;
 }
 
-/* ── Alternatives header ────────────────────────────────────── */
 .oos-alt-header { margin-bottom: 8px; }
 .oos-alt-label  { color: #888; font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .oos-alt-sub    { color: #aaa; font-size: 0.72rem; margin-left: 8px; }
 .oos-no-alt     { color: #aaa; font-size: 0.82rem; }
 
-/* ── Alternatives table ─────────────────────────────────────── */
 .oos-table {
   border: 1px solid #eeebff;
   border-radius: 10px;
@@ -79,11 +61,8 @@
   border-bottom: 1px solid #eeebff;
 }
 .oos-table-head span {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  font-size: 0.65rem; font-weight: 700;
+  color: #888; text-transform: uppercase; letter-spacing: 0.07em;
 }
 .oos-table-row {
   display: grid;
@@ -94,52 +73,32 @@
 }
 .oos-table-row:last-child { border-bottom: none; }
 
-/* ── Alt row cells ──────────────────────────────────────────── */
-.oos-brand-cell { display: flex; align-items: center; gap: 7px; }
-.oos-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: inline-block;
-}
-.oos-brand-name   { color: #1a1a2e; font-weight: 600; font-size: 0.83rem; }
+.oos-brand-cell  { display: flex; align-items: center; gap: 7px; }
+.oos-dot         { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.oos-brand-name  { color: #1a1a2e; font-weight: 600; font-size: 0.83rem; }
 .oos-lowest-badge {
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #86efac;
-  border-radius: 20px;
-  padding: 1px 8px;
-  font-size: 0.62rem;
-  font-weight: 700;
+  display: inline-flex; align-items: center; gap: 3px;
+  background: #f0fdf4; color: #16a34a;
+  border: 1px solid #86efac; border-radius: 20px;
+  padding: 1px 8px; font-size: 0.62rem; font-weight: 700;
 }
-.oos-price-sub    { color: #aaa; font-size: 0.7rem; margin-top: 2px; padding-left: 16px; }
-.oos-cell-text    { color: #555; font-size: 0.8rem; }
-.oos-price-text   { font-weight: 700; font-size: 0.83rem; }
-.oos-stock-units  { font-weight: 700; font-size: 0.8rem; }
-.oos-stock-label  { font-size: 0.68rem; }
+.oos-price-sub  { color: #aaa; font-size: 0.7rem; margin-top: 2px; padding-left: 16px; }
+.oos-cell-text  { color: #555; font-size: 0.8rem; }
+.oos-price-text { font-weight: 700; font-size: 0.83rem; }
+.oos-stock-units { font-weight: 700; font-size: 0.8rem; }
+.oos-stock-label { font-size: 0.68rem; }
 
-/* ── Switch button ──────────────────────────────────────────── */
 .oos-switch-btn {
-  padding: 6px 14px;
-  border-radius: 8px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-  transition: opacity 0.15s;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 14px; border-radius: 8px;
+  font-size: 0.78rem; font-weight: 700;
+  border: none; cursor: pointer; transition: opacity 0.15s;
 }
-.oos-switch-btn:disabled { cursor: not-allowed; }
+.oos-switch-btn:hover    { opacity: 0.88; }
+.oos-switch-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 
-/* ── Footer note ────────────────────────────────────────────── */
-.oos-footer-note {
-  color: #bbb;
-  font-size: 0.68rem;
-  margin-top: 8px;
-  font-style: italic;
-}
+.oos-footer-note { color: #bbb; font-size: 0.68rem; margin-top: 8px; font-style: italic; }
 
-/* ── Dark Mode ──────────────────────────────────────────────── */
 [data-theme="dark"] .oos-card       { background: #1a1a2e; border-color: #2a2a40; }
 [data-theme="dark"] .oos-header     { background: #16162a; border-color: #2a2a40; }
 [data-theme="dark"] .oos-drug-row   { background: #2a1a1a; border-color: #7f1d1d; }

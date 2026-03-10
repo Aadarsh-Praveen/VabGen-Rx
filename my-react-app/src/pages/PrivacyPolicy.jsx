@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import "./privacyPolicy.css";
 
 const PrivacyPolicy = () => {
   const navigate = useNavigate();
@@ -6,59 +7,29 @@ const PrivacyPolicy = () => {
   const contact  = "vabgenrx@outlook.com";
 
   const Section = ({ number, title, children }) => (
-    <div style={{ marginBottom: 32 }}>
-      <h2 style={{
-        fontSize: "1.05rem", fontWeight: 700,
-        color: "#1a73e8", marginBottom: 10,
-        paddingBottom: 6, borderBottom: "1px solid #e0e3ef"
-      }}>
-        {number}. {title.toUpperCase()}
-      </h2>
-      <div style={{ fontSize: "0.9rem", color: "#444", lineHeight: 1.85 }}>
-        {children}
-      </div>
+    <div className="pp-section">
+      <h2 className="pp-section-title">{number}. {title.toUpperCase()}</h2>
+      <div className="pp-section-body">{children}</div>
     </div>
   );
 
-  const P = ({ children, style }) => (
-    <p style={{ marginBottom: 10, ...style }}>{children}</p>
-  );
+  const P = ({ children }) => <p className="pp-p">{children}</p>;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f8f9fb", padding: "40px 24px" }}>
-      <div style={{
-        maxWidth: 800, margin: "0 auto",
-        background: "#fff", borderRadius: 12,
-        padding: "40px 52px",
-        boxShadow: "0 2px 16px rgba(0,0,0,0.07)",
-      }}>
+    <div className="pp-page">
+      <div className="pp-card">
 
-        {/* ── Header ── */}
-        <div style={{ marginBottom: 36 }}>
-          <button
-            onClick={() => navigate(-1)}
-            style={{
-              background: "none", border: "none",
-              color: "#1a73e8", cursor: "pointer",
-              fontSize: "0.85rem", fontWeight: 600,
-              marginBottom: 20, padding: 0,
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
-            ← Back
-          </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-            <span style={{ fontSize: 28 }}>🩺</span>
-            <span style={{ fontSize: "1.5rem", fontWeight: 800, color: "#1a1a2e" }}>
-              VABGENRX — PRIVACY POLICY
-            </span>
+        <div className="pp-header">
+          <button className="pp-back-btn" onClick={() => navigate(-1)}>← Back</button>
+          <div className="pp-title-row">
+            <span className="pp-emoji">🩺</span>
+            <span className="pp-title">VABGENRX — PRIVACY POLICY</span>
           </div>
-          <p style={{ color: "#888", fontSize: "0.85rem", margin: 0 }}>
+          <p className="pp-meta">
             Last updated: {updated} &nbsp;·&nbsp; HIPAA-compliant clinical decision support platform
           </p>
         </div>
 
-        {/* ── 1. Introduction ── */}
         <Section number="1" title="Introduction">
           <P>
             VabGenRx is a clinical intelligence and medication safety analysis platform designed
@@ -77,13 +48,9 @@ const PrivacyPolicy = () => {
             (HIPAA), the Health Information Technology for Economic and Clinical Health (HITECH)
             Act, and other applicable United States healthcare data protection regulations.
           </P>
-          <P>
-            This Privacy Policy explains how VabGenRx collects, processes, uses, stores, protects,
-            and discloses information when the platform is used by authorized users.
-          </P>
+          <P>This Privacy Policy explains how VabGenRx collects, processes, uses, stores, protects, and discloses information when the platform is used by authorized users.</P>
         </Section>
 
-        {/* ── 2. Scope ── */}
         <Section number="2" title="Scope of This Policy">
           <P>
             This Privacy Policy applies to the VabGenRx platform, associated software applications,
@@ -101,7 +68,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 3. Information Processed ── */}
         <Section number="3" title="Information Processed by the Platform">
           <P>
             VabGenRx may process limited categories of clinical information necessary to perform
@@ -126,7 +92,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 4. Purpose of Data Processing ── */}
         <Section number="4" title="Purpose of Data Processing">
           <P>
             Information processed by the platform is used exclusively for legitimate healthcare,
@@ -143,19 +108,10 @@ const PrivacyPolicy = () => {
             insights intended to assist clinicians in reviewing potential medication risks and
             supporting evidence.
           </P>
-          <P>
-            Operational information may also be processed to maintain system reliability, monitor
-            system performance, enforce security controls, maintain regulatory audit trails, and
-            improve the safety and functionality of the platform.
-          </P>
-          <P>
-            VabGenRx does not sell, rent, or license patient data and does not use healthcare
-            information processed through the platform for advertising, marketing, behavioral
-            profiling, or commercial resale.
-          </P>
+          <P>Operational information may also be processed to maintain system reliability, monitor system performance, enforce security controls, maintain regulatory audit trails, and improve the safety and functionality of the platform.</P>
+          <P>VabGenRx does not sell, rent, or license patient data and does not use healthcare information processed through the platform for advertising, marketing, behavioral profiling, or commercial resale.</P>
         </Section>
 
-        {/* ── 5. Data Security ── */}
         <Section number="5" title="Data Security and Protection Measures">
           <P>
             VabGenRx implements administrative, technical, and organizational safeguards designed
@@ -180,7 +136,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 6. Data Retention ── */}
         <Section number="6" title="Data Retention and Data Lifecycle">
           <P>
             VabGenRx retains information only for the period necessary to support platform
@@ -196,14 +151,8 @@ const PrivacyPolicy = () => {
             expire, information may be securely deleted, anonymized, or overwritten in accordance
             with internal data management procedures and applicable regulatory standards.
           </P>
-          {/* Retention table */}
-          <div style={{ marginTop: 16, border: "1px solid #e0e3ef", borderRadius: 8, overflow: "hidden" }}>
-            <div style={{
-              display: "grid", gridTemplateColumns: "1fr 100px 1fr",
-              background: "#f0f5ff", padding: "8px 16px",
-              fontSize: "0.78rem", fontWeight: 700, color: "#1a73e8",
-              textTransform: "uppercase", letterSpacing: "0.05em",
-            }}>
+          <div className="pp-table">
+            <div className="pp-table-head">
               <span>Data Category</span>
               <span>Retention</span>
               <span>Basis</span>
@@ -214,21 +163,15 @@ const PrivacyPolicy = () => {
               ["Analysis session log",    "1 year",   "Operational review and quality assurance"],
               ["PHI access audit log",    "6 years",  "HIPAA Audit Log Rule — mandatory minimum"],
             ].map(([cat, period, basis], i) => (
-              <div key={cat} style={{
-                display: "grid", gridTemplateColumns: "1fr 100px 1fr",
-                padding: "10px 16px", fontSize: "0.87rem",
-                borderTop: i === 0 ? "none" : "1px solid #f0f0f8",
-                background: i % 2 === 0 ? "#fff" : "#fafbff",
-              }}>
-                <span style={{ fontWeight: 600 }}>{cat}</span>
-                <span style={{ color: "#1a73e8", fontWeight: 700 }}>{period}</span>
-                <span style={{ color: "#666" }}>{basis}</span>
+              <div key={cat} className={`pp-table-row${i % 2 !== 0 ? " alt" : ""}`}>
+                <span className="pp-table-cat">{cat}</span>
+                <span className="pp-table-period">{period}</span>
+                <span className="pp-table-basis">{basis}</span>
               </div>
             ))}
           </div>
         </Section>
 
-        {/* ── 7. Third-Party Services ── */}
         <Section number="7" title="Third-Party Infrastructure and Services">
           <P>
             The VabGenRx platform may utilize trusted third-party infrastructure providers,
@@ -244,26 +187,21 @@ const PrivacyPolicy = () => {
             standards are maintained. VabGenRx does not disclose or share patient information
             with third parties for advertising or commercial purposes.
           </P>
-          {/* Third-party table */}
-          <div style={{ marginTop: 12 }}>
+          <div className="pp-service-list">
             {[
               ["Azure OpenAI (GPT-4o)", "Drug interaction synthesis — medication names and diagnoses sent for clinical reasoning. Covered under Microsoft Azure HIPAA BAA."],
               ["PubMed / NCBI API",     "Generic drug names queried for published research evidence. No patient data sent."],
               ["FDA OpenAPI",           "Generic drug names queried for label data and adverse event reports. No patient data sent."],
               ["Azure SQL Database",    "Encrypted cache and audit storage. Covered under Microsoft Azure HIPAA BAA."],
             ].map(([svc, desc]) => (
-              <div key={svc} style={{
-                display: "flex", gap: 12, padding: "8px 0",
-                borderBottom: "1px solid #f0f0f8", fontSize: "0.88rem",
-              }}>
-                <span style={{ color: "#1a73e8", fontWeight: 600, minWidth: 6 }}>•</span>
+              <div key={svc} className="pp-service-item">
+                <span className="pp-bullet">•</span>
                 <span><strong>{svc}:</strong> {desc}</span>
               </div>
             ))}
           </div>
         </Section>
 
-        {/* ── 8. HIPAA Roles ── */}
         <Section number="8" title="HIPAA Roles and Responsibilities">
           <P>
             Healthcare providers and healthcare organizations that use the VabGenRx platform
@@ -280,7 +218,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 9. Patient Rights ── */}
         <Section number="9" title="Patient Rights and Data Access">
           <P>
             Individuals whose information may be processed by healthcare providers using VabGenRx
@@ -297,7 +234,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 10. Breach Notification ── */}
         <Section number="10" title="Breach Notification">
           <P>
             In the event that VabGenRx becomes aware of a confirmed breach involving unsecured
@@ -309,13 +245,8 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 11. Clinical Disclaimer ── */}
         <Section number="11" title="Clinical Decision Support Disclaimer">
-          <div style={{
-            background: "#fffbeb", border: "1px solid #fde68a",
-            borderRadius: 8, padding: "14px 18px",
-            fontSize: "0.88rem", color: "#92400e", lineHeight: 1.75,
-          }}>
+          <div className="pp-disclaimer">
             VabGenRx is intended to provide analytical support to healthcare professionals and
             is <strong>not designed to replace clinical judgment</strong>, medical diagnosis, or
             treatment decisions made by qualified healthcare providers. The information generated
@@ -327,7 +258,6 @@ const PrivacyPolicy = () => {
           </div>
         </Section>
 
-        {/* ── 12. Acceptable Use ── */}
         <Section number="12" title="Acceptable Use and Platform Integrity">
           <P>
             Users of the VabGenRx platform are expected to access and use the system only for
@@ -336,14 +266,9 @@ const PrivacyPolicy = () => {
             information, or use of the platform in violation of applicable laws or institutional
             policies may result in access restrictions, investigation, or other corrective actions.
           </P>
-          <P>
-            VabGenRx reserves the right to monitor system activity in order to maintain system
-            security, ensure compliance with applicable regulations, and protect the integrity
-            of the platform.
-          </P>
+          <P>VabGenRx reserves the right to monitor system activity in order to maintain system security, ensure compliance with applicable regulations, and protect the integrity of the platform.</P>
         </Section>
 
-        {/* ── 13. Limitation of Liability ── */}
         <Section number="13" title="Limitation of Liability">
           <P>
             While VabGenRx implements safeguards and quality assurance measures designed to
@@ -355,7 +280,6 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 14. Policy Updates ── */}
         <Section number="14" title="Policy Updates">
           <P>
             VabGenRx may revise this Privacy Policy periodically in order to reflect changes in
@@ -366,37 +290,16 @@ const PrivacyPolicy = () => {
           </P>
         </Section>
 
-        {/* ── 15. Contact ── */}
         <Section number="15" title="Contact Information">
-          <P>
-            Questions regarding this Privacy Policy or the data protection practices of VabGenRx
-            may be directed to the platform team.
-          </P>
-          <div style={{
-            marginTop: 12, padding: "16px 20px",
-            background: "#f0f5ff", borderRadius: 8,
-            fontSize: "0.88rem", lineHeight: 2,
-          }}>
+          <P>Questions regarding this Privacy Policy or the data protection practices of VabGenRx may be directed to the platform team.</P>
+          <div className="pp-contact">
             <strong>VabGenRx Team</strong><br />
-            Email:{" "}
-            <a href={`mailto:${contact}`} style={{ color: "#1a73e8" }}>
-              {contact}
-            </a><br />
-            Platform:{" "}
-            <span style={{ color: "#555" }}>
-              VabGenRx Clinical Decision Support Platform — deployment URL available upon request
-            </span>
+            Email: <a href={`mailto:${contact}`} className="pp-link">{contact}</a><br />
+            Platform: <span className="pp-contact-platform">VabGenRx Clinical Decision Support Platform — deployment URL available upon request</span>
           </div>
         </Section>
 
-        {/* ── Footer ── */}
-        <div style={{
-          marginTop: 40, paddingTop: 20,
-          borderTop: "1px solid #e0e3ef",
-          display: "flex", justifyContent: "space-between",
-          alignItems: "center", fontSize: "0.8rem", color: "#aaa",
-          flexWrap: "wrap", gap: 8,
-        }}>
+        <div className="pp-footer">
           <span>© 2026 VabGenRx — Clinical Decision Support Platform</span>
           <span>HIPAA-compliant · AES-256 encrypted · 6-year audit retention</span>
         </div>

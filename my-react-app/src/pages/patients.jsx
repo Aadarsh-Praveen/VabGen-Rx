@@ -9,7 +9,6 @@ import patientIcon    from "../assets/patient.png";
 import inPatientIcon  from "../assets/in_patient.png";
 import outPatientIcon from "../assets/out_patient.png";
 
-// ── SVG Icons ─────────────────────────────────────────────────
 const SearchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -42,7 +41,6 @@ const EyeIcon = () => (
   </svg>
 );
 
-// ── Sub-components ────────────────────────────────────────────
 const Badge = ({ value, type }) => (
   <span className={`pt-badge pt-badge-${type}`}>{value}</span>
 );
@@ -51,8 +49,11 @@ const FilterDropdown = ({ departments, deptFilter, setDeptFilter, onClose }) => 
   <div className="pt-filter-dropdown">
     <p className="pt-filter-heading">Filter by Department</p>
     {departments.map(d => (
-      <button key={d} className={`pt-filter-option${deptFilter === d ? " active" : ""}`}
-        onClick={() => { setDeptFilter(d); onClose(); }}>
+      <button
+        key={d}
+        className={`pt-filter-option${deptFilter === d ? " active" : ""}`}
+        onClick={() => { setDeptFilter(d); onClose(); }}
+      >
         {deptFilter === d && <span className="pt-filter-check"><CheckIcon /></span>}
         {d}
       </button>
@@ -60,8 +61,8 @@ const FilterDropdown = ({ departments, deptFilter, setDeptFilter, onClose }) => 
   </div>
 );
 
-// ── Main Component ────────────────────────────────────────────
-const Patients = ({ user }) => {
+// ✅ Accept onLogout prop
+const Patients = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [patientType, setPatientType] = useState("inpatient");
   const [patients,    setPatients]    = useState([]);
@@ -71,7 +72,6 @@ const Patients = ({ user }) => {
   const [deptFilter,  setDeptFilter]  = useState("All");
   const [showFilter,  setShowFilter]  = useState(false);
 
-  // Detect dark mode for icon filter
   const isDark = document.documentElement.getAttribute("data-theme") === "dark";
 
   useEffect(() => {
@@ -105,20 +105,18 @@ const Patients = ({ user }) => {
 
   const getSexBadge = sex => sex === "M" ? "blue" : "pink";
 
-  // Icon style — invert to white in dark mode
   const iconStyle = {
-    width: 20, height: 20,
-    objectFit: 'contain',
+    width: 20, height: 20, objectFit: 'contain',
     filter: isDark ? 'brightness(0) invert(1)' : 'none',
     opacity: isDark ? 0.9 : 1,
   };
 
   return (
     <div className="pt-layout">
-      <Nav user={user} />
+      {/* ✅ Pass onLogout to Nav */}
+      <Nav user={user} onLogout={onLogout} />
       <main className="pt-main">
 
-        {/* ── Header ── */}
         <div className="pt-header">
           <div className="pt-header-left">
             <div className="pt-header-icon">
@@ -130,7 +128,6 @@ const Patients = ({ user }) => {
             </div>
           </div>
 
-          {/* ── IP / OP Toggle with PNG icons ── */}
           <div className="pt-type-toggle">
             <button
               className={`pt-type-btn${patientType === "inpatient" ? " active" : ""}`}
@@ -141,9 +138,7 @@ const Patients = ({ user }) => {
                 alt="In-Patients"
                 style={{
                   width: 16, height: 16, objectFit: 'contain',
-                  filter: patientType === "inpatient"
-                    ? 'none'
-                    : isDark ? 'brightness(0) invert(0.5)' : 'brightness(0) invert(0.5)',
+                  filter: patientType === "inpatient" ? 'none' : 'brightness(0) invert(0.5)',
                 }}
               />
               In-Patients
@@ -157,9 +152,7 @@ const Patients = ({ user }) => {
                 alt="Out-Patients"
                 style={{
                   width: 16, height: 16, objectFit: 'contain',
-                  filter: patientType === "outpatient"
-                    ? 'none'
-                    : isDark ? 'brightness(0) invert(0.5)' : 'brightness(0) invert(0.5)',
+                  filter: patientType === "outpatient" ? 'none' : 'brightness(0) invert(0.5)',
                 }}
               />
               Out-Patients
@@ -167,7 +160,6 @@ const Patients = ({ user }) => {
           </div>
         </div>
 
-        {/* ── Filters ── */}
         <div className="pt-filters">
           <div className="pt-search-wrap">
             <span className="pt-search-icon"><SearchIcon /></span>
@@ -199,7 +191,6 @@ const Patients = ({ user }) => {
           </div>
         </div>
 
-        {/* ── Active Filter Chip ── */}
         {deptFilter !== "All" && (
           <div className="pt-active-filter">
             <span>Dept: <strong>{deptFilter}</strong></span>
@@ -207,15 +198,9 @@ const Patients = ({ user }) => {
           </div>
         )}
 
-        {/* ── States ── */}
         {loading && <div className="pt-state"><div className="pt-spinner" /><p>Loading patients...</p></div>}
-        {error   && (
-          <div className="pt-state pt-error">
-            <WarningIcon /> {error}
-          </div>
-        )}
+        {error   && <div className="pt-state pt-error"><WarningIcon /> {error}</div>}
 
-        {/* ── Table ── */}
         {!loading && !error && (
           <div className="pt-table-wrap">
             <table className="pt-table">
@@ -262,8 +247,8 @@ const Patients = ({ user }) => {
             </table>
           </div>
         )}
-        <PageFooter />
 
+        <PageFooter />
       </main>
     </div>
   );

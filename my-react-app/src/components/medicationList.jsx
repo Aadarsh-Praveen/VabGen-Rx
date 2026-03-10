@@ -1,97 +1,65 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { Pill, Search, Pencil, Trash2, PauseCircle, PlayCircle, Save, X, ChevronDown, AlertTriangle, RotateCcw, StopCircle, CheckCircle2, Plus } from "lucide-react";
 import "../components/styles/medicationList.css";
 
+const FREQ_OPTIONS = ["bid", "tid", "qid", "qd", "qod", "q2h", "q3h", "q4h", "q4h wa", "prn"];
+
 const MedicationList = ({
-  medications,
-  medLoading,
-  showAddRow,
-  setShowAddRow,
-  searchQ,
-  searchResults,
-  searching,
-  newMed,
-  newForm,
-  setNewForm,
-  newErrors,
-  setNewErrors,
-  addSaving,
-  editingId,
-  editValues,
-  setEditValues,
-  openMenu,
-  menuPos,
-  dropdownPos,
-  agentLoading,
-  agentResult,
-  wasInterrupted,
-  handleSearch,
-  handleSelectDrug,
-  handleAutoSave,
-  handleCancelAdd,
-  handleEdit,
-  handleSaveEdit,
-  handleHold,
-  handleDelete,
-  handleMenuOpen,
-  updateDropdownPos,
-  triggerAnalysis,
-  onInterrupt,
+  medications, medLoading, showAddRow, setShowAddRow,
+  searchQ, searchResults, searching, newMed, newForm, setNewForm,
+  newErrors, setNewErrors, addSaving, editingId, editValues, setEditValues,
+  openMenu, menuPos, dropdownPos, agentLoading, agentResult, wasInterrupted,
+  handleSearch, handleSelectDrug, handleAutoSave, handleCancelAdd,
+  handleEdit, handleSaveEdit, handleHold, handleDelete,
+  handleMenuOpen, updateDropdownPos, triggerAnalysis, onInterrupt,
   searchInputRef,
 }) => {
-  // ── Manual entry state ─────────────────────────────────────────
-  // Activated when doctor clicks "Add manually" after no inventory match
-  const [manualMode,    setManualMode]    = useState(false);
-  const [manualBrand,   setManualBrand]   = useState("");
-  const [manualGeneric, setManualGeneric] = useState("");
-  const [manualStrength,setManualStrength]= useState("");
+  const [manualMode,     setManualMode]    = useState(false);
+  const [manualBrand,    setManualBrand]   = useState("");
+  const [manualGeneric,  setManualGeneric] = useState("");
+  const [manualStrength, setManualStrength]= useState("");
+  const [dupWarning,     setDupWarning]    = useState(false);
 
-  // Reset manual fields when add-row is cancelled
   const handleCancelAddFull = () => {
-    setManualMode(false);
-    setManualBrand("");
-    setManualGeneric("");
-    setManualStrength("");
+    setManualMode(false); setManualBrand(""); setManualGeneric(""); setManualStrength("");
     handleCancelAdd();
   };
 
-  // Save handler — builds a synthetic drug object for manual entries
-  // so handleAutoSave can use the same path without touching inventory
+  const isDuplicate = (brand, generic, strength) => {
+    const norm = s => (s || "").trim().toLowerCase();
+    return medications.some(m =>
+      norm(m.Brand_Name) === norm(brand) &&
+      norm(m.Generic_Name) === norm(generic) &&
+      norm(m.Strength) === norm(strength)
+    );
+  };
+
   const handleSaveFull = () => {
     if (manualMode) {
-      // Inject manual drug into newMed before saving
-      // handleSelectDrug sets the drug object that handleAutoSave reads
-      handleSelectDrug({
-        Brand_Name:   manualBrand.trim()    || manualGeneric.trim(),
-        Generic_Name: manualGeneric.trim()  || manualBrand.trim(),
-        Strength:     manualStrength.trim() || "",
-        Stocks:       "N/A",
-        manual:       true, // flag so parent knows it's not from inventory
-      });
-      // Small delay so state updates before handleAutoSave reads newMed
+      const brand    = manualBrand.trim()    || manualGeneric.trim();
+      const generic  = manualGeneric.trim()  || manualBrand.trim();
+      const strength = manualStrength.trim();
+      if (isDuplicate(brand, generic, strength)) { setDupWarning(true); return; }
+      handleSelectDrug({ Brand_Name: brand, Generic_Name: generic, Strength: strength, Stocks: "N/A", manual: true });
       setTimeout(() => handleAutoSave(), 0);
     } else {
+      if (newMed && isDuplicate(newMed.Brand_Name, newMed.Generic_Name, newMed.Strength)) { setDupWarning(true); return; }
       handleAutoSave();
     }
   };
 
-  // Show "Add manually" button when search has text but no results
-  const showManualTrigger =
-    !searching &&
-    searchQ.trim().length >= 2 &&
-    searchResults.length === 0 &&
-    !newMed &&
-    !manualMode;
+  const showManualTrigger = !searching && searchQ.trim().length >= 2 && searchResults.length === 0 && !newMed && !manualMode;
+  const editBorder = { borderColor: "#1a73e8", background: "#fff", borderWidth: 1, borderStyle: "solid" };
 
   return (
     <div className="med-card">
-      {/* ── Header ── */}
       <div className="med-header">
-        <span className="med-title">💊 Medication List</span>
+        <Pill size={14} color="#1a73e8" strokeWidth={2.5} />
+        <span className="med-title">Medication List</span>
         <span className="med-count">{medications.length} medication{medications.length !== 1 ? "s" : ""}</span>
       </div>
 
-      {/* ── Table ── */}
       <div className="med-table-wrap">
         <table className="med-table">
           <thead>
@@ -112,35 +80,55 @@ const MedicationList = ({
                     <tr key={m.ID} style={{ opacity: m.held ? 0.5 : 1, background: isEditing ? "#f0f5ff" : "" }}>
                       <td className="med-sno">{i + 1}</td>
                       <td className="med-brand">
-                        {m.Brand_Name}
-                        {m.held && <span className="med-hold-tag">HOLD</span>}
+                        {isEditing
+                          ? <input className="med-inline-inp" style={editBorder} value={editValues.brand_name ?? m.Brand_Name} placeholder="Brand Name" autoFocus onChange={e => setEditValues(v => ({ ...v, brand_name: e.target.value }))} />
+                          : <>{m.Brand_Name}{m.held && <span className="med-hold-tag">HOLD</span>}</>}
                       </td>
-                      <td className="med-generic">{m.Generic_Name}</td>
-                      <td className="med-strength">{m.Strength}</td>
+                      <td className="med-generic">
+                        {isEditing
+                          ? <input className="med-inline-inp" style={editBorder} value={editValues.generic_name ?? m.Generic_Name} placeholder="Generic Name" onChange={e => setEditValues(v => ({ ...v, generic_name: e.target.value }))} />
+                          : m.Generic_Name}
+                      </td>
+                      <td className="med-strength">
+                        {isEditing
+                          ? <input className="med-inline-inp" style={editBorder} value={editValues.strength ?? m.Strength} placeholder="Strength" onChange={e => setEditValues(v => ({ ...v, strength: e.target.value }))} />
+                          : m.Strength}
+                      </td>
                       <td>
                         {isEditing
-                          ? <input className="med-inline-inp" style={{ borderColor: "#1a73e8", background: "#fff", borderWidth: 1, borderStyle: "solid" }} value={editValues.route} autoFocus placeholder="Route" onChange={e => setEditValues(v => ({ ...v, route: e.target.value }))} />
+                          ? <input className="med-inline-inp" style={editBorder} value={editValues.route} placeholder="Route" onChange={e => setEditValues(v => ({ ...v, route: e.target.value }))} />
                           : <span>{m.Route || "—"}</span>}
                       </td>
                       <td>
                         {isEditing
-                          ? <input className="med-inline-inp" style={{ borderColor: "#1a73e8", background: "#fff", borderWidth: 1, borderStyle: "solid" }} value={editValues.frequency} placeholder="Freq" onChange={e => setEditValues(v => ({ ...v, frequency: e.target.value }))} />
+                          ? <select className="med-inline-inp" style={editBorder} value={editValues.frequency} onChange={e => setEditValues(v => ({ ...v, frequency: e.target.value }))}>
+                              <option value="">Select</option>
+                              {FREQ_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
                           : <span>{m.Frequency || "—"}</span>}
                       </td>
                       <td>
                         {isEditing
-                          ? <input className="med-inline-inp" style={{ borderColor: "#1a73e8", background: "#fff", borderWidth: 1, borderStyle: "solid" }} value={editValues.days} placeholder="Days" onChange={e => setEditValues(v => ({ ...v, days: e.target.value }))} />
+                          ? <input className="med-inline-inp" style={editBorder} value={editValues.days} placeholder="Days" onChange={e => setEditValues(v => ({ ...v, days: e.target.value }))} />
                           : <span>{m.Days || "—"}</span>}
                       </td>
                       <td style={{ position: "relative" }}>
-                        <button className="med-menu-btn" onClick={e => handleMenuOpen(e, m.ID)}>⋮</button>
+                        <button className="med-menu-btn" onClick={e => handleMenuOpen(e, m.ID)}>
+                          <ChevronDown size={13} />
+                        </button>
                         {openMenu === m.ID && createPortal(
                           <div className="med-dropdown" style={{ top: menuPos.top, left: menuPos.left }}>
                             {isEditing
-                              ? <div className="med-drop-item" style={{ color: "#1a73e8", fontWeight: 700 }} onClick={() => handleSaveEdit(m.ID)}>💾 Save</div>
-                              : <div className="med-drop-item" onClick={() => handleEdit(m)}>✏️ Edit</div>}
-                            <div className="med-drop-item" onClick={() => handleHold(m.ID)}>{m.held ? "▶️ Resume" : "⏸ Hold"}</div>
-                            <div className="med-drop-item med-drop-warn" onClick={() => handleDelete(m.ID)}>🗑 Delete</div>
+                              ? <div className="med-drop-item" style={{ color: "#1a73e8", fontWeight: 700 }} onClick={() => handleSaveEdit(m.ID)}><Save size={13} style={{ marginRight: 6 }} />Save</div>
+                              : <div className="med-drop-item" onClick={() => handleEdit(m)}><Pencil size={13} style={{ marginRight: 6 }} />Edit</div>}
+                            <div className="med-drop-item" onClick={() => handleHold(m.ID)}>
+                              {m.held
+                                ? <><PlayCircle size={13} style={{ marginRight: 6 }} />Resume</>
+                                : <><PauseCircle size={13} style={{ marginRight: 6 }} />Hold</>}
+                            </div>
+                            <div className="med-drop-item med-drop-warn" onClick={() => handleDelete(m.ID)}>
+                              <Trash2 size={13} style={{ marginRight: 6 }} />Delete
+                            </div>
                           </div>,
                           document.body
                         )}
@@ -149,53 +137,34 @@ const MedicationList = ({
                   );
                 })}
 
-                {/* ── Add Row ── */}
                 {showAddRow && (
                   <tr className="med-add-row">
-                    <td className="med-sno" style={{ color: "#1a73e8" }}>+</td>
-
-                    {/* ── Drug search / manual fields ── */}
+                    <td className="med-sno" style={{ color: "#1a73e8" }}><Plus size={14} /></td>
                     <td colSpan={manualMode ? 1 : 3} style={{ position: "relative", overflow: "visible" }}>
                       {!manualMode ? (
                         <>
-                          <input
-                            ref={searchInputRef}
-                            className="med-search-inp"
-                            placeholder="🔍 Search brand or generic name..."
-                            value={searchQ}
-                            onChange={e => { handleSearch(e.target.value); updateDropdownPos(); }}
-                            onFocus={updateDropdownPos}
-                          />
+                          <div style={{ position: "relative" }}>
+                            <Search size={13} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "#aaa", pointerEvents: "none" }} />
+                            <input ref={searchInputRef} className="med-search-inp" style={{ paddingLeft: 26 }} placeholder="Search brand or generic name..." value={searchQ}
+                              onChange={e => { handleSearch(e.target.value); updateDropdownPos(); }} onFocus={updateDropdownPos} />
+                          </div>
                           {newErrors.drug && <div className="med-inline-error">{newErrors.drug}</div>}
-
-                          {/* Inventory search dropdown */}
                           {(searching || searchResults.length > 0 || showManualTrigger) && (
                             <div className="med-search-dropdown" style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width || 320 }}>
                               {searching && <div className="med-search-loading">Searching...</div>}
-
-                              {/* Results */}
                               {!searching && searchResults.map((d, i) => (
                                 <div key={i} className="med-search-option" onClick={() => handleSelectDrug(d)}>
                                   <div className="med-search-brand">{d.Brand_Name}</div>
-                                  <div className="med-search-meta">{d.Generic_Name} · {d.Strength} · Stock: {d.Stocks}</div>
+                                  {/* ✅ Route now shown in dropdown meta */}
+                                  <div className="med-search-meta">{d.Generic_Name} · {d.Strength} · {d.Route} · Stock: {d.Stocks}</div>
                                 </div>
                               ))}
-
-                              {/* No results + manual trigger */}
                               {showManualTrigger && (
                                 <div style={{ borderTop: searchResults.length > 0 ? "1px solid #f0f0f8" : "none" }}>
-                                  <div className="med-search-loading" style={{ color: "#aaa" }}>
-                                    No results for "{searchQ}"
-                                  </div>
-                                  <div
-                                    className="med-search-option"
-                                    style={{ color: "#1a73e8", fontWeight: 600, fontSize: "0.8rem" }}
-                                    onClick={() => {
-                                      setManualMode(true);
-                                      setManualBrand(searchQ.trim());
-                                    }}
-                                  >
-                                    ✏️ Add "{searchQ}" manually
+                                  <div className="med-search-loading" style={{ color: "#aaa" }}>No results for "{searchQ}"</div>
+                                  <div className="med-search-option" style={{ color: "#1a73e8", fontWeight: 600, fontSize: "0.8rem", display: "flex", alignItems: "center", gap: 6 }}
+                                    onClick={() => { setManualMode(true); setManualBrand(searchQ.trim()); }}>
+                                    <Pencil size={12} />Add "{searchQ}" manually
                                   </div>
                                 </div>
                               )}
@@ -203,94 +172,37 @@ const MedicationList = ({
                           )}
                         </>
                       ) : (
-                        /* ── Brand Name manual input ── */
-                        <input
-                          className="med-inline-inp"
-                          style={{ width: "100%", background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.drug ? "#e05252" : "#1a73e8" }}
-                          placeholder="Brand Name *"
-                          value={manualBrand}
-                          autoFocus
-                          onChange={e => { setManualBrand(e.target.value); setNewErrors(er => ({ ...er, drug: "" })); }}
-                        />
+                        <input className="med-inline-inp" style={{ width: "100%", background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.drug ? "#e05252" : "#1a73e8" }}
+                          placeholder="Brand Name *" value={manualBrand} autoFocus
+                          onChange={e => { setManualBrand(e.target.value); setNewErrors(er => ({ ...er, drug: "" })); }} />
                       )}
                     </td>
-
-                    {/* ── Generic Name (manual only) ── */}
-                    {manualMode && (
-                      <td>
-                        <input
-                          className="med-inline-inp"
-                          style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }}
-                          placeholder="Generic Name"
-                          value={manualGeneric}
-                          onChange={e => setManualGeneric(e.target.value)}
-                        />
-                      </td>
-                    )}
-
-                    {/* ── Strength (manual only) ── */}
-                    {manualMode && (
-                      <td>
-                        <input
-                          className="med-inline-inp"
-                          style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }}
-                          placeholder="Strength"
-                          value={manualStrength}
-                          onChange={e => setManualStrength(e.target.value)}
-                        />
-                      </td>
-                    )}
-
-                    {/* ── Route ── */}
+                    {manualMode && <td><input className="med-inline-inp" style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }} placeholder="Generic Name" value={manualGeneric} onChange={e => setManualGeneric(e.target.value)} /></td>}
+                    {manualMode && <td><input className="med-inline-inp" style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: "#1a73e8" }} placeholder="Strength" value={manualStrength} onChange={e => setManualStrength(e.target.value)} /></td>}
                     <td>
-                      <input
-                        className={`med-inline-inp${newErrors.route ? " med-inline-inp-error" : ""}`}
-                        style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.route ? "#e05252" : "#e0e3ef" }}
-                        placeholder="Route *"
-                        value={newForm.route}
-                        onChange={e => { setNewForm(f => ({ ...f, route: e.target.value })); setNewErrors(er => ({ ...er, route: "" })); }}
-                      />
+                      {/* ✅ Route input — pre-filled from DB via newForm.route set in handleSelectDrug */}
+                      <input className={`med-inline-inp${newErrors.route ? " med-inline-inp-error" : ""}`} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.route ? "#e05252" : "#e0e3ef" }} placeholder="Route *" value={newForm.route} onChange={e => { setNewForm(f => ({ ...f, route: e.target.value })); setNewErrors(er => ({ ...er, route: "" })); }} />
                       {newErrors.route && <div className="med-inline-error">{newErrors.route}</div>}
                     </td>
-
-                    {/* ── Frequency ── */}
                     <td>
-                      <input
-                        className={`med-inline-inp${newErrors.frequency ? " med-inline-inp-error" : ""}`}
-                        style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.frequency ? "#e05252" : "#e0e3ef" }}
-                        placeholder="Freq *"
-                        value={newForm.frequency}
-                        onChange={e => { setNewForm(f => ({ ...f, frequency: e.target.value })); setNewErrors(er => ({ ...er, frequency: "" })); }}
-                      />
+                      <select className={`med-inline-inp${newErrors.frequency ? " med-inline-inp-error" : ""}`} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.frequency ? "#e05252" : "#e0e3ef" }} value={newForm.frequency} onChange={e => { setNewForm(f => ({ ...f, frequency: e.target.value })); setNewErrors(er => ({ ...er, frequency: "" })); }}>
+                        <option value="">Freq *</option>
+                        {FREQ_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
                       {newErrors.frequency && <div className="med-inline-error">{newErrors.frequency}</div>}
                     </td>
-
-                    {/* ── Days ── */}
                     <td>
-                      <input
-                        className={`med-inline-inp${newErrors.days ? " med-inline-inp-error" : ""}`}
-                        style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.days ? "#e05252" : "#e0e3ef" }}
-                        placeholder="Days *"
-                        value={newForm.days}
-                        onChange={e => { setNewForm(f => ({ ...f, days: e.target.value })); setNewErrors(er => ({ ...er, days: "" })); }}
-                      />
+                      <input className={`med-inline-inp${newErrors.days ? " med-inline-inp-error" : ""}`} style={{ background: "#fff", borderWidth: 1, borderStyle: "solid", borderColor: newErrors.days ? "#e05252" : "#e0e3ef" }} placeholder="Days *" value={newForm.days} onChange={e => { setNewForm(f => ({ ...f, days: e.target.value })); setNewErrors(er => ({ ...er, days: "" })); }} />
                       {newErrors.days && <div className="med-inline-error">{newErrors.days}</div>}
                     </td>
-
-                    {/* ── Save / Cancel ── */}
                     <td>
                       <div style={{ display: "flex", gap: 4 }}>
-                        <button className="med-save-btn" onClick={handleSaveFull} disabled={addSaving}>
-                          {addSaving ? "..." : "💾"}
-                        </button>
-                        <button className="med-cancel-btn" onClick={handleCancelAddFull}>✕</button>
+                        <button className="med-save-btn" onClick={handleSaveFull} disabled={addSaving}>{addSaving ? "..." : <Save size={13} />}</button>
+                        <button className="med-cancel-btn" onClick={handleCancelAddFull}><X size={13} /></button>
                       </div>
                       {manualMode && (
-                        <div
-                          style={{ fontSize: "0.62rem", color: "#f59e0b", marginTop: 3, whiteSpace: "nowrap", cursor: "pointer" }}
-                          onClick={() => { setManualMode(false); setManualBrand(""); setManualGeneric(""); setManualStrength(""); }}
-                        >
-                          ← Back to search
+                        <div className="med-back-to-search" onClick={() => { setManualMode(false); setManualBrand(""); setManualGeneric(""); setManualStrength(""); }}>
+                          <RotateCcw size={10} />Back to search
                         </div>
                       )}
                     </td>
@@ -298,7 +210,7 @@ const MedicationList = ({
                 )}
 
                 {medications.length === 0 && !showAddRow && (
-                  <tr><td colSpan={8} className="med-empty">No medications added yet. Click "+ Add Medication" to begin.</td></tr>
+                  <tr><td colSpan={8} className="med-empty">No medications added yet. Click "Add Medication" to begin.</td></tr>
                 )}
               </>
             )}
@@ -306,34 +218,35 @@ const MedicationList = ({
         </table>
       </div>
 
-      {/* ── Footer ── */}
       <div className="med-footer">
         {!showAddRow
-          ? <div className="med-add-btn" onClick={() => setShowAddRow(true)}>+ Add Medication</div>
+          ? <div className="med-add-btn" onClick={() => setShowAddRow(true)}><Plus size={14} />Add Medication</div>
           : <div />}
-
         {medications.length > 0 && !showAddRow && (
           <button
             className={agentLoading ? "med-stop-btn" : "med-analyse-btn"}
             onClick={agentLoading ? onInterrupt : triggerAnalysis}
-            style={agentLoading ? {} : {
-              background: "linear-gradient(135deg, #1a73e8, #1558b0)",
-              boxShadow: "0 2px 8px rgba(26,115,232,0.3)",
-            }}
+            style={agentLoading ? {} : { background: "linear-gradient(135deg, #1a73e8, #1558b0)", boxShadow: "0 2px 8px rgba(26,115,232,0.3)" }}
           >
-            {agentLoading ? (
-              <>
-                <div className="med-analyse-spinner" style={{ borderTopColor: "#e05252", borderColor: "rgba(224,82,82,0.3)" }} />
-                Stop Analysis
-              </>
-            ) : agentResult || wasInterrupted ? (
-              <>🔄 Re-analyse</>
-            ) : (
-              <>✅ Done — Run Analysis</>
-            )}
+            {agentLoading
+              ? <><div className="med-analyse-spinner" style={{ borderTopColor: "#e05252", borderColor: "rgba(224,82,82,0.3)" }} /><StopCircle size={13} />Stop Analysis</>
+              : agentResult || wasInterrupted
+                ? <><RotateCcw size={13} />Re-analyse</>
+                : <><CheckCircle2 size={13} />Done — Run Analysis</>}
           </button>
         )}
       </div>
+
+      {dupWarning && (
+        <div className="med-dup-overlay">
+          <div className="med-dup-modal">
+            <AlertTriangle size={32} color="#f59e0b" style={{ marginBottom: 8 }} />
+            <div className="med-dup-title">Medication Already Exists</div>
+            <div className="med-dup-body">This medication (Brand, Generic &amp; Strength) is already in the list. You cannot add a duplicate.</div>
+            <button className="med-dup-btn" onClick={() => setDupWarning(false)}>OK</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

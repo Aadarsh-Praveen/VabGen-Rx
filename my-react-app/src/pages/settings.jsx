@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { updateUser } from "../store/authSlice";
 import Nav from "../components/nav";
 import { apiFetch } from "../services/api";
 import "./settings.css";
 import PageFooter from "../components/pageFooter";
 
-// ── SVG Icons ─────────────────────────────────────────────────
 const ProfileIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -86,7 +87,6 @@ const ShieldIcon = () => (
   </svg>
 );
 
-// ── Tab config ────────────────────────────────────────────────
 const TABS = [
   { id: "profile",    label: "My Profile",     Icon: ProfileIcon  },
   { id: "address",    label: "Address",         Icon: MapPinIcon   },
@@ -94,7 +94,6 @@ const TABS = [
   { id: "appearance", label: "Appearance",      Icon: PaletteIcon  },
 ];
 
-// ── Password expiry colour helper ─────────────────────────────
 const getPwdScheme = (daysLeft, expired) => {
   if (expired || daysLeft <= 0) return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Expired'  };
   if (daysLeft <= 5)            return { bg: '#fef2f2', border: '#ef4444', text: '#dc2626', bar: '#ef4444', label: 'Critical' };
@@ -103,8 +102,11 @@ const getPwdScheme = (daysLeft, expired) => {
   return                               { bg: '#f0fdf4', border: '#22c55e', text: '#166534', bar: '#22c55e', label: 'Good'     };
 };
 
-// ── Component ─────────────────────────────────────────────────
-const Settings = ({ user, onUserUpdate }) => {
+// ✅ Accept onLogout prop
+const Settings = ({ onLogout }) => {
+  const dispatch  = useDispatch();
+  const user      = useSelector(state => state.auth.user);
+
   const [profile,     setProfile]     = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [activeTab,   setActiveTab]   = useState("profile");
@@ -116,7 +118,7 @@ const Settings = ({ user, onUserUpdate }) => {
   const [pwdMsg,      setPwdMsg]      = useState(null);
   const [pwdLoading,  setPwdLoading]  = useState(false);
   const [showPwd,     setShowPwd]     = useState({ current: false, newPwd: false, confirm: false });
-  const [pwdStatus,   setPwdStatus]   = useState(null); // { daysLeft, expired, lastChanged, daysSinceChange }
+  const [pwdStatus,   setPwdStatus]   = useState(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -139,7 +141,6 @@ const Settings = ({ user, onUserUpdate }) => {
     fetchProfile();
   }, [user]);
 
-  // ── Fetch password expiry status ───────────────────────────
   useEffect(() => {
     const fetchPwdStatus = async () => {
       if (!user?.email) return;
@@ -147,7 +148,7 @@ const Settings = ({ user, onUserUpdate }) => {
         const res  = await apiFetch(`/api/password-expiry-status?email=${encodeURIComponent(user.email)}`);
         const data = await res.json();
         if (res.ok) setPwdStatus(data);
-      } catch (err) { console.error('pwd status err:', err); }
+      } catch (err) { console.error("pwd status err:", err); }
     };
     fetchPwdStatus();
   }, [user]);
@@ -168,10 +169,13 @@ const Settings = ({ user, onUserUpdate }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        setAddrMsg({ type: "success", text: "Address updated successfully!" });
+        const updated = { ...user, address: JSON.stringify(address) };
         setProfile(prev => ({ ...prev, address: JSON.stringify(address) }));
-        if (onUserUpdate) onUserUpdate({ ...user, address: JSON.stringify(address) });
-      } else { setAddrMsg({ type: "error", text: data.message || "Failed to update address." }); }
+        dispatch(updateUser(updated));
+        setAddrMsg({ type: "success", text: "Address updated successfully!" });
+      } else {
+        setAddrMsg({ type: "error", text: data.message || "Failed to update address." });
+      }
     } catch { setAddrMsg({ type: "error", text: "Cannot connect to server." }); }
     finally { setAddrLoading(false); }
   };
@@ -197,25 +201,26 @@ const Settings = ({ user, onUserUpdate }) => {
       if (res.ok) {
         setPwdMsg({ type: "success", text: "Password changed successfully! Your 90-day clock has been reset." });
         setPwdForm({ current: "", newPwd: "", confirm: "" });
-        // Refresh the status
-        const r2   = await apiFetch(`/api/password-expiry-status?email=${encodeURIComponent(user.email)}`);
-        const d2   = await r2.json();
+        const r2 = await apiFetch(`/api/password-expiry-status?email=${encodeURIComponent(user.email)}`);
+        const d2 = await r2.json();
         if (r2.ok) setPwdStatus(d2);
-      } else { setPwdMsg({ type: "error", text: data.message || "Failed to change password." }); }
+      } else {
+        setPwdMsg({ type: "error", text: data.message || "Failed to change password." });
+      }
     } catch { setPwdMsg({ type: "error", text: "Cannot connect to server." }); }
     finally { setPwdLoading(false); }
   };
 
   const displayUser = profile || user;
-  const scheme = pwdStatus ? getPwdScheme(pwdStatus.daysLeft, pwdStatus.expired) : null;
-  const progress = pwdStatus ? Math.max(0, Math.min(100, (pwdStatus.daysLeft / 90) * 100)) : 100;
+  const scheme      = pwdStatus ? getPwdScheme(pwdStatus.daysLeft, pwdStatus.expired) : null;
+  const progress    = pwdStatus ? Math.max(0, Math.min(100, (pwdStatus.daysLeft / 90) * 100)) : 100;
 
   return (
     <div className="dash-layout">
-      <Nav user={user} />
+      {/* ✅ Pass onLogout to Nav */}
+      <Nav user={user} onLogout={onLogout} />
       <main className="dash-main settings-main">
 
-        {/* Page Header */}
         <div className="settings-page-header">
           <div className="settings-page-header-icon"><SettingsGearIcon /></div>
           <div>
@@ -225,7 +230,6 @@ const Settings = ({ user, onUserUpdate }) => {
         </div>
 
         <div className="settings-layout">
-          {/* Sidebar */}
           <aside className="settings-sidebar">
             <p className="settings-sidebar-label">Account</p>
             {TABS.map(({ id, label, Icon }) => (
@@ -236,16 +240,14 @@ const Settings = ({ user, onUserUpdate }) => {
               >
                 <span className="stab-icon"><Icon /></span>
                 {label}
-                {/* Always show days remaining badge on password tab */}
                 {id === "password" && pwdStatus && (
                   <span style={{
-                    marginLeft: 'auto',
+                    marginLeft: 'auto', color: '#fff', fontSize: '10px', fontWeight: 700,
+                    padding: '2px 7px', borderRadius: '9999px',
                     background: pwdStatus.expired || pwdStatus.daysLeft <= 5  ? '#ef4444'
                               : pwdStatus.daysLeft <= 15 ? '#f59e0b'
                               : pwdStatus.daysLeft <= 30 ? '#3b82f6'
                               : '#22c55e',
-                    color: '#fff', fontSize: '10px', fontWeight: 700,
-                    padding: '2px 7px', borderRadius: '9999px',
                   }}>
                     {pwdStatus.expired ? 'EXP' : `${pwdStatus.daysLeft}d`}
                   </span>
@@ -255,10 +257,8 @@ const Settings = ({ user, onUserUpdate }) => {
             ))}
           </aside>
 
-          {/* Content */}
           <section className="settings-content">
 
-            {/* ── Profile ── */}
             {activeTab === "profile" && (
               <div className="settings-card">
                 <div className="settings-card-header">
@@ -315,7 +315,6 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Address ── */}
             {activeTab === "address" && (
               <div className="settings-card">
                 <div className="settings-card-header">
@@ -364,7 +363,6 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Password ── */}
             {activeTab === "password" && (
               <div className="settings-card">
                 <div className="settings-card-header">
@@ -375,16 +373,11 @@ const Settings = ({ user, onUserUpdate }) => {
                   </div>
                 </div>
 
-                {/* ── Password Expiry Status Card ── */}
                 {pwdStatus && scheme && (
                   <div style={{
-                    background: scheme.bg,
-                    border: `1.5px solid ${scheme.border}`,
-                    borderRadius: '12px',
-                    padding: '18px 20px',
-                    marginBottom: '24px',
+                    background: scheme.bg, border: `1.5px solid ${scheme.border}`,
+                    borderRadius: '12px', padding: '18px 20px', marginBottom: '24px',
                   }}>
-                    {/* Header row */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                       <ShieldIcon />
                       <span style={{ fontWeight: 700, fontSize: '14px', color: scheme.text }}>
@@ -396,11 +389,10 @@ const Settings = ({ user, onUserUpdate }) => {
                       }}>{scheme.label}</span>
                     </div>
 
-                    {/* Main message */}
                     <p style={{ margin: '0 0 12px', fontSize: '14px', color: '#374151' }}>
                       {pwdStatus.expired ? (
                         <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                          🔒 Your password has expired. Please change it immediately.
+                          Your password has expired. Please change it immediately.
                         </span>
                       ) : (
                         <>
@@ -414,7 +406,6 @@ const Settings = ({ user, onUserUpdate }) => {
                       )}
                     </p>
 
-                    {/* Progress bar */}
                     <div style={{ marginBottom: '14px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>
                         <span>0 days</span>
@@ -424,13 +415,11 @@ const Settings = ({ user, onUserUpdate }) => {
                       <div style={{ height: '8px', background: '#e5e7eb', borderRadius: '9999px', overflow: 'hidden' }}>
                         <div style={{
                           height: '100%', width: `${progress}%`,
-                          background: scheme.bar, borderRadius: '9999px',
-                          transition: 'width 0.5s ease',
+                          background: scheme.bar, borderRadius: '9999px', transition: 'width 0.5s ease',
                         }} />
                       </div>
                     </div>
 
-                    {/* Stats */}
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                       {[
                         ['Last Changed',      pwdStatus.lastChanged],
@@ -487,7 +476,6 @@ const Settings = ({ user, onUserUpdate }) => {
               </div>
             )}
 
-            {/* ── Appearance ── */}
             {activeTab === "appearance" && (
               <div className="settings-card">
                 <div className="settings-card-header">
@@ -535,8 +523,8 @@ const Settings = ({ user, onUserUpdate }) => {
 
           </section>
         </div>
-        <PageFooter />
 
+        <PageFooter />
       </main>
     </div>
   );
