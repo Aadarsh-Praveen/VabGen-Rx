@@ -74,6 +74,8 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 9998;
+  margin: 0;
+  padding: 0;
   animation: cb-pop 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

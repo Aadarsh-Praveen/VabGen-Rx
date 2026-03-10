@@ -5,6 +5,10 @@ import "./styles/chatbot.css";
 
 const BOT_NAME      = "VabGen Rx Bot";
 const CONTACT_EMAIL = "vabgenrx@outlook.com";
+const FAB_SIZE      = 54;
+const WINDOW_W      = 360;
+const WINDOW_H      = 520;
+const PADDING       = 8;
 
 const isLoggedIn = () => {
   try {
@@ -12,7 +16,7 @@ const isLoggedIn = () => {
     const user  = localStorage.getItem("user");
     if (!token || !user) return false;
     const payload = JSON.parse(atob(token.split(".")[1]));
-    const valid = payload.exp * 1000 > Date.now();
+    const valid   = payload.exp * 1000 > Date.now();
     if (!valid) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
@@ -29,103 +33,72 @@ const REPLIES = [
   {
     match: ["patient list", "my patients", "patients page", "view patients", "patient"],
     reply: "Here's a quick link to your Patient List:",
-    path:  "/patients",
-    label: "Go to Patient List",
-    protected: true,
+    path: "/patients", label: "Go to Patient List", protected: true,
   },
   {
     match: ["dashboard", "home", "overview"],
     reply: "Here's a quick link to your Dashboard:",
-    path:  "/dashboard",
-    label: "Go to Dashboard",
-    protected: true,
+    path: "/dashboard", label: "Go to Dashboard", protected: true,
   },
   {
     match: ["settings", "profile", "password", "appearance", "change password"],
     reply: "Here's a quick link to Settings where you can update your profile and password:",
-    path:  "/settings",
-    label: "Go to Settings",
-    protected: true,
+    path: "/settings", label: "Go to Settings", protected: true,
   },
   {
     match: ["lab", "lab result", "lab results"],
-    reply: "Lab results are available inside a patient's profile under the Lab Results tab. Open a patient to view them:",
-    path:  "/patients",
-    label: "Go to Patient List",
-    protected: true,
+    reply: "Lab results are available inside a patient's profile under the Lab Results tab:",
+    path: "/patients", label: "Go to Patient List", protected: true,
   },
   {
     match: ["referral", "refer"],
-    reply: "Referrals can be sent from the Referral tab inside a patient's profile. Open a patient from your list:",
-    path:  "/patients",
-    label: "Go to Patient List",
-    protected: true,
+    reply: "Referrals can be sent from the Referral tab inside a patient's profile:",
+    path: "/patients", label: "Go to Patient List", protected: true,
   },
   {
     match: ["diagnosis", "prescription", "prescribe"],
-    reply: "Diagnosis & prescriptions are available inside a patient's profile. Open a patient from your list:",
-    path:  "/patients",
-    label: "Go to Patient List",
-    protected: true,
+    reply: "Diagnosis & prescriptions are available inside a patient's profile:",
+    path: "/patients", label: "Go to Patient List", protected: true,
   },
   {
     match: ["drug", "interaction", "medication"],
     reply: "Drug interaction analysis runs automatically when you add medications inside a patient's profile:",
-    path:  "/patients",
-    label: "Go to Patient List",
-    protected: true,
+    path: "/patients", label: "Go to Patient List", protected: true,
   },
   {
     match: ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"],
     reply: "Hello, Doctor! Welcome to VabGen Rx Bot. I can help you navigate the platform. Try asking about patients, lab results, referrals, diagnosis, or settings.",
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
   {
     match: ["help", "what can you do", "features", "assist"],
     reply: "I can help you quickly navigate VabGen Rx. Try asking: Show me patients, Go to dashboard, Lab results, Referrals, Settings, or Contact support.",
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
   {
     match: ["support", "contact", "email", "team"],
     reply: `For technical or clinical support, email our team at ${CONTACT_EMAIL}. We respond within 24 hours on business days.`,
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
   {
     match: ["bug", "error", "issue", "problem", "not working", "broken"],
     reply: `Sorry to hear that! Please describe the issue and email us at ${CONTACT_EMAIL} so our team can investigate.`,
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
   {
     match: ["thank", "thanks", "great", "awesome"],
     reply: "You're welcome, Doctor! Is there anything else I can help you with?",
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
   {
     match: ["bye", "goodbye", "see you"],
     reply: "Goodbye, Doctor! Take care and feel free to reach out anytime.",
-    path:  null,
-    label: null,
-    protected: false,
+    path: null, label: null, protected: false,
   },
 ];
 
-const FALLBACK = `I'm not sure about that. You can ask me things like show patients, go to dashboard, lab results, or contact support. For technical issues, email ${CONTACT_EMAIL}.`;
-
-const LOGIN_BLOCKED = {
-  text:  "🔒 Please login to access all the information.",
-  path:  "/login",
-  label: "Go to Login",
-};
+const FALLBACK      = `I'm not sure about that. You can ask me things like show patients, go to dashboard, lab results, or contact support. For technical issues, email ${CONTACT_EMAIL}.`;
+const LOGIN_BLOCKED = { text: "🔒 Please login to access all the information.", path: "/login", label: "Go to Login" };
 
 const getReply = (text) => {
   const lower = text.toLowerCase();
@@ -140,75 +113,98 @@ const getReply = (text) => {
 
 const SendIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 );
+
 const CloseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
+
 const DragIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="9"  cy="5"  r="1"/><circle cx="15" cy="5"  r="1"/>
-    <circle cx="9"  cy="12" r="1"/><circle cx="15" cy="12" r="1"/>
-    <circle cx="9"  cy="19" r="1"/><circle cx="15" cy="19" r="1"/>
+    <circle cx="9"  cy="5"  r="1" /><circle cx="15" cy="5"  r="1" />
+    <circle cx="9"  cy="12" r="1" /><circle cx="15" cy="12" r="1" />
+    <circle cx="9"  cy="19" r="1" /><circle cx="15" cy="19" r="1" />
   </svg>
 );
+
 const ArrowIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+    <line x1="5" y1="12" x2="19" y2="12" />
+    <polyline points="12 5 19 12 12 19" />
+  </svg>
+);
+
+const PhoneIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a73e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6.06 6.06l.97-.88a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
   </svg>
 );
 
 const Chatbot = () => {
   const navigate = useNavigate();
-  const [open,     setOpen]     = useState(false);
-  const [input,    setInput]    = useState("");
-  const [typing,   setTyping]   = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [pos,        setPos]        = useState({ x: window.innerWidth - 90, y: window.innerHeight - 90 });
-  const [dragging,   setDragging]   = useState(false);
-  const [dragStart,  setDragStart]  = useState({ mx: 0, my: 0, px: 0, py: 0 });
-  const [hasDragged, setHasDragged] = useState(false);
+
+  const [open,       setOpen]      = useState(false);
+  const [input,      setInput]     = useState("");
+  const [typing,     setTyping]    = useState(false);
+  const [messages,   setMessages]  = useState([]);
+  const [pos,        setPos]       = useState({
+    x: document.documentElement.clientWidth  - FAB_SIZE - PADDING,
+    y: document.documentElement.clientHeight - FAB_SIZE - PADDING,
+  });
+  const [dragging,   setDragging]  = useState(false);
+  const [dragStart,  setDragStart] = useState({ mx: 0, my: 0, px: 0, py: 0 });
+  const [hasDragged, setHasDragged]= useState(false);
 
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  const WINDOW_W = 360;
-  const WINDOW_H = 520;
-  const FAB_SIZE = 54;
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, typing]);
   useEffect(() => {
-    if (open) {
-      const loggedIn = isLoggedIn();
-      setMessages([{
-        from:  "bot",
-        text:  loggedIn
-          ? "Hi Doctor! I'm VabGen Rx Bot. I can help you navigate the platform. Try asking about patients, lab results, referrals, or settings."
-          : "🔒 Please login to access all the information.",
-        path:  loggedIn ? null : "/login",
-        label: loggedIn ? null : "Go to Login",
-        time:  new Date(),
-      }]);
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, typing]);
+
+  useEffect(() => {
+    if (!open) return;
+    const loggedIn = isLoggedIn();
+    setMessages([{
+      from:  "bot",
+      text:  loggedIn
+        ? "Hi Doctor! I'm VabGen Rx Bot. I can help you navigate the platform. Try asking about patients, lab results, referrals, or settings."
+        : "🔒 Please login to access all the information.",
+      path:  loggedIn ? null : "/login",
+      label: loggedIn ? null : "Go to Login",
+      time:  new Date(),
+    }]);
+    setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
 
   const clampPos = useCallback((x, y) => ({
-    x: Math.max(8, Math.min(x, window.innerWidth  - FAB_SIZE - 8)),
-    y: Math.max(8, Math.min(y, window.innerHeight - FAB_SIZE - 8)),
+    x: Math.max(PADDING, Math.min(x, document.documentElement.clientWidth  - FAB_SIZE - PADDING)),
+    y: Math.max(PADDING, Math.min(y, document.documentElement.clientHeight - FAB_SIZE - PADDING)),
   }), []);
+
+  useEffect(() => {
+    const onResize = () => setPos(p => clampPos(p.x, p.y));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [clampPos]);
 
   const onMouseDown = (e) => {
     e.preventDefault();
-    setDragging(true); setHasDragged(false);
+    setDragging(true);
+    setHasDragged(false);
     setDragStart({ mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y });
   };
+
   const onTouchStart = (e) => {
     const t = e.touches[0];
-    setDragging(true); setHasDragged(false);
+    setDragging(true);
+    setHasDragged(false);
     setDragStart({ mx: t.clientX, my: t.clientY, px: pos.x, py: pos.y });
   };
 
@@ -222,13 +218,14 @@ const Chatbot = () => {
     };
     const onTouchMove = (e) => {
       if (!dragging) return;
-      const t = e.touches[0];
+      const t  = e.touches[0];
       const dx = t.clientX - dragStart.mx;
       const dy = t.clientY - dragStart.my;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) setHasDragged(true);
       setPos(clampPos(dragStart.px + dx, dragStart.py + dy));
     };
     const onUp = () => setDragging(false);
+
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup",   onUp);
     window.addEventListener("touchmove", onTouchMove, { passive: true });
@@ -244,17 +241,22 @@ const Chatbot = () => {
   const handleFabClick = () => { if (!hasDragged) setOpen(v => !v); };
 
   const getWindowPos = () => {
-    const spaceBelow = window.innerHeight - pos.y - FAB_SIZE;
     const spaceAbove = pos.y;
-    const spaceRight = window.innerWidth  - pos.x;
+    const spaceBelow = document.documentElement.clientHeight - pos.y - FAB_SIZE;
 
-    const top  = spaceBelow >= WINDOW_H + 12 ? pos.y + FAB_SIZE + 10
-               : spaceAbove >= WINDOW_H + 12 ? pos.y - WINDOW_H - 10
-               : Math.max(8, Math.min(pos.y, window.innerHeight - WINDOW_H - 8));
+    let top;
+    if (spaceBelow >= WINDOW_H) {
+      top = pos.y + FAB_SIZE;
+    } else if (spaceAbove >= WINDOW_H) {
+      top = pos.y - WINDOW_H;
+    } else {
+      top = Math.max(PADDING, Math.min(pos.y, document.documentElement.clientHeight - WINDOW_H - PADDING));
+    }
 
-    const left = spaceRight >= WINDOW_W + 12 ? pos.x
-               : pos.x + FAB_SIZE >= WINDOW_W + 12 ? pos.x + FAB_SIZE - WINDOW_W
-               : Math.max(8, window.innerWidth - WINDOW_W - 8);
+    const left = Math.max(
+      PADDING,
+      Math.min(pos.x, document.documentElement.clientWidth - WINDOW_W - PADDING)
+    );
 
     return { top, left };
   };
@@ -264,7 +266,6 @@ const Chatbot = () => {
     if (!text) return;
     setMessages(prev => [...prev, { from: "user", text, path: null, label: null, time: new Date() }]);
     setInput("");
-
     setTyping(true);
     setTimeout(() => {
       const { text: replyText, path, label } = getReply(text);
@@ -273,8 +274,11 @@ const Chatbot = () => {
     }, 800 + Math.random() * 500);
   };
 
-  const handleKey = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-  const fmt = (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+  const fmt    = (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const winPos = open ? getWindowPos() : {};
 
   return (
@@ -297,6 +301,7 @@ const Chatbot = () => {
 
       {open && (
         <div className="cb-window" style={{ top: winPos.top, left: winPos.left }}>
+
           <div className="cb-header">
             <div className="cb-header-avatar">
               <img src={chatbotImg} alt="VabGen Rx Bot" className="cb-header-avatar-img" />
@@ -305,7 +310,9 @@ const Chatbot = () => {
               <p className="cb-header-name">{BOT_NAME}</p>
               <p className="cb-header-status"><span className="cb-online-dot" /> Online</p>
             </div>
-            <button className="cb-close-btn" onClick={() => setOpen(false)}><CloseIcon /></button>
+            <button className="cb-close-btn" onClick={() => setOpen(false)}>
+              <CloseIcon />
+            </button>
           </div>
 
           <div className="cb-body">
@@ -332,6 +339,7 @@ const Chatbot = () => {
                 </div>
               </div>
             ))}
+
             {typing && (
               <div className="cb-msg-row bot">
                 <div className="cb-bot-avatar">
@@ -347,10 +355,10 @@ const Chatbot = () => {
 
           <div className="cb-footer">
             <div className="cb-support-bar">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1a73e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6.06 6.06l.97-.88a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-              </svg>
-              <a href={`mailto:${CONTACT_EMAIL}`} className="cb-support-link">Contact Support Team</a>
+              <PhoneIcon />
+              <a href={`mailto:${CONTACT_EMAIL}`} className="cb-support-link">
+                Contact Support Team
+              </a>
             </div>
             <div className="cb-input-row">
               <input
@@ -361,11 +369,16 @@ const Chatbot = () => {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKey}
               />
-              <button className="cb-send-btn" onClick={sendMessage} disabled={!input.trim()}>
+              <button
+                className="cb-send-btn"
+                onClick={sendMessage}
+                disabled={!input.trim()}
+              >
                 <SendIcon />
               </button>
             </div>
           </div>
+
         </div>
       )}
     </>
