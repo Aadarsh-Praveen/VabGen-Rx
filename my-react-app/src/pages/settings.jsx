@@ -508,16 +508,7 @@ const Settings = ({ onLogout }) => {
                     </div>
                   ))}
                 </div>
-                <div className="theme-toggle-row">
-                  <div className="theme-toggle-info">
-                    <span className="theme-toggle-icon">{theme === "light" ? <SunIcon /> : <MoonIcon />}</span>
-                    <span>Currently using <strong>{theme === "light" ? "Light" : "Dark"} Mode</strong></span>
-                  </div>
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={theme === "dark"} onChange={toggleTheme} />
-                    <span className="toggle-slider" />
-                  </label>
-                </div>
+              
               </div>
             )}
 

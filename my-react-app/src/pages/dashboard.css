@@ -349,6 +349,37 @@
 
 .appt-actions button:hover { background: var(--hover-bg); color: var(--text-main); }
 
+/* ── Action dropdown modal ── */
+.action-dropdown {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16);
+  border: 1.5px solid #e2e8f0;
+  min-width: 160px;
+  z-index: 999;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .action-dropdown {
+  background: #d2d2d2;
+  border: 1.5px solid #334155;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+.action-dropdown-divider {
+  height: 1px;
+  background: #f3f4f6;
+  margin: 0 10px;
+}
+
+[data-theme="dark"] .action-dropdown-divider {
+  background: #334155;
+}
+
+/* ── Badges ── */
 .badge {
   display: inline-block;
   padding: 3px 10px;
@@ -376,6 +407,7 @@
 [data-theme="dark"] .badge-gray   { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
 [data-theme="dark"] .badge-yellow { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 
+/* ── Timeline ── */
 .dash-timeline {
   display: flex;
   flex-direction: column;
@@ -424,6 +456,7 @@
 .tl-label { font-size: 13px; font-weight: 600; color: var(--text-main); margin: 0; }
 .tl-sub   { font-size: 11px; color: var(--text-muted); margin: 2px 0 0 0; }
 
+/* ── Profile & Monthly ── */
 .dash-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 .profile-top {
@@ -504,6 +537,7 @@
 .mbar-fill  { height: 100%; border-radius: 99px; }
 .mbar-pct   { width: 34px; text-align: right; color: var(--text-muted); font-weight: 600; }
 
+/* ── Responsive ── */
 @media (max-width: 1200px) {
   .dash-cards        { grid-template-columns: repeat(2, 1fr); }
   .dash-content-grid { grid-template-columns: 1fr; }
