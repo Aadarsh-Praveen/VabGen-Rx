@@ -70,6 +70,7 @@ logger.setLevel(logging.INFO)
 
 # ── Azure AI Foundry Tracing ──────────────────────────────────────────────────
 _PROJECT_ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
+_PROJECT_CONN_STR = _PROJECT_ENDPOINT  
 
 if _PROJECT_ENDPOINT:
     try:
