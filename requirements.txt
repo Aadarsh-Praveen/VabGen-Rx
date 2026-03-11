@@ -1,20 +1,35 @@
+# Web framework
 fastapi==0.104.1
 uvicorn==0.24.0
-pydantic==2.9.2
+pydantic==2.12.5
+
+# Azure AI
 azure-ai-agents==1.1.0
-azure-ai-projects==1.0.0
+azure-ai-projects==2.0.0
+azure-ai-contentsafety==1.0.0
+
+# Azure infrastructure
 azure-identity==1.25.2
 azure-core==1.38.2
-openai==1.68.2
+azure-keyvault-secrets==4.10.0
+
+# OpenAI
+openai==2.26.0
+
+# Database
 pyodbc==5.0.1
+
+# HTTP + env
 requests==2.32.3
 python-dotenv==1.0.0
-typing-extensions==4.12.2
-azure-keyvault-secrets
+typing-extensions==4.15.0
+
+# Application Insights (opencensus)
 opencensus==0.11.4
 opencensus-context==0.1.3
 opencensus-ext-azure==1.1.15
-azure-ai-projects
-opentelemetry-sdk
-azure-monitor-opentelemetry
-azure-ai-contentsafety
+
+# Foundry tracing (OpenTelemetry)
+opentelemetry-sdk==1.27.0
+opentelemetry-api==1.27.0
+azure-monitor-opentelemetry==1.6.3
