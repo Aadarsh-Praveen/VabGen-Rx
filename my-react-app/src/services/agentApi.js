@@ -1,7 +1,7 @@
 /*
 // my-react-app/src/services/agentApi.js
 
-const BASE = '/agent';
+const BASE = import.meta.env.VITE_AGENT_BASE_URL || '/agent';
 
 export function buildPatientProfile(patient) {
   const profile = {};
@@ -235,7 +235,7 @@ export async function getDosingOnly({ medications, diseases, age, sex, doseMap, 
 // my-react-app/src/services/agentApi.js
 import { apiFetch } from "./api";
 
-const BASE = '/agent';
+const BASE = import.meta.env.VITE_AGENT_BASE_URL || '/agent';
 
 // ── Build patient profile from patient record ─────────────────────
 export function buildPatientProfile(patient) {
