@@ -32,13 +32,13 @@ import sys
 import uuid
 import hashlib
 import logging
-from typing          import List, Optional, Dict, Any
-from itertools       import combinations
-from fastapi         import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic        import BaseModel
 import asyncio
+from typing             import List, Optional, Dict, Any
+from itertools          import combinations
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from fastapi            import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic           import BaseModel
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.getcwd())
@@ -70,7 +70,7 @@ logger.setLevel(logging.INFO)
 
 # ── Azure AI Foundry Tracing ──────────────────────────────────────────────────
 _PROJECT_ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
-_PROJECT_CONN_STR = _PROJECT_ENDPOINT  
+_PROJECT_CONN_STR = _PROJECT_ENDPOINT  # updated below if tracing connects
 
 if _PROJECT_ENDPOINT:
     try:
@@ -87,6 +87,7 @@ if _PROJECT_ENDPOINT:
             .get_application_insights_connection_string()
         )
         configure_azure_monitor(connection_string=_foundry_conn_str)
+        _PROJECT_CONN_STR = _foundry_conn_str
         print("✅ Azure AI Foundry tracing enabled")
 
     except ImportError as e:
@@ -109,11 +110,7 @@ from services.patient.counselling_service import DrugCounselingService
 from services.patient.condition_service   import ConditionCounselingService
 from services.patient.dosing_service      import DosingService
 from services.translation                 import TranslationService
-
-# ── HIPAA Audit Log ───────────────────────────────────────────────────────────
 from logs import AuditLogService, AuditAction, ResourceType
-
-# ── A2A Protocol ──────────────────────────────────────────────────────────────
 from services.a2a import (
     AGENT_CARD,
     create_task,
@@ -125,7 +122,7 @@ from services.a2a import (
     _tasks,
 )
 
-
+# ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(
     title       = "VabGenRx",
     description = (
@@ -149,20 +146,20 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
-# ── Service initialisation ────────────────────────────────────────────────────
-pubmed              = PubMedService()
-fda                 = FDAService()
-analyzer            = EvidenceAnalyzer()
-cache               = AzureSQLCacheService()
-agent_service       = VabGenRxOrchestrator()
-counseling_service  = DrugCounselingService()
-condition_service   = ConditionCounselingService()
-dosing_service      = DosingService()
-translation_service = TranslationService()
-audit               = AuditLogService()
+# ── Lazy service references ───────────────────────────────────────────────────
+pubmed              = None
+fda                 = None
+analyzer            = None
+cache               = None
+agent_service       = None
+counseling_service  = None
+condition_service   = None
+dosing_service      = None
+translation_service = None
+audit               = None
+_services_ready     = False
 
 # ── PHI audit scope ───────────────────────────────────────────────────────────
-# Requests to these paths are logged to phi_audit_log.
 _PHI_ENDPOINTS = (
     "/agent/analyze",
     "/agent/translate",
@@ -172,18 +169,65 @@ _PHI_ENDPOINTS = (
 )
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+def _init_services():
+    """Initialize all heavy services in a background thread."""
+    global pubmed, fda, analyzer, cache, agent_service
+    global counseling_service, condition_service
+    global dosing_service, translation_service, audit, _services_ready
+
+    print("🔄 Initializing services in background...")
+    try:
+        pubmed              = PubMedService()
+        print("   ✅ PubMedService")
+        fda                 = FDAService()
+        print("   ✅ FDAService")
+        analyzer            = EvidenceAnalyzer()
+        print("   ✅ EvidenceAnalyzer")
+        cache               = AzureSQLCacheService()
+        print("   ✅ AzureSQLCacheService")
+        counseling_service  = DrugCounselingService()
+        print("   ✅ DrugCounselingService")
+        condition_service   = ConditionCounselingService()
+        print("   ✅ ConditionCounselingService")
+        dosing_service      = DosingService()
+        print("   ✅ DosingService")
+        translation_service = TranslationService()
+        print("   ✅ TranslationService")
+        audit               = AuditLogService()
+        print("   ✅ AuditLogService")
+        agent_service       = VabGenRxOrchestrator()
+        print("   ✅ VabGenRxOrchestrator")
+
+        try:
+            audit.enforce_retention_policy()
+            cache_cleanup = cache.enforce_retention_policy()
+            if cache_cleanup:
+                print(f"   🗑️  Cache retention: {cache_cleanup}")
+            print("✅ Retention policies enforced on startup")
+        except Exception as e:
+            print(f"⚠️  Startup retention cleanup failed: {e}")
+
+        _services_ready = True
+        print("✅ All services ready")
+
+    except Exception as e:
+        print(f"❌ Service initialization failed: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
-    """Enforce retention policies on both databases at startup."""
-    try:
-        audit.enforce_retention_policy()
-        cache_cleanup = cache.enforce_retention_policy()
-        if cache_cleanup:
-            print(f"   🗑️  Cache retention: {cache_cleanup}")
-        print("✅ Retention policies enforced on startup")
-    except Exception as e:
-        print(f"⚠️  Startup retention cleanup failed: {e}")
+    """Start service initialization in background — gunicorn responds instantly."""
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _init_services)
+
+
+def _check_ready():
+    """Raise 503 if services are still initializing."""
+    if not _services_ready:
+        raise HTTPException(
+            status_code = 503,
+            detail      = "Service is still initializing — please retry in a moment."
+        )
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -373,9 +417,7 @@ def _check_drug_drug(drug1: str, drug2: str) -> DrugDrugResult:
                 fda.get_drug_contraindications(drug2)
             ]
         }
-        a            = analyzer.analyze_drug_drug_interaction(
-            drug1, drug2, evidence
-        )
+        a            = analyzer.analyze_drug_drug_interaction(drug1, drug2, evidence)
         pubmed_count = pubmed_data.get('count', 0)
         fda_count    = fda_data.get('total_reports', 0)
         a['pubmed_papers'] = pubmed_count
@@ -412,9 +454,7 @@ def _check_drug_disease(drug: str, disease: str) -> DrugDiseaseResult:
             'pubmed':    pubmed_data,
             'fda_label': fda.get_drug_contraindications(drug)
         }
-        a            = analyzer.analyze_drug_disease_interaction(
-            drug, disease, evidence
-        )
+        a            = analyzer.analyze_drug_disease_interaction(drug, disease, evidence)
         pubmed_count = pubmed_data.get('count', 0)
         fda_sections = a.get('fda_label_sections_count', 0)
         a['pubmed_count'] = pubmed_count
@@ -464,6 +504,7 @@ def _check_food(drug: str) -> FoodResult:
 def root():
     return {
         "status":     "VabGenRx is running",
+        "ready":      _services_ready,
         "platform":   "Clinical Intelligence Platform",
         "version":    "3.0.0",
         "monitoring": "Azure Application Insights" if _AI_CONN_STR else "disabled",
@@ -474,11 +515,12 @@ def root():
 @app.get("/health")
 def health():
     return {
-        "status":      "healthy",
+        "status":      "healthy" if _services_ready else "initializing",
+        "ready":       _services_ready,
         "platform":    "VabGenRx",
-        "cache":       cache.get_stats(),
-        "fda_cache":   fda.get_cache_stats(),
-        "audit":       audit.get_stats(),
+        "cache":       cache.get_stats() if cache else {},
+        "fda_cache":   fda.get_cache_stats() if fda else {},
+        "audit":       audit.get_stats() if audit else {},
         "monitoring":  "Azure Application Insights" if _AI_CONN_STR else "disabled",
         "tracing":     "Azure AI Foundry" if _PROJECT_CONN_STR else "disabled",
         "api_version": "3.0.0"
@@ -487,6 +529,7 @@ def health():
 
 @app.post("/validate/drug")
 def validate_drug(req: DrugValidateRequest):
+    _check_ready()
     label = fda.get_drug_contraindications(req.drug_name)
     return {
         "drug":                  req.drug_name,
@@ -498,6 +541,7 @@ def validate_drug(req: DrugValidateRequest):
 
 @app.post("/check/drug-pair")
 def quick_drug_pair(req: QuickCheckRequest):
+    _check_ready()
     result = _check_drug_drug(req.drug1, req.drug2)
     return {
         "pair":             f"{req.drug1} + {req.drug2}",
@@ -519,11 +563,9 @@ def quick_drug_pair(req: QuickCheckRequest):
 @app.post("/analyze", response_model=AnalysisResponse)
 def analyze(req: AnalysisRequest):
     """Fast structured analysis via EvidenceAnalyzer — no agent overhead."""
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     session_id   = str(uuid.uuid4())[:8]
     ddi_results  = []
@@ -588,18 +630,13 @@ def analyze(req: AnalysisRequest):
 @app.post("/agent/analyze")
 def agent_analyze(req: AnalysisRequest):
     """Full agentic analysis — single blocking call through all six phases."""
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     medications = [m.strip() for m in req.medications if m and m.strip()]
     if not medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "No valid medication names provided"
-        )
+        raise HTTPException(status_code=400, detail="No valid medication names provided")
 
     task_id = str(uuid.uuid4())
     create_task(task_id, "full_safety_analysis", {
@@ -619,15 +656,12 @@ def agent_analyze(req: AnalysisRequest):
             patient_profile = _profile_to_dict(req.patient_profile),
             patient_data    = _labs_to_dict(req.patient_labs),
         )
-
         update_task(task_id, TaskState.COMPLETED, result)
 
         if req.preferred_language and result.get("analysis"):
             result["analysis"] = translation_service.translate_agent_result(
-                result["analysis"],
-                req.preferred_language
+                result["analysis"], req.preferred_language
             )
-
         return result
 
     except Exception as e:
@@ -640,20 +674,15 @@ def agent_analyze(req: AnalysisRequest):
 @app.post("/agent/analyze/interactions")
 def analyze_interactions(req: AnalysisRequest):
     """Phase 1 — drug interactions and drug-disease contraindications."""
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     medications = [m.strip() for m in req.medications if m and m.strip()]
     diseases    = [d.strip() for d in (req.diseases or []) if d and d.strip()]
 
     if not medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "No valid medication names provided"
-        )
+        raise HTTPException(status_code=400, detail="No valid medication names provided")
 
     from services.evidence.safety_evidence  import SafetyEvidenceService
     from services.evidence.disease_evidence import DiseaseEvidenceService
@@ -719,8 +748,7 @@ def analyze_interactions(req: AnalysisRequest):
         if not item.get("from_cache"):
             try:
                 cache.save_drug_drug(
-                    item.get("drug1", ""),
-                    item.get("drug2", ""),
+                    item.get("drug1", ""), item.get("drug2", ""),
                     {
                         "severity":         item.get("severity"),
                         "confidence":       item.get("confidence"),
@@ -739,8 +767,7 @@ def analyze_interactions(req: AnalysisRequest):
         if not item.get("from_cache"):
             try:
                 cache.save_drug_disease(
-                    item.get("drug", ""),
-                    item.get("disease", ""),
+                    item.get("drug", ""), item.get("disease", ""),
                     {
                         "contraindicated":          item.get("contraindicated", False),
                         "severity":                 item.get("severity"),
@@ -763,9 +790,9 @@ def analyze_interactions(req: AnalysisRequest):
                 cache.save_food(
                     item.get("drug", ""),
                     {
-                        "foods_to_avoid":             item.get("foods_to_avoid", []),
-                        "foods_to_separate":          item.get("foods_to_separate", []),
-                        "foods_to_monitor":           item.get("foods_to_monitor", []),
+                        "foods_to_avoid":              item.get("foods_to_avoid", []),
+                        "foods_to_separate":           item.get("foods_to_separate", []),
+                        "foods_to_monitor":            item.get("foods_to_monitor", []),
                         "no_significant_interactions": item.get("no_significant_interactions", False),
                         "mechanism_explanation":       item.get("mechanism", ""),
                         "evidence_summary":            item.get("evidence", {}).get("evidence_summary", ""),
@@ -777,8 +804,7 @@ def analyze_interactions(req: AnalysisRequest):
                 print(f"   ⚠️  Cache save drug-food error: {e}")
 
     signals = extractor.extract(
-        safety_r1,
-        disease_r1,
+        safety_r1, disease_r1,
         {"dosing_recommendations": []},
         {
             "age":        req.age or 45,
@@ -801,20 +827,15 @@ def analyze_interactions(req: AnalysisRequest):
 @app.post("/agent/analyze/dosing")
 def analyze_dosing(req: AnalysisRequest):
     """Phase 2 — FDA-based dosing recommendations."""
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     medications = [m.strip() for m in req.medications if m and m.strip()]
     diseases    = [d.strip() for d in (req.diseases or []) if d and d.strip()]
 
     if not medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "No valid medication names provided"
-        )
+        raise HTTPException(status_code=400, detail="No valid medication names provided")
 
     patient_data = _labs_to_dict(req.patient_labs)
     full_patient_data = {
@@ -825,9 +846,7 @@ def analyze_dosing(req: AnalysisRequest):
     }
 
     dosing_r1 = agent_service.dosing_agent.analyze(
-        medications,
-        full_patient_data,
-        req.dose_map or {}
+        medications, full_patient_data, req.dose_map or {}
     )
 
     return {
@@ -840,11 +859,9 @@ def analyze_dosing(req: AnalysisRequest):
 @app.post("/agent/analyze/counselling")
 def analyze_counselling(req: AnalysisRequest):
     """Phase 3 — patient-specific drug and condition counselling."""
+    _check_ready()
     if not req.medications and not req.diseases:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "Medications or diseases required"
-        )
+        raise HTTPException(status_code=400, detail="Medications or diseases required")
 
     medications = [m.strip() for m in (req.medications or []) if m and m.strip()]
     diseases    = [d.strip() for d in (req.diseases or [])    if d and d.strip()]
@@ -857,23 +874,16 @@ def analyze_counselling(req: AnalysisRequest):
         if not medications:
             return []
         return counseling_service.get_counseling_for_all_drugs(
-            medications     = medications,
-            age             = age,
-            sex             = sex,
-            dose_map        = dose_map,
-            conditions      = diseases,
-            patient_profile = profile,
+            medications=medications, age=age, sex=sex,
+            dose_map=dose_map, conditions=diseases, patient_profile=profile,
         )
 
     def run_condition():
         if not diseases:
             return []
         return condition_service.get_counseling_for_all_conditions(
-            conditions      = diseases,
-            age             = age,
-            sex             = sex,
-            medications     = medications,
-            patient_profile = profile,
+            conditions=diseases, age=age, sex=sex,
+            medications=medications, patient_profile=profile,
         )
 
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -903,28 +913,18 @@ def analyze_counselling(req: AnalysisRequest):
 @app.post("/agent/analyze/summary")
 def analyze_summary(req: AnalysisRequest, request: Request):
     """Phase 4 — cross-domain clinical summary via OrchestratorAgent."""
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     medications = [m.strip() for m in req.medications if m and m.strip()]
     diseases    = [d.strip() for d in (req.diseases or []) if d and d.strip()]
 
     if not medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "No valid medication names provided"
-        )
+        raise HTTPException(status_code=400, detail="No valid medication names provided")
 
-    # Use session_id from request header for trace correlation.
-    # This ties the orchestrator trace to the same session as the
-    # interactions and dosing phase calls from the frontend.
-    # Falls back to a new UUID if header is not present.
     session_id = request.headers.get("X-Session-ID", str(uuid.uuid4()))
-
-    labs = _labs_to_dict(req.patient_labs)
+    labs       = _labs_to_dict(req.patient_labs)
 
     orchestrator_result = agent_service.orchestrator_agent.synthesize(
         safety_result       = {"drug_drug": [], "drug_food": []},
@@ -942,7 +942,7 @@ def analyze_summary(req: AnalysisRequest, request: Request):
             "tsh":        labs.get("tsh"),
             "pulse":      labs.get("pulse"),
         },
-        session_id          = session_id,
+        session_id = session_id,
     )
 
     risk_summary = {
@@ -967,23 +967,19 @@ def analyze_summary(req: AnalysisRequest, request: Request):
         "status":              "completed",
     }
 
+
 # ── Counselling endpoints ─────────────────────────────────────────────────────
 
 @app.post("/counseling/drug")
 def drug_counseling(req: CounselingRequest):
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     results = counseling_service.get_counseling_for_all_drugs(
-        medications     = req.medications,
-        age             = req.age,
-        sex             = req.sex,
-        dose_map        = req.dose_map or {},
-        conditions      = req.diseases or [],
-        patient_profile = _profile_to_dict(req.patient_profile)
+        medications=req.medications, age=req.age, sex=req.sex,
+        dose_map=req.dose_map or {}, conditions=req.diseases or [],
+        patient_profile=_profile_to_dict(req.patient_profile)
     )
 
     if req.preferred_language:
@@ -991,24 +987,19 @@ def drug_counseling(req: CounselingRequest):
             translation_service.translate_drug_counseling(r, req.preferred_language)
             for r in results
         ]
-
     return {"drug_counseling": results}
 
 
 @app.post("/counseling/condition")
 def condition_counseling(req: CounselingRequest):
+    _check_ready()
     if not req.diseases:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one condition required"
-        )
+        raise HTTPException(status_code=400, detail="At least one condition required")
 
     results = condition_service.get_counseling_for_all_conditions(
-        conditions      = req.diseases,
-        age             = req.age,
-        sex             = req.sex,
-        medications     = req.medications,
-        patient_profile = _profile_to_dict(req.patient_profile)
+        conditions=req.diseases, age=req.age, sex=req.sex,
+        medications=req.medications,
+        patient_profile=_profile_to_dict(req.patient_profile)
     )
 
     if req.preferred_language:
@@ -1016,33 +1007,25 @@ def condition_counseling(req: CounselingRequest):
             translation_service.translate_condition_counseling(r, req.preferred_language)
             for r in results
         ]
-
     return {"condition_counseling": results}
 
 
 @app.post("/counseling/complete")
 def complete_counseling(req: CounselingRequest):
+    _check_ready()
     if not req.medications and not req.diseases:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "Medications or diseases required"
-        )
+        raise HTTPException(status_code=400, detail="Medications or diseases required")
 
     drug_results = counseling_service.get_counseling_for_all_drugs(
-        medications     = req.medications,
-        age             = req.age,
-        sex             = req.sex,
-        dose_map        = req.dose_map or {},
-        conditions      = req.diseases or [],
-        patient_profile = _profile_to_dict(req.patient_profile)
+        medications=req.medications, age=req.age, sex=req.sex,
+        dose_map=req.dose_map or {}, conditions=req.diseases or [],
+        patient_profile=_profile_to_dict(req.patient_profile)
     ) if req.medications else []
 
     condition_results = condition_service.get_counseling_for_all_conditions(
-        conditions      = req.diseases or [],
-        age             = req.age,
-        sex             = req.sex,
-        medications     = req.medications,
-        patient_profile = _profile_to_dict(req.patient_profile)
+        conditions=req.diseases or [], age=req.age, sex=req.sex,
+        medications=req.medications,
+        patient_profile=_profile_to_dict(req.patient_profile)
     ) if req.diseases else []
 
     if req.preferred_language:
@@ -1070,11 +1053,9 @@ def complete_counseling(req: CounselingRequest):
 
 @app.post("/dosing")
 def dosing_recommendations(req: DosingRequest):
+    _check_ready()
     if not req.medications:
-        raise HTTPException(
-            status_code = 400,
-            detail      = "At least one medication required"
-        )
+        raise HTTPException(status_code=400, detail="At least one medication required")
 
     patient_data = _labs_to_dict(req.patient_labs)
     dose_map     = req.dose_map or {}
@@ -1087,7 +1068,6 @@ def dosing_recommendations(req: DosingRequest):
         pd['current_dose'] = dose_map.get(drug, 'not specified')
         pd['current_drug'] = drug
         pd['conditions']   = req.diseases or []
-
         results.append(
             dosing_service.get_dosing_recommendation(drug=drug, patient_data=pd)
         )
@@ -1111,7 +1091,8 @@ def dosing_recommendations(req: DosingRequest):
 @app.get("/agent/health")
 def agent_health():
     return {
-        "status": "healthy",
+        "status": "healthy" if _services_ready else "initializing",
+        "ready":  _services_ready,
         "agents": [
             "VabGenRxSafetyAgent",
             "VabGenRxDiseaseAgent",
@@ -1126,6 +1107,7 @@ def agent_health():
 
 @app.get("/cache/stats")
 def cache_stats():
+    _check_ready()
     return {
         **cache.get_stats(),
         "fda_label_cache": fda.get_cache_stats(),
@@ -1135,6 +1117,7 @@ def cache_stats():
 @app.get("/audit/stats")
 def audit_stats():
     """HIPAA compliance reporting — audit log statistics."""
+    _check_ready()
     return audit.get_stats()
 
 
@@ -1143,6 +1126,7 @@ def audit_stats():
 @app.post("/agent/translate")
 def translate_counselling(req: TranslateRequest):
     """Translate approved counselling content to the patient's preferred language."""
+    _check_ready()
     if not translation_service.needs_translation(req.language):
         return {
             "drug_counseling":      req.drug_counseling,
@@ -1204,32 +1188,33 @@ async def phi_audit_middleware(request: Request, call_next):
                 if raw_resource_id else ""
             )
 
-            try:
-                audit.log(
-                    action        = AuditAction.ANALYSIS,
-                    resource_type = resource,
-                    user_id       = request.headers.get("X-User-ID", "anonymous"),
-                    user_email    = request.headers.get("X-User-Email", ""),
-                    ip_address    = request.client.host if request.client else "",
-                    session_id    = request.headers.get("X-Session-ID", ""),
-                    resource_id   = hashed_resource_id,
-                    endpoint      = path,
-                    http_method   = request.method,
-                    status_code   = response.status_code,
-                    success       = response.status_code < 400,
-                    detail        = f"HTTP {response.status_code}",
-                )
-            except Exception as audit_err:
-                logger.critical(
-                    "hipaa_audit_failure",
-                    extra={"custom_dimensions": {
-                        "event":      "hipaa_audit_failure",
-                        "endpoint":   path,
-                        "error":      str(audit_err)[:300],
-                        "session_id": request.headers.get("X-Session-ID", ""),
-                    }}
-                )
-                print(f"   ⚠️  Audit middleware error: {audit_err}")
+            if audit:
+                try:
+                    audit.log(
+                        action        = AuditAction.ANALYSIS,
+                        resource_type = resource,
+                        user_id       = request.headers.get("X-User-ID", "anonymous"),
+                        user_email    = request.headers.get("X-User-Email", ""),
+                        ip_address    = request.client.host if request.client else "",
+                        session_id    = request.headers.get("X-Session-ID", ""),
+                        resource_id   = hashed_resource_id,
+                        endpoint      = path,
+                        http_method   = request.method,
+                        status_code   = response.status_code,
+                        success       = response.status_code < 400,
+                        detail        = f"HTTP {response.status_code}",
+                    )
+                except Exception as audit_err:
+                    logger.critical(
+                        "hipaa_audit_failure",
+                        extra={"custom_dimensions": {
+                            "event":      "hipaa_audit_failure",
+                            "endpoint":   path,
+                            "error":      str(audit_err)[:300],
+                            "session_id": request.headers.get("X-Session-ID", ""),
+                        }}
+                    )
+                    print(f"   ⚠️  Audit middleware error: {audit_err}")
 
     except Exception as e:
         print(f"   ⚠️  Audit middleware outer error: {e}")
@@ -1269,6 +1254,7 @@ def a2a_agent_card():
 
 @app.post("/a2a/tasks/send")
 async def a2a_task_send(req: A2ATaskRequest):
+    _check_ready()
     task_id = req.id or str(uuid.uuid4())
 
     text_content = " ".join(
