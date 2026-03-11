@@ -1,32 +1,26 @@
 name: Build and deploy Python app to Azure Web App - vabgenrx-agent
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Install dependencies
         run: |
           python -m venv antenv
           source antenv/bin/activate
           pip install -r requirements.txt
-
-      - name: Upload artifact for deployment jobs
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
@@ -36,30 +30,25 @@ jobs:
             ./logs
             ./requirements.txt
             !antenv/
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
     permissions:
       id-token: write
       contents: read
-
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: python-app
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_6869C9F48FE74EAFBC46586DE553F918 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_7D2BF6D1F06F4E33945E4F504BE6BDC0 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_2FDDDC61688744B893AD4301A61166E0 }}
-
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
         with:
           app-name: 'vabgenrx-agent'
           slot-name: 'Production'
