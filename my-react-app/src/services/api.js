@@ -9,7 +9,7 @@ export const apiFetch = async (url, options = {}) => {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
-  const res = await fetch(url, { ...options, headers });
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}${url}`, { ...options, headers });
 
   // If 401, token expired — clear storage and redirect to login
   if (res.status === 401) {

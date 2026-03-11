@@ -56,7 +56,7 @@ const Nav = ({ user, onLogout }) => {
     if (!user?.email) return;
     const fetchProfile = async () => {
       try {
-        const res  = await fetch(`/api/profile?email=${encodeURIComponent(user.email)}`);
+        const res  = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/profile?email=${encodeURIComponent(user.email)}`);
         const data = await res.json();
         if (res.ok) setProfile(data.user);
       } catch (err) { console.error("Failed to fetch profile:", err); }

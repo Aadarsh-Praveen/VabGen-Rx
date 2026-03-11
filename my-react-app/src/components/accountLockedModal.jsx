@@ -28,7 +28,7 @@ const AccountLockedModal = ({ email, onClose, reason = "locked" }) => {
   const handleSendOtp = async () => {
     setLoading(true); setMsg(null);
     try {
-      const res  = await fetch("/api/send-unlock-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const res  = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/send-unlock-otp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
       const data = await res.json();
       if (res.ok) { setStep(STEPS.OTP); setMsg({ type: "success", text: `OTP sent to ${email}` }); }
       else setMsg({ type: "error", text: data.message });
@@ -41,7 +41,7 @@ const AccountLockedModal = ({ email, onClose, reason = "locked" }) => {
     if (code.length < 6) { setMsg({ type: "error", text: "Enter all 6 digits." }); return; }
     setLoading(true); setMsg(null);
     try {
-      const res  = await fetch("/api/verify-unlock-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, otp: code }) });
+      const res  = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/verify-unlock-otp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, otp: code }) });
       const data = await res.json();
       if (res.ok) { setStep(STEPS.RESET); setMsg(null); }
       else setMsg({ type: "error", text: data.message });
@@ -54,7 +54,7 @@ const AccountLockedModal = ({ email, onClose, reason = "locked" }) => {
     if (newPwd !== confirmPwd) { setMsg({ type: "error", text: "Passwords do not match." }); return; }
     setLoading(true); setMsg(null);
     try {
-      const res  = await fetch("/api/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, newPassword: newPwd }) });
+      const res  = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/reset-password`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, newPassword: newPwd }) });
       const data = await res.json();
       if (res.ok) setStep(STEPS.SUCCESS);
       else setMsg({ type: "error", text: data.message });
