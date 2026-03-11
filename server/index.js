@@ -1391,3 +1391,4 @@ const { loadSecrets } = require('./secrets');
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 VabGenRx API running on port ${PORT}`);
 });
+})();
