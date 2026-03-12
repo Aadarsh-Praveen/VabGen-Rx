@@ -2,233 +2,565 @@
   <img src="./vabgen_logo.png" alt="Vab Gen Rx Logo" width="250"/>
 </p>
 
-# 🧪 Vab Gen Rx
-
-### Multi-Agent Clinical Decision Support & Medication Safety Platform
-
-🚀 Microsoft AI Dev Days Hackathon 2026 Submission  
-Hosted by Microsoft
-
----
-
-## 🌍 Overview
-
-Vab Gen Rx is an enterprise-grade, multi-agent clinical decision support platform designed to improve medication safety, dosing accuracy, patient counseling, and pharmacy access for Community Health Centers.
-
-The platform acts as an intelligent support layer integrated into prescribing workflows to help clinicians identify drug interactions, optimize dosing, reduce adverse drug events, and improve medication accessibility — while maintaining full clinician control over medical decisions.
-
-Medication-related harm is a major public health challenge, particularly among elderly and chronically ill patients receiving multiple medications across fragmented care systems. Vab Gen Rx addresses this system-level problem by combining AI agents, evidence-based rules, and workflow automation into a unified solution.
-
----
-
-## 🎯 Problem Statement
-
-Community Health Centers face critical challenges:
-
-* Fragmented medication histories across providers  
-* Polypharmacy and drug interaction risks  
-* Incorrect dosing for renal or hepatic impairment  
-* Medication non-adherence due to access barriers  
-* Pharmacy deserts and medication availability issues  
-* Provider workflow burden and alert fatigue  
-
-These issues contribute to preventable adverse drug events, emergency visits, and hospitalizations.
-
----
-
-## 💡 Solution
-
-Vab Gen Rx provides an AI-powered platform that supports clinicians and patients through:
-
-* Medication reconciliation and interaction detection  
-* AI-assisted dosing optimization  
-* Adverse drug event risk prediction  
-* Automated patient counseling generation  
-* Pharmacy availability and therapeutic alternatives  
-* Explainable and transparent clinical recommendations  
-
-The system enhances — but does not replace — clinician judgment.
-
----
-
-## 🤖 Multi-Agent Architecture
-
-Vab Gen Rx leverages multiple specialized AI agents:
-
-* **Medication Reconciliation Agent** — Detects duplicate therapies and conflicts  
-* **Drug Interaction Agent** — Identifies contraindications and interaction risks  
-* **Dosing Optimization Agent** — Provides patient-specific dose recommendations  
-* **Risk Prediction Agent** — Identifies high-risk patients for adverse events  
-* **Counseling Agent** — Generates patient-friendly medication instructions  
-* **Pharmacy Access Agent** — Identifies nearby pharmacies and alternatives  
-
-These agents collaborate using multi-agent orchestration patterns.
-
----
-
-## 🏗️ Hackathon Requirements Alignment
-
-This project satisfies the core requirements:
-
-* Uses Microsoft AI platform technologies  
-* Multi-agent architecture using Microsoft Agent Framework  
-* Deployable on Azure cloud  
-* Developed using GitHub and VS Code  
-* Designed for real-world enterprise deployment  
-
----
-
-## 🧠 Microsoft Technologies Used
-
-### Hero Technologies
-
-* Microsoft Agent Framework  
-* Microsoft Foundry  
-* Azure OpenAI  
-* Azure MCP (Model Context Protocol)  
-
-### Azure Services
-
-* Azure Functions  
-* Azure App Service / Container Apps  
-* Azure Cosmos DB / Azure SQL  
-* Azure API Management  
-* Azure Storage  
-* Azure Monitor  
-
-### Developer Tools
-
-* GitHub  
-* GitHub Copilot Agent Mode  
-* VS Code  
-
----
-
-## 🏥 Use Case Workflow
-
-1. Clinician enters patient clinical information  
-2. AI agents analyze medication history  
-3. Drug interaction and risk alerts generated  
-4. Dosing recommendations provided  
-5. Patient counseling instructions created  
-6. Pharmacy availability and alternatives suggested  
-
----
-
-## 🌟 Innovation Highlights
-
-* Multi-agent healthcare intelligence platform  
-* Integration of safety, dosing, counseling, and access  
-* Enterprise-ready architecture  
-* Explainable AI with clinician oversight  
-* Regulatory-aligned clinical decision support model  
-* Real-world healthcare impact potential  
-
----
-
-## 🌍 Expected Impact
-
-Vab Gen Rx aims to:
-
-* Reduce preventable adverse drug events  
-* Improve medication adherence  
-* Enhance clinician workflow efficiency  
-* Improve healthcare access equity  
-* Support high-risk patient populations  
-
----
-
-## ⚖️ Responsible AI & Compliance
-
-Vab Gen Rx is designed as Clinical Decision Support (CDS), not autonomous medical software.
-
-Key principles:
-
-* Clinician retains full authority  
-* Transparent recommendations  
-* Explainable AI outputs  
-* Auditability and logging  
-* Privacy-aware architecture  
-
----
-
-## 🏆 Target Hackathon Categories
-
-* Best Enterprise Solution  
-* Best Multi-Agent System  
-* Best Azure Integration  
-
----
-
-## 🏗️ Architecture Diagram
-
-*To be added*
-
----
-
-## 🎥 Demo
-
-*To be added before submission*
-
----
-
-## 📜 Disclaimer
-
-This project is for educational and research purposes only.  
-It does not provide medical diagnosis or replace licensed healthcare professionals.
-
----
-
-## 🔮 Future Enhancements
-
-* FHIR-based EHR integration  
-* Real-time pharmacy inventory APIs  
-* Predictive adherence analytics  
-* Reinforcement learning optimization  
-* Multilingual voice assistant  
-* Integration with wearable health data  
-
----
-=======
 # VabGen-Rx
+### AI-Powered Clinical Drug Safety & Decision Support System
 
-## Tech Stack
-- **Languages**: JavaScript, Python
-- **Frameworks**: React, Flask
-- **Database**: PostgreSQL
-- **Tools**: Docker, Git
+![React](https://img.shields.io/badge/Frontend-React-blue)
+![Node](https://img.shields.io/badge/Backend-Node.js-green)
+![FastAPI](https://img.shields.io/badge/AI%20Service-FastAPI-teal)
+![Azure](https://img.shields.io/badge/Cloud-Azure-blue)
+![Python](https://img.shields.io/badge/AI-Python-yellow)
+![License](https://img.shields.io/badge/License-Research-lightgrey)
 
-## Features
-- User authentication
-- Real-time data processing
-- Responsive design
-- RESTful API integration
+---
 
-## Installation Instructions
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Aadarsh-Praveen/VabGen-Rx.git
-   ```
-2. Navigate into the project directory:
-   ```bash
-   cd VabGen-Rx
-   ```
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Set up the database:
-   ```bash
-   docker-compose up
-   ```
-5. Run the application:
-   ```bash
-   npm start
-   ```
+## Overview
 
-## Development Workflow
-1. **Branching**: Create a new branch for each feature or bugfix.
-2. **Commits**: Make clear and concise commits to document changes.
-3. **Pull Requests**: Open a pull request for review when ready to merge.
-4. **Code Review**: Ensure that code is reviewed by peers before merging.
-5. **Deployment**: Follow CI/CD practices for deploying to production.
+VabGen-Rx is an **AI-powered clinical decision support platform** that helps healthcare professionals analyze **drug safety, interactions, dosing risks, and patient-specific contraindications**.
+
+The system uses **multi-agent AI orchestration** powered by **Azure AI Agents, Azure OpenAI, FDA safety data, and PubMed research evidence** to generate **evidence-backed medication safety insights**.
+
+The platform integrates:
+
+- Hospital workflow systems
+- AI-powered safety analysis
+- Regulatory drug evidence
+- Clinical reasoning agents
+
+to support **safe and informed prescribing decisions**.
+
+---
+
+# Table of Contents
+
+- Overview
+- System Architecture
+- Core Features
+- AI Agent Architecture
+- AI Analysis Pipeline
+- Technology Stack
+- Project Structure
+- Installation
+- Environment Variables
+- Running the Application
+- API Documentation
+- Evidence Sources
+- Security & Compliance
+- Database Design
+- Monitoring
+- Future Improvements
+- License
+
+---
+
+# System Architecture
+
+The system follows a **three-tier architecture**:
+Frontend (React)
+│
+│ REST APIs
+▼
+Operational Backend (Node.js)
+│
+│ Patient Records / Workflow
+▼
+Azure SQL Databases
+│
+│ AI Requests
+▼
+AI Backend (FastAPI)
+│
+│ Multi-Agent Orchestration
+▼
+Azure AI Agents + Azure OpenAI
+│
+│ Evidence Retrieval
+▼
+PubMed + FDA OpenFDA
+
+
+---
+
+# Core Features
+
+## Drug Interaction Detection
+
+Analyzes potential **drug-drug interactions** using:
+
+- FDA safety labels
+- PubMed clinical studies
+- AI reasoning
+
+---
+
+## Drug-Disease Contraindication Detection
+
+Identifies medication risks based on:
+
+- patient conditions
+- comorbidities
+- clinical safety rules
+
+---
+
+## AI Dosing Recommendations
+
+Provides dosage guidance based on:
+
+- pharmacology
+- patient condition
+- clinical evidence
+
+---
+
+## Patient Counseling Generation
+
+Automatically generates patient guidance including:
+
+- medication usage
+- safety precautions
+- side effects
+- lifestyle considerations
+
+---
+
+## Evidence-Based AI Explanation
+
+Every AI analysis is supported with:
+
+- research-based evidence
+- clinical reasoning summaries
+
+---
+
+# AI Agent Architecture
+
+The AI engine is composed of specialized agents.
+
+### Safety Agent
+
+Detects:
+
+- drug-drug interactions
+- toxicity risks
+- food interactions
+
+Uses:
+
+- FDA drug safety data
+- pharmacology knowledge
+
+---
+
+### Disease Agent
+
+Analyzes:
+
+- drug-disease conflicts
+- comorbidities
+- contraindications
+
+---
+
+### Dosing Agent
+
+Evaluates:
+
+- dose safety
+- maximum safe dosage
+- medication dosage guidelines
+
+---
+
+### Counseling Agent
+
+Generates patient instructions for:
+
+- medication usage
+- side effects
+- lifestyle considerations
+
+---
+
+### Orchestrator Agent
+
+Coordinates all agents and produces final output.
+
+Responsibilities:
+
+- evidence aggregation
+- conflict resolution
+- final clinical reasoning
+
+---
+
+# AI Analysis Pipeline
+
+The AI engine operates in **six phases**.
+
+## Phase 1 — Evidence Gathering
+
+Retrieves information from:
+
+- PubMed
+- FDA OpenFDA
+- evidence services
+
+---
+
+## Phase 2 — Specialist Analysis
+
+Each AI agent independently analyzes:
+
+- drug safety
+- disease risk
+- dosage safety
+
+---
+
+## Phase 3 — Signal Extraction
+
+Identifies patterns such as:
+
+- multi-drug toxicity
+- overlapping adverse effects
+- compound safety risks
+
+---
+
+## Phase 4 — Secondary Evaluation
+
+Agents perform deeper analysis if risk signals are detected.
+
+---
+
+## Phase 5 — Patient Counseling
+
+Generates patient-facing safety instructions.
+
+---
+
+## Phase 6 — Final Orchestration
+
+The orchestrator produces a final clinical summary.
+
+---
+
+# Technology Stack
+
+## Frontend
+
+- React
+- Vite
+- Redux
+- Axios
+
+---
+
+## Backend
+
+- Node.js
+- Express
+- JWT authentication
+- Nodemailer
+
+---
+
+## AI Backend
+
+- Python
+- FastAPI
+- Azure AI Agents
+- Azure OpenAI
+
+---
+
+## Database
+
+- Azure SQL Database
+
+---
+
+## Cloud Services
+
+- Azure Key Vault
+- Azure Application Insights
+- Azure Blob Storage
+
+---
+
+## External APIs
+
+- PubMed API
+- FDA OpenFDA API
+
+---
+
+# Project Structure
+VabGen-Rx
+│
+├── my-react-app
+│ ├── src
+│ │ ├── components
+│ │ ├── pages
+│ │ ├── services
+│ │ │ ├── api.js
+│ │ │ └── agentApi.js
+│ │ └── App.jsx
+│
+├── server
+│ ├── index.js
+│ ├── db.js
+│ ├── routes
+│ └── middleware
+│
+├── api
+│ ├── app.py
+│ ├── services
+│ │ ├── evidence_services
+│ │ ├── translation_services
+│ │ └── safety_services
+│ │
+│ └── vabgenrx_agents
+│ ├── safety_agent.py
+│ ├── disease_agent.py
+│ ├── dosing_agent.py
+│ ├── counselling_agent.py
+│ └── orchestrator.py
+│
+├── requirements.txt
+├── package.json
+└── README.md
+---
+
+# Installation
+
+Clone the repository:
+
+
+git clone https://github.com/YOUR_USERNAME/vabgen-rx.git
+
+cd vabgen-rx
+
+
+---
+
+# Backend Setup
+
+Install Node dependencies:
+
+
+cd server
+npm install
+
+
+---
+
+# AI Backend Setup
+
+Install Python dependencies:
+
+
+pip install -r requirements.txt
+
+
+---
+
+# Frontend Setup
+
+
+cd my-react-app
+npm install
+
+
+---
+
+# Environment Variables
+
+Create `.env` files.
+
+## Backend `.env`
+
+
+JWT_SECRET=
+AZURE_SQL_CONNECTION=
+EMAIL_SERVICE_KEY=
+
+
+---
+
+## AI Backend `.env`
+
+
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_KEY=
+AZURE_AI_PROJECT_ENDPOINT=
+AZURE_AI_PROJECT_KEY=
+KEY_VAULT_URL=
+
+
+---
+
+# Running the Application
+
+## Start Node Backend
+
+
+node server/index.js
+
+
+---
+
+## Start AI Backend
+
+
+uvicorn api.app:app --reload
+
+
+---
+
+## Start Frontend
+
+
+npm run dev
+
+
+---
+
+# API Endpoints
+
+## Authentication
+
+
+POST /signin
+POST /register
+POST /reset-password
+
+
+---
+
+## Patient Data
+
+
+GET /patients
+GET /patients/:id
+POST /patients
+
+
+---
+
+## AI Analysis
+
+
+POST /validate/drug
+POST /check/drug-pair
+POST /analyze
+POST /agent/analyze
+
+
+---
+
+# Evidence Sources
+
+## PubMed
+
+Provides biomedical research used for:
+
+- drug safety
+- adverse effects
+- pharmacology
+
+---
+
+## FDA OpenFDA
+
+Provides:
+
+- drug labels
+- safety alerts
+- adverse event reports
+
+---
+
+# Security & Compliance
+
+Healthcare data protection includes:
+
+- PHI audit logging
+- role-based access control
+- encrypted secrets via Azure Key Vault
+- secure authentication
+- audit log retention policies
+
+---
+
+# Database Design
+
+## Credentials Database
+
+Stores:
+
+- users
+- authentication records
+- roles
+
+---
+
+## Patients Database
+
+Stores:
+
+- patient records
+- prescriptions
+- referrals
+- clinical notes
+
+---
+
+## AI Cache Database
+
+Stores:
+
+- interaction analysis
+- evidence summaries
+- AI output caching
+
+---
+
+## Audit Database
+
+Stores:
+
+- PHI access logs
+- AI analysis records
+
+---
+
+# Monitoring
+
+System monitoring includes:
+
+- Azure Application Insights
+- request tracing
+- performance monitoring
+- error tracking
+
+---
+
+# Future Improvements
+
+Planned enhancements include:
+
+- FHIR healthcare interoperability
+- EHR system integration
+- real-time medication alerts
+- improved explainable AI
+- clinical guideline integration
+
+---
+
+# License
+
+This project is intended for **research and demonstration purposes**.
+
+It is **not a certified clinical decision system** and should not replace professiona
