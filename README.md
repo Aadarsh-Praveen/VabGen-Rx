@@ -296,45 +296,6 @@ The orchestrator produces a final clinical summary.
 
 ---
 
-# Project Structure
-VabGen-Rx
-│
-├── my-react-app
-│ ├── src
-│ │ ├── components
-│ │ ├── pages
-│ │ ├── services
-│ │ │ ├── api.js
-│ │ │ └── agentApi.js
-│ │ └── App.jsx
-│
-├── server
-│ ├── index.js
-│ ├── db.js
-│ ├── routes
-│ └── middleware
-│
-├── api
-│ ├── app.py
-│ ├── services
-│ │ ├── evidence_services
-│ │ ├── translation_services
-│ │ └── safety_services
-│ │
-│ └── vabgenrx_agents
-│ ├── safety_agent.py
-│ ├── disease_agent.py
-│ ├── dosing_agent.py
-│ ├── counselling_agent.py
-│ └── orchestrator.py
-│
-├── requirements.txt
-├── package.json
-└── README.md
----
-
----
-
 ## High-Level Architecture
 
 VabGen-Rx follows a multi-layer architecture that separates the user interface, operational healthcare workflows, and AI-powered clinical reasoning.
