@@ -49,27 +49,48 @@ to support **safe and informed prescribing decisions**.
 # System Architecture
 
 The system follows a **three-tier architecture**:
-Frontend (React)
-│
-│ REST APIs
-▼
-Operational Backend (Node.js)
-│
-│ Patient Records / Workflow
-▼
-Azure SQL Databases
-│
-│ AI Requests
-▼
-AI Backend (FastAPI)
-│
-│ Multi-Agent Orchestration
-▼
-Azure AI Agents + Azure OpenAI
-│
-│ Evidence Retrieval
-▼
-PubMed + FDA OpenFDA
+
+```
+┌───────────────────────────┐
+│        Frontend           │
+│        React UI           │
+└─────────────┬─────────────┘
+              │
+              │ REST APIs
+              ▼
+┌───────────────────────────┐
+│   Operational Backend     │
+│      Node.js / Express    │
+└─────────────┬─────────────┘
+              │
+              │ Patient Records / Workflow
+              ▼
+┌───────────────────────────┐
+│      Azure SQL Database   │
+│  Users • Patients • Notes │
+└─────────────┬─────────────┘
+              │
+              │ AI Requests
+              ▼
+┌───────────────────────────┐
+│        AI Backend         │
+│          FastAPI          │
+└─────────────┬─────────────┘
+              │
+              │ Multi-Agent Orchestration
+              ▼
+┌───────────────────────────┐
+│   Azure AI Agents         │
+│   Azure OpenAI Models     │
+└─────────────┬─────────────┘
+              │
+              │ Evidence Retrieval
+              ▼
+┌───────────────────────────┐
+│   External Medical APIs   │
+│  PubMed • FDA OpenFDA     │
+└───────────────────────────┘
+```
 
 
 ---
