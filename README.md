@@ -460,4 +460,4 @@ Planned enhancements include:
 
 This project is intended for **research and demonstration purposes**.
 
-It is **not a certified clinical decision system** and should not replace professiona
+It is **not a certified clinical decision system** and should not replace professional
