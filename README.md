@@ -5,13 +5,6 @@
 # VabGen-Rx
 ### AI-Powered Clinical Drug Safety & Decision Support System
 
-![React](https://img.shields.io/badge/Frontend-React-blue)
-![Node](https://img.shields.io/badge/Backend-Node.js-green)
-![FastAPI](https://img.shields.io/badge/AI%20Service-FastAPI-teal)
-![Azure](https://img.shields.io/badge/Cloud-Azure-blue)
-![Python](https://img.shields.io/badge/AI-Python-yellow)
-![License](https://img.shields.io/badge/License-Research-lightgrey)
-
 ---
 
 ## Overview
