@@ -333,6 +333,69 @@ VabGen-Rx
 └── README.md
 ---
 
+---
+
+## High-Level Architecture
+
+VabGen-Rx follows a multi-layer architecture that separates the user interface, operational healthcare workflows, and AI-powered clinical reasoning.
+
+```text
+┌───────────────────────────────────────────────┐
+│                 Frontend Layer                │
+│               React + Vite UI                 │
+│  - Login / Dashboard / Patients / Settings   │
+│  - Medication review and AI result display   │
+└───────────────────────────────────────────────┘
+                      │
+                      │ REST API calls
+                      ▼
+┌───────────────────────────────────────────────┐
+│          Operational Backend Layer            │
+│             Node.js + Express API             │
+│  - Authentication & JWT                       │
+│  - User / Patient / Prescription workflows    │
+│  - OTP / password reset / image upload        │
+└───────────────────────────────────────────────┘
+                      │
+                      │ Database operations
+                      ▼
+┌───────────────────────────────────────────────┐
+│              Azure SQL Databases              │
+│  - Credentials DB                             │
+│  - Patients DB                                │
+│  - Prescriptions / notes / referrals          │
+└───────────────────────────────────────────────┘
+
+Frontend also communicates directly with the AI backend for advanced medication analysis.
+
+┌───────────────────────────────────────────────┐
+│               AI Backend Layer                │
+│                FastAPI Service                │
+│  - Drug validation                            │
+│  - Drug-pair checks                           │
+│  - Full AI medication analysis                │
+│  - Phase-based agent workflow                 │
+└───────────────────────────────────────────────┘
+                      │
+                      │ Multi-agent orchestration
+                      ▼
+┌───────────────────────────────────────────────┐
+│          Azure AI Agents + Azure OpenAI       │
+│  - Safety Agent                               │
+│  - Disease Agent                              │
+│  - Dosing Agent                               │
+│  - Counselling Agent                          │
+│  - Orchestrator Agent                         │
+└───────────────────────────────────────────────┘
+                      │
+                      │ Evidence retrieval
+                      ▼
+┌───────────────────────────────────────────────┐
+│         External Clinical Evidence Sources    │
+│  - PubMed                                     │
+│  - FDA OpenFDA                                │
+└───────────────────────────────────────────────┘
+
 # Evidence Sources
 
 ## PubMed
