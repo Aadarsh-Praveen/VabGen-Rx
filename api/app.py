@@ -74,6 +74,8 @@ _PROJECT_CONN_STR = _PROJECT_ENDPOINT  # updated below if tracing connects
 
 if _PROJECT_ENDPOINT:
     try:
+        import pkg_resources
+        print(f"📦 setuptools version: {pkg_resources.get_distribution('setuptools').version}")
         from azure.ai.projects           import AIProjectClient
         from azure.identity              import DefaultAzureCredential
         from azure.monitor.opentelemetry import configure_azure_monitor
