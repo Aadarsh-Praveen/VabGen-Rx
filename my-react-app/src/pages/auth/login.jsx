@@ -9,6 +9,29 @@ import AboutSection from "../../components/aboutSection";
 
 const rand = (min, max) => Math.round(min + Math.random() * (max - min));
 
+const HERO_TITLE_WORDS = [
+  { text: "AI-Powered",   grad: false },
+  { text: "Clinical",     grad: false },
+  { text: "Intelligence", grad: false },
+  { text: "for",          grad: false },
+  { text: "Safer",        grad: true  },
+  { text: "Prescribing",  grad: true  },
+];
+
+const HERO_SUB_TEXT =
+  "VabGen Rx is an AI-driven medication safety platform that analyzes drug interactions, " +
+  "contraindications, dosing risks and patient-specific factors using evidence from " +
+  "PubMed research and FDA drug safety data.";
+
+const TRUST_BADGES = [
+  { label: "HIPAA Aligned"    },
+  { label: "Physicians Only"  },
+  { label: "Azure AI Powered" },
+];
+
+/* ════════════════════════════════════
+   BACKGROUND — floating nodes + lines
+   ════════════════════════════════════ */
 const LoginBackground = ({ canvasRef, svgRef }) => {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,6 +104,9 @@ const LoginBackground = ({ canvasRef, svgRef }) => {
   return null;
 };
 
+/* ════════════════════════════════════
+   ICON COMPONENTS
+   ════════════════════════════════════ */
 const EyeOpen = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
     fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -111,6 +137,9 @@ const LockIcon = () => (
   </svg>
 );
 
+/* ════════════════════════════════════
+   HELPERS
+   ════════════════════════════════════ */
 const pwdWarningColor = (days) => ({
   bg:     days <= 5  ? "#fef2f2" : days <= 15 ? "#fffbeb" : "#f0fdf4",
   border: days <= 5  ? "#ef4444" : days <= 15 ? "#f59e0b" : "#22c55e",
@@ -124,6 +153,9 @@ const gradientText = {
   backgroundClip: "text",
 };
 
+/* ════════════════════════════════════
+   LOGIN PAGE
+   ════════════════════════════════════ */
 const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -221,7 +253,10 @@ const Login = () => {
       })()}
 
       <div className="login-hero-section">
+
+        {/* ── LEFT PANEL — slides in from left ── */}
         <div className="login-left-panel">
+
           <div className="login-brand-row">
             <img src={logo} alt="VabGen Rx" className="login-logo" />
             <div className="login-brand-text">
@@ -232,22 +267,38 @@ const Login = () => {
             </div>
           </div>
 
-          <p className="login-hero-label">About the Platform</p>
           <h2 className="login-hero-title">
-            Redefining <span>Medication Safety</span><br />for Modern Healthcare
+            {HERO_TITLE_WORDS.map((w, i) => (
+              <span key={i}>
+                <span
+                  className={`lx-word${w.grad ? " lx-word-grad" : ""}`}
+                  style={{ animationDelay: `${0.3 + i * 0.08}s` }}
+                >
+                  {w.text}
+                </span>
+                {i < HERO_TITLE_WORDS.length - 1 ? " " : ""}
+              </span>
+            ))}
           </h2>
-          <p className="login-hero-sub">
-            VabGen Rx is an intelligent, physician-exclusive platform built to eliminate
-            medication errors, streamline clinical decisions, and protect patients.
-          </p>
+
+          <p className="login-hero-sub">{HERO_SUB_TEXT}</p>
+
+          <div className="login-trust-badges">
+            {TRUST_BADGES.map((b) => (
+              <span key={b.label} className="login-trust-badge">
+                {b.label}
+              </span>
+            ))}
+          </div>
         </div>
 
+        {/* ── RIGHT PANEL — slides in from right ── */}
         <div className="login-right-panel">
           <div className="login-card">
+
             <div className="login-form-header">
               <h2 className="form-title">
-                Welcome,{" "}
-                <span style={gradientText}>Doctor!</span>
+                Welcome, <span style={gradientText}>Doctor!</span>
               </h2>
               <p className="form-subtitle">Sign in to your account to continue</p>
             </div>
@@ -256,7 +307,10 @@ const Login = () => {
               <div className={`alert alert-${msg.type}`}>
                 <span>{msg.text}</span>
                 {msg.expired && (
-                  <button className="btn-change-password" onClick={() => { setLockedEmail(msg.email); setMsg(null); }}>
+                  <button
+                    className="btn-change-password"
+                    onClick={() => { setLockedEmail(msg.email); setMsg(null); }}
+                  >
                     Change My Password
                   </button>
                 )}
@@ -314,7 +368,9 @@ const Login = () => {
             </p>
           </div>
         </div>
+
       </div>
+
       <AboutSection />
     </div>
   );

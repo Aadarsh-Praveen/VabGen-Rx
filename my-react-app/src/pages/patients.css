@@ -9,7 +9,7 @@
 
 .pt-main {
   flex: 1;
-  margin-left: 260px; /* 240px nav + 20px gap */
+  margin-left: 260px; 
   padding: 28px 28px 28px 8px;
   overflow-y: auto;
   min-height: 100vh;
@@ -18,7 +18,7 @@
   box-sizing: border-box;
 }
 
-/* ── Header ── */
+
 .pt-header {
   display: flex;
   align-items: center;
@@ -59,7 +59,7 @@
   margin: 2px 0 0;
 }
 
-/* ── Type toggle ── */
+
 .pt-type-toggle {
   display: flex;
   gap: 0.4rem;
@@ -92,7 +92,7 @@
 
 .pt-type-btn:hover:not(.active) { color: #555; }
 
-/* ── Filters ── */
+
 .pt-filters {
   display: flex;
   flex-wrap: wrap;
@@ -237,7 +237,7 @@
   font-size: 0.85rem; padding: 0; line-height: 1;
 }
 
-/* ── States ── */
+
 .pt-state {
   display: flex;
   flex-direction: column;
@@ -338,7 +338,7 @@
   font-size: 0.78rem;
   font-weight: 600;
   color: #555;
-  background: #f0f0f8;
+  background: #efefef;
   padding: 0.2rem 0.6rem;
   border-radius: 20px;
   border: 1px solid #e4e4f0;
@@ -412,9 +412,9 @@
 [data-theme="dark"] .pt-header-icon { background: #1a1a2e; }
 [data-theme="dark"] .pt-table-wrap  { background: #1a1a2e; box-shadow: 0 2px 16px rgba(0,0,0,0.3); }
 [data-theme="dark"] .pt-table thead tr { background: #16162a; }
-[data-theme="dark"] .pt-table td    { color: #e0e0f0; border-bottom-color: #2a2a40; }
+[data-theme="dark"] .pt-table td    { color: #efefef; border-bottom-color: #2a2a40; }
 [data-theme="dark"] .pt-tr:hover td { background: #1e1e35; }
-[data-theme="dark"] .pt-search      { background: #1a1a2e; color: #f0f0ff; border-color: #2a2a40; }
+[data-theme="dark"] .pt-search      { background: #1a1a2e; color: #fafafa; border-color: #2a2a40; }
 [data-theme="dark"] .pt-ip          { background: #2a2a40; }
 [data-theme="dark"] .pt-dept        { background: #2a2a40; color: #ccc; }
 [data-theme="dark"] .pt-filter-icon-btn  { background: #1a1a2e; border-color: #2a2a40; color: #aaa; }

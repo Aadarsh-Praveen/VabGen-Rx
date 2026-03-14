@@ -2,66 +2,66 @@ import { useEffect, useRef } from "react";
 import "./styles/aboutSection.css";
 
 const STATS = [
-  { target: 98,    suffix: "%",  label: "Accuracy Rate"            },
-  { target: 12000, suffix: "+",  label: "Drug Interactions Mapped" },
-  { target: 500,   suffix: "+",  label: "Verified Physicians"      },
-  { target: 24,    suffix: "hr", label: "Alert Coverage"           },
+  { target: 100,   suffix: "%", label: "AI Evaluation Accuracy"                  },
+  { target: 12000, suffix: "+", label: "Drug Interactions Analyzed"               },
+  { target: 1,     suffix: "",  label: "Multi-Agent AI Clinical Reasoning System" },
+  { target: 2,     suffix: "",  label: "Evidence-Based PubMed + FDA Data"         },
 ];
 
 const FEATURES = [
   {
-    icon: "🛡️", color: "blue", title: "Drug Interaction Guard",
-    body: "Real-time cross-checking of prescribed medications against a curated database of 12,000+ known interactions — flagging risks before they reach the patient.",
+    icon: "🛡️", color: "blue", title: "Drug Interaction Intelligence",
+    body: "Automatically detects dangerous drug-drug interactions by analyzing scientific literature and FDA safety reports. Each interaction is classified by severity, mechanism and clinical recommendation.",
   },
   {
-    icon: "⚡", color: "teal", title: "Instant Alerts",
-    body: "Severity-graded notifications for contraindications, dosage anomalies, and allergy conflicts — delivered in milliseconds, not seconds.",
+    icon: "⚡", color: "teal", title: "Real-Time Clinical Alerts",
+    body: "Identifies contraindications, adverse interactions and dosing risks in seconds. Alerts are prioritized by severity and include actionable clinical recommendations.",
   },
   {
-    icon: "🔒", color: "purple", title: "Physician-Only Access",
-    body: "No self-signup. Every account is manually verified, ensuring only licensed and credentialed practitioners access sensitive clinical tools.",
+    icon: "🔒", color: "purple", title: "Physician-Verified Access",
+    body: "Designed exclusively for healthcare professionals. Role-based access ensures that sensitive clinical intelligence tools remain restricted to verified medical practitioners.",
   },
   {
-    icon: "💊", color: "rose", title: "Smart Dosage Engine",
-    body: "Adapts recommendations based on patient weight, renal function, age, and comorbidities — providing personalised safe-dose ranges at the point of care.",
+    icon: "💊", color: "rose", title: "Smart Dosing Intelligence",
+    body: "Personalized dosing recommendations generated using patient-specific factors such as age, renal function, liver function and comorbidities. Helps physicians avoid dosing errors in complex clinical cases.",
   },
   {
     icon: "🔑", color: "amber", title: "Enterprise-Grade Security",
-    body: "Password expiry policies, account lockout protection, and end-to-end encryption keep patient data and clinical records safe at every layer.",
+    body: "Built with healthcare-grade security architecture including AES-256 encryption, secure authentication and strict data access policies designed to support HIPAA-aligned environments.",
   },
   {
     icon: "📊", color: "green", title: "Audit & Compliance",
-    body: "Full activity logging and exportable audit trails designed to meet HIPAA and regional healthcare data compliance requirements without extra effort.",
+    body: "Comprehensive audit logging tracks every clinical analysis request and decision pathway, supporting transparency, traceability and regulatory compliance requirements.",
   },
 ];
 
 const WHY_ITEMS = [
   {
     num: "01", title: "Clinician-First Design",
-    body: "Every workflow, screen, and alert was shaped around how doctors actually prescribe — not how software engineers imagined they might. Rapid, no-friction access to the information that matters most.",
+    body: "Designed around real prescribing workflows. Physicians receive clear, prioritized alerts with concise clinical explanations instead of overwhelming data.",
   },
   {
-    num: "02", title: "Continuously Updated Drug Database",
-    body: "Our curated interaction library is reviewed and updated regularly against the latest pharmacological research, FDA safety advisories, and clinical trial data — so the guidance is always current.",
+    num: "02", title: "Continuously Updated Evidence",
+    body: "Drug interaction insights are derived from the latest PubMed research publications and FDA safety reports, ensuring recommendations remain scientifically grounded and current.",
   },
   {
     num: "03", title: "Privacy by Architecture",
-    body: "Patient data never leaves your institution's context. Our architecture is designed with data minimisation at its core — we see what we need to protect patients, nothing more.",
+    body: "Patient identifiers are never stored in raw form. Data minimization and secure processing ensure that clinical analysis protects patient privacy by design.",
   },
   {
     num: "04", title: "Lightweight Integration",
-    body: "No months-long EHR implementations. VabGen Rx connects to existing hospital systems through a clean API layer — up and running in days, not quarters.",
+    body: "VabGen Rx integrates with existing healthcare systems through a clean API layer, allowing hospitals and telemedicine platforms to deploy medication safety intelligence without complex infrastructure changes.",
   },
   {
-    num: "05", title: "Transparent, Explainable Alerts",
-    body: "We never just say 'caution.' Every alert links to its clinical evidence source, severity rationale, and alternative suggestion — putting the physician back in control of the final call.",
+    num: "05", title: "Explainable AI Alerts",
+    body: "Every alert includes the underlying clinical mechanism, supporting evidence sources and recommended actions, giving physicians full transparency and control over their prescribing decisions.",
   },
 ];
 
 const TECH_PILLS = [
-  "React", "Redux Toolkit", "Node.js", "Express", "PostgreSQL",
-  "REST API", "JWT Auth", "HIPAA Aligned", "AES-256 Encryption",
-  "Vite", "Real-time Alerts", "Role-Based Access",
+  "React", "Redux Toolkit", "FastAPI", "Azure AI Foundry", "Azure OpenAI GPT-4o",
+  "Azure SQL Database", "Azure Key Vault", "Azure Application Insights",
+  "REST APIs", "Role-Based Access Control", "HIPAA-Aligned Security", "Python",
 ];
 
 function animateCounter(el) {
@@ -69,7 +69,6 @@ function animateCounter(el) {
   const suffix   = el.dataset.suffix || "";
   const duration = 1800;
   const start    = performance.now();
-
   function step(now) {
     const p    = Math.min((now - start) / duration, 1);
     const ease = 1 - Math.pow(1 - p, 4);
@@ -85,7 +84,7 @@ const AboutSection = () => {
   useEffect(() => {
     const revealObs = new IntersectionObserver(
       (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add("visible"); }),
-      { threshold: 0.12 }
+      { threshold: 0.1 }
     );
 
     const statObs = new IntersectionObserver(
@@ -125,8 +124,6 @@ const AboutSection = () => {
 
       <div className="about-section" id="about">
 
-        {/* Hero block removed — now lives in the login left panel */}
-
         <div className="about-stats-ribbon">
           {STATS.map((s, i) => (
             <div key={s.label} className={`about-stat-item reveal reveal-delay-${i}`}>
@@ -141,7 +138,7 @@ const AboutSection = () => {
           <h2 className="about-section-title reveal reveal-delay-1">Everything you need, built for clinicians</h2>
           <div className="about-cards-grid">
             {FEATURES.map((f, i) => (
-              <div key={f.title} className={`about-feature-card reveal reveal-delay-${i}`}>
+              <div key={f.title} className={`about-feature-card reveal reveal-delay-${i % 3}`}>
                 <div className={`about-card-icon about-icon-${f.color}`}>{f.icon}</div>
                 <h3 className="about-card-title">{f.title}</h3>
                 <p className="about-card-body">{f.body}</p>
@@ -153,23 +150,22 @@ const AboutSection = () => {
         <div className="about-mv-section">
           <div className="about-mv-card about-mv-mission reveal">
             <p className="about-mv-tag">Our Mission</p>
-            <h3 className="about-mv-title">Zero Preventable Medication Errors</h3>
+            <h3 className="about-mv-title">Eliminate Preventable Medication Errors</h3>
             <p className="about-mv-body">
-              We believe no patient should be harmed by a prescription that could have been caught.
-              VabGen Rx exists to give physicians an intelligent second set of eyes — one that never
-              tires, never misses a contraindication, and scales across every ward, every shift, every
-              system. Our mission is to make medication errors an artifact of the past, not a risk of
-              the present.
+              Medication errors remain one of the most preventable causes of patient harm worldwide.
+              VabGen Rx was created to provide physicians with an intelligent second layer of clinical safety.
+              By combining multi-agent AI reasoning with scientific evidence, our platform helps clinicians
+              detect risks early, make safer prescribing decisions and ultimately protect patients at every prescription.
             </p>
           </div>
           <div className="about-mv-card about-mv-vision reveal reveal-delay-1">
             <p className="about-mv-tag">Our Vision</p>
             <h3 className="about-mv-title">The Future of Prescribing is Intelligent</h3>
             <p className="about-mv-body">
-              We envision a world where every prescribing decision is augmented by real-time clinical
-              intelligence — where pharmacogenomics, patient history, and global drug safety data
-              converge at the point of care. VabGen Rx is building the infrastructure for that future:
-              one trusted prescription at a time.
+              We envision a healthcare ecosystem where every prescription is supported by real-time clinical intelligence.
+              By integrating AI-driven evidence analysis, drug safety data and patient-specific insights,
+              VabGen Rx enables physicians to prescribe with confidence while reducing the cognitive burden
+              of complex medication decisions.
             </p>
           </div>
         </div>
@@ -177,9 +173,9 @@ const AboutSection = () => {
         <div className="about-why-section">
           <p className="about-section-label reveal">Why VabGen Rx</p>
           <h2 className="about-section-title reveal reveal-delay-1">Built differently. For a reason.</h2>
-          <div className="about-timeline reveal reveal-delay-2">
-            {WHY_ITEMS.map((item) => (
-              <div key={item.num} className="about-tl-item">
+          <div className="about-timeline">
+            {WHY_ITEMS.map((item, i) => (
+              <div key={item.num} className={`about-tl-item reveal reveal-delay-${i % 3}`}>
                 <div className="about-tl-dot" />
                 <p className="about-tl-num">{item.num}</p>
                 <h4 className="about-tl-title">{item.title}</h4>
@@ -199,12 +195,13 @@ const AboutSection = () => {
           </div>
         </div>
 
-        <div className="about-footer">
+        <div className="about-footer reveal">
           <p className="about-footer-brand">
             VabGen <span className="about-rx-r">R</span><span className="about-rx-x">x</span>
           </p>
           <p className="about-footer-note">
-            Authorized access only · Built for patient safety · © {new Date().getFullYear()} VabGen Rx. All rights reserved.
+            AI-Powered Medication Safety Platform · Built with Azure AI to advance clinical decision support
+            and protect patients through intelligent prescribing. · © {new Date().getFullYear()} VabGen Rx. All rights reserved.
           </p>
         </div>
 
