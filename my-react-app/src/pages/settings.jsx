@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { updateUser } from "../store/authSlice";
 import Nav from "../components/nav";
@@ -6,6 +6,82 @@ import { apiFetch } from "../services/api";
 import "./settings.css";
 import PageFooter from "../components/pageFooter";
 
+/* ── Profile banner animated background ── */
+const rand = (min, max) => Math.round(min + Math.random() * (max - min));
+
+const BannerBackground = ({ canvasRef, svgRef }) => {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const svg    = svgRef.current;
+    if (!canvas || !svg) return;
+
+    const W = canvas.offsetWidth  || 800;
+    const H = canvas.offsetHeight || 120;
+    const NODE_COUNT = 14;
+
+    const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
+      id: i,
+      x: (0.02 + Math.random() * 0.96) * W,
+      y: (0.05 + Math.random() * 0.90) * H,
+      dur: 10 + Math.random() * 14,
+      del: -(Math.random() * 16),
+    }));
+
+    const nodeEls = nodes.map((n) => {
+      const wrap = document.createElement("div");
+      wrap.className = "banner-node";
+      wrap.style.cssText = `
+        left:${n.x}px; top:${n.y}px;
+        --dx1:${rand(-18,18)}px; --dy1:${rand(-12,12)}px;
+        --dx2:${rand(-18,18)}px; --dy2:${rand(-12,12)}px;
+        --dx3:${rand(-18,18)}px; --dy3:${rand(-12,12)}px;
+        animation: node-drift ${n.dur}s ease-in-out ${n.del}s infinite;
+      `;
+      const dot  = document.createElement("div");
+      dot.className = "banner-node-dot";
+      dot.style.animationDelay = `${Math.random() * -3}s`;
+      const ring = document.createElement("div");
+      ring.className = "banner-node-ring";
+      ring.style.animationDelay = `${Math.random() * -3}s`;
+      wrap.appendChild(dot);
+      wrap.appendChild(ring);
+      canvas.appendChild(wrap);
+      return wrap;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+
+    const lines = [];
+    const MAX_DIST = W * 0.28;
+    nodes.forEach((a) => {
+      nodes
+        .filter((b) => b.id !== a.id)
+        .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
+        .sort((x, y) => x.d - y.d)
+        .slice(0, 2)
+        .forEach(({ b, d }) => {
+          if (d > MAX_DIST) return;
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+          line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+          line.setAttribute("class", "banner-connector");
+          line.style.animationDelay = `${Math.random() * -4}s`;
+          svg.appendChild(line);
+          lines.push(line);
+        });
+    });
+
+    return () => {
+      nodeEls.forEach(el => el.remove());
+      lines.forEach(el => el.remove());
+    };
+  }, [canvasRef, svgRef]);
+
+  return null;
+};
+
+/* ── Icons (unchanged) ── */
 const ProfileIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -102,10 +178,9 @@ const getPwdScheme = (daysLeft, expired) => {
   return                               { bg: '#f0fdf4', border: '#22c55e', text: '#166534', bar: '#22c55e', label: 'Good'     };
 };
 
-// ✅ Accept onLogout prop
 const Settings = ({ onLogout }) => {
-  const dispatch  = useDispatch();
-  const user      = useSelector(state => state.auth.user);
+  const dispatch = useDispatch();
+  const user     = useSelector(state => state.auth.user);
 
   const [profile,     setProfile]     = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -119,6 +194,10 @@ const Settings = ({ onLogout }) => {
   const [pwdLoading,  setPwdLoading]  = useState(false);
   const [showPwd,     setShowPwd]     = useState({ current: false, newPwd: false, confirm: false });
   const [pwdStatus,   setPwdStatus]   = useState(null);
+
+  /* banner animation refs */
+  const bannerCanvasRef = useRef(null);
+  const bannerSvgRef    = useRef(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -157,8 +236,6 @@ const Settings = ({ onLogout }) => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
-
-  const toggleTheme = () => setTheme(t => t === "light" ? "dark" : "light");
 
   const handleAddressSave = async (e) => {
     e.preventDefault(); setAddrLoading(true); setAddrMsg(null);
@@ -217,7 +294,6 @@ const Settings = ({ onLogout }) => {
 
   return (
     <div className="dash-layout">
-      {/* ✅ Pass onLogout to Nav */}
       <Nav user={user} onLogout={onLogout} />
       <main className="dash-main settings-main">
 
@@ -268,12 +344,22 @@ const Settings = ({ onLogout }) => {
                     <p className="settings-card-sub">Your personal and professional information</p>
                   </div>
                 </div>
+
                 {loading ? (
                   <div className="settings-loading"><div className="pt-spinner" /></div>
                 ) : (
                   <>
+                    {/* ── Profile banner with node animation ── */}
                     <div className="profile-banner">
-                      <div className="profile-banner-bg" />
+                      {/* animated layers — clipped inside banner via overflow:hidden on .profile-banner */}
+                      <div className="banner-blob banner-blob-1" />
+                      <div className="banner-blob banner-blob-2" />
+                      <div className="banner-mesh" />
+                      <svg  className="banner-svg"    ref={bannerSvgRef}    />
+                      <div  className="banner-canvas" ref={bannerCanvasRef} />
+                      <BannerBackground canvasRef={bannerCanvasRef} svgRef={bannerSvgRef} />
+
+                      {/* actual content sits above bg */}
                       <div className="profile-banner-content">
                         {displayUser?.image_url ? (
                           <img src={displayUser.image_url} alt="Avatar" className="sp-avatar-img" />
@@ -292,6 +378,7 @@ const Settings = ({ onLogout }) => {
                         </div>
                       </div>
                     </div>
+
                     <div className="sp-grid">
                       {[
                         ["Hospital ID",   displayUser?.hospital_id],
@@ -380,32 +467,21 @@ const Settings = ({ onLogout }) => {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                       <ShieldIcon />
-                      <span style={{ fontWeight: 700, fontSize: '14px', color: scheme.text }}>
-                        Password Security Status
-                      </span>
-                      <span style={{
-                        marginLeft: 'auto', background: scheme.border, color: '#fff',
-                        fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px',
-                      }}>{scheme.label}</span>
+                      <span style={{ fontWeight: 700, fontSize: '14px', color: scheme.text }}>Password Security Status</span>
+                      <span style={{ marginLeft: 'auto', background: scheme.border, color: '#fff', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '9999px' }}>{scheme.label}</span>
                     </div>
-
                     <p style={{ margin: '0 0 12px', fontSize: '14px', color: '#374151' }}>
                       {pwdStatus.expired ? (
-                        <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                          Your password has expired. Please change it immediately.
-                        </span>
+                        <span style={{ color: '#dc2626', fontWeight: 600 }}>Your password has expired. Please change it immediately.</span>
                       ) : (
                         <>
                           Your password expires in{' '}
-                          <strong style={{ color: scheme.text, fontSize: '16px' }}>
-                            {pwdStatus.daysLeft} day{pwdStatus.daysLeft !== 1 ? 's' : ''}
-                          </strong>
+                          <strong style={{ color: scheme.text, fontSize: '16px' }}>{pwdStatus.daysLeft} day{pwdStatus.daysLeft !== 1 ? 's' : ''}</strong>
                           {pwdStatus.daysLeft <= 5  && ' — change it now to avoid being blocked!'}
                           {pwdStatus.daysLeft > 5 && pwdStatus.daysLeft <= 15 && ' — please update it soon.'}
                         </>
                       )}
                     </p>
-
                     <div style={{ marginBottom: '14px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6b7280', marginBottom: '5px' }}>
                         <span>0 days</span>
@@ -413,23 +489,12 @@ const Settings = ({ onLogout }) => {
                         <span>90 days</span>
                       </div>
                       <div style={{ height: '8px', background: '#e5e7eb', borderRadius: '9999px', overflow: 'hidden' }}>
-                        <div style={{
-                          height: '100%', width: `${progress}%`,
-                          background: scheme.bar, borderRadius: '9999px', transition: 'width 0.5s ease',
-                        }} />
+                        <div style={{ height: '100%', width: `${progress}%`, background: scheme.bar, borderRadius: '9999px', transition: 'width 0.5s ease' }} />
                       </div>
                     </div>
-
                     <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                      {[
-                        ['Last Changed',      pwdStatus.lastChanged],
-                        ['Days Since Change', `${pwdStatus.daysSinceChange} days ago`],
-                        ['Policy',           '90-day rotation'],
-                      ].map(([k, v]) => (
-                        <div key={k} style={{
-                          background: 'rgba(255,255,255,0.7)', borderRadius: '8px',
-                          padding: '8px 14px', flex: 1, minWidth: '120px',
-                        }}>
+                      {[['Last Changed', pwdStatus.lastChanged], ['Days Since Change', `${pwdStatus.daysSinceChange} days ago`], ['Policy', '90-day rotation']].map(([k, v]) => (
+                        <div key={k} style={{ background: 'rgba(255,255,255,0.7)', borderRadius: '8px', padding: '8px 14px', flex: 1, minWidth: '120px' }}>
                           <span style={{ display: 'block', fontSize: '10px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{k}</span>
                           <span style={{ display: 'block', fontSize: '13px', color: '#1e293b', fontWeight: 600 }}>{v}</span>
                         </div>
@@ -508,7 +573,6 @@ const Settings = ({ onLogout }) => {
                     </div>
                   ))}
                 </div>
-              
               </div>
             )}
 

@@ -14,7 +14,7 @@
   border-bottom: 1px solid #eeebff;
 }
 .med-title {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -22,7 +22,7 @@
 }
 .med-count {
   margin-left: auto;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   color: #888;
 }
 .med-table-wrap {
@@ -33,11 +33,11 @@
 .med-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 .med-table th {
   text-align: left;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #888;
   text-transform: uppercase;
@@ -53,16 +53,16 @@
 }
 .med-sno    { color: #bbb; font-weight: 700; text-align: center; width: 36px; }
 .med-brand  { font-weight: 600; white-space: nowrap; }
-.med-hold-tag { font-size: 0.65rem; color: #f59e0b; margin-left: 4px; font-weight: 700; }
+.med-hold-tag { font-size: 0.72rem; color: #f59e0b; margin-left: 4px; font-weight: 700; }
 .med-generic  { font-size: 0.75rem; color: #888; font-style: italic; }
-.med-strength { font-family: monospace; font-size: 0.78rem; }
+.med-strength { font-size: 0.875rem; }
 
 .med-inline-inp {
   width: 80px;
   padding: 3px 6px;
   border: 1px solid transparent;
   border-radius: 5px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   background: transparent;
   color: #1a1a2e;
   font-family: inherit;
@@ -75,7 +75,7 @@
 .med-inline-inp::placeholder { color: #ccc; }
 .med-inline-inp-error       { border-color: #e05252 !important; }
 .med-inline-error {
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   color: #e05252;
   font-weight: 600;
   margin-top: 2px;
@@ -111,7 +111,7 @@
 }
 .med-drop-item {
   padding: 8px 14px;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   cursor: pointer;
   color: #1a1a2e;
   display: flex;
@@ -131,7 +131,7 @@
   padding: 5px 8px;
   border: 1.5px solid #1a73e8;
   border-radius: 7px;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   background: #fff;
   color: #1a1a2e;
   font-family: inherit;
@@ -151,7 +151,7 @@
   overflow-y: auto;
   min-width: 320px;
 }
-.med-search-loading { padding: 12px 14px; font-size: 0.8rem; color: #888; text-align: center; }
+.med-search-loading { padding: 12px 14px; font-size: 0.875rem; color: #888; text-align: center; }
 .med-search-option {
   padding: 10px 14px;
   cursor: pointer;
@@ -160,11 +160,11 @@
 }
 .med-search-option:last-child { border-bottom: none; }
 .med-search-option:hover      { background: #f0f5ff; }
-.med-search-brand { font-size: 0.875rem; font-weight: 600; color: #1a1a2e; }
-.med-search-meta  { font-size: 0.75rem; color: #888; margin-top: 2px; }
+.med-search-brand { font-size: 0.95rem; font-weight: 600; color: #1a1a2e; }
+.med-search-meta  { font-size: 0.82rem; color: #888; margin-top: 2px; }
 
 .med-back-to-search {
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   color: #f59e0b;
   margin-top: 3px;
   white-space: nowrap;
@@ -180,7 +180,7 @@
   color: #fff;
   border: none;
   border-radius: 6px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s;
@@ -197,7 +197,7 @@
   color: #888;
   border: 1px solid #e0e3ef;
   border-radius: 6px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -220,7 +220,7 @@
   gap: 6px;
   padding: 10px;
   color: #1a73e8;
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   cursor: pointer;
 }
 .med-add-btn:hover { background: #eff6ff; }
@@ -233,7 +233,7 @@
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
   margin: 6px 8px 6px 0;
@@ -250,7 +250,7 @@
   color: #e05252;
   border: 1.5px solid #fca5a5;
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
   margin: 6px 8px 6px 0;
@@ -270,7 +270,7 @@
 }
 @keyframes med-spin { to { transform: rotate(360deg); } }
 
-.med-empty { text-align: center; color: #aaa; padding: 2rem; font-size: 0.85rem; }
+.med-empty { text-align: center; color: #aaa; padding: 2rem; font-size: 0.9rem; }
 
 .med-dup-overlay {
   position: fixed;
@@ -295,12 +295,12 @@
 }
 .med-dup-title {
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.1rem;
   color: #1a1a2e;
   margin-bottom: 8px;
 }
 .med-dup-body {
-  font-size: 0.85rem;
+  font-size: 0.92rem;
   color: #555;
   margin-bottom: 20px;
 }
@@ -311,7 +311,7 @@
   border-radius: 8px;
   padding: 8px 28px;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   cursor: pointer;
 }
 

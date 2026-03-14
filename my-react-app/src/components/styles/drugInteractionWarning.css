@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   box-shadow: 0 2px 8px rgba(224,82,82,0.4);
   z-index: 10;
   border: 2px solid #fff;
@@ -34,7 +34,7 @@
   flex-shrink: 0;
 }
 .dint-title {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -47,7 +47,7 @@
 .dint-tab {
   flex: 1;
   padding: 7px 10px;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   font-weight: 700;
   background: transparent;
   border: none;
@@ -67,14 +67,14 @@
   background: #e05252;
   color: #fff;
   border-radius: 999px;
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 800;
   padding: 1px 6px;
   line-height: 1.4;
 }
 
 .dint-body {
-  padding: 12px 1.1rem 1rem;   
+  padding: 12px 1.1rem 1rem;
   overflow-y: auto;
   min-height: 600px;
   max-height: 800px;
@@ -101,7 +101,7 @@
 .dint-pill {
   padding: 4px 14px;
   border-radius: 20px;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -118,7 +118,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 800;
   color: #fff;
 }
@@ -141,7 +141,7 @@
 }
 .dint-item-left  { display: flex; align-items: center; gap: 8px; }
 .dint-item-right { display: flex; gap: 6px; flex-shrink: 0; }
-.dint-item-name  { font-size: 0.9rem; font-weight: 700; color: #1a1a2e; }
+.dint-item-name  { font-size: 0.95rem; font-weight: 700; color: #1a1a2e; }
 
 .dint-badge-gray {
   background: #f0f0f8;
@@ -149,11 +149,11 @@
   border: 1px solid #e0e3ef;
   border-radius: 20px;
   padding: 2px 9px;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .dint-source-tag {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   color: #888;
   background: #f0f0f8;
   border: 1px solid #e0e3ef;
@@ -161,7 +161,7 @@
   padding: 2px 7px;
 }
 .dint-desc {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: #555;
   margin-bottom: 10px;
   line-height: 1.5;
@@ -176,15 +176,15 @@
   margin-bottom: 10px;
 }
 .dint-rec-label {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #16a34a;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   margin-bottom: 4px;
 }
-.dint-rec-text { font-size: 0.8rem; color: #166534; line-height: 1.5; }
-.dint-rec-note { font-size: 0.75rem; color: #e05252; margin-top: 5px; }
+.dint-rec-text { font-size: 0.875rem; color: #166534; line-height: 1.5; }
+.dint-rec-note { font-size: 0.82rem; color: #e05252; margin-top: 5px; }
 
 .dint-food-row {
   display: flex;
@@ -192,15 +192,15 @@
   gap: 5px;
   margin-bottom: 6px;
 }
-.dint-food-avoid    { font-size: 0.72rem; font-weight: 700; color: #e05252; display: inline-flex; align-items: center; gap: 4px; }
-.dint-food-separate { font-size: 0.72rem; font-weight: 700; color: #f59e0b; display: inline-flex; align-items: center; gap: 4px; }
-.dint-food-monitor  { font-size: 0.72rem; font-weight: 700; color: #888;    display: inline-flex; align-items: center; gap: 4px; }
-.dint-food-val      { font-size: 0.82rem; }
+.dint-food-avoid    { font-size: 0.8rem; font-weight: 700; color: #e05252; display: inline-flex; align-items: center; gap: 4px; }
+.dint-food-separate { font-size: 0.8rem; font-weight: 700; color: #f59e0b; display: inline-flex; align-items: center; gap: 4px; }
+.dint-food-monitor  { font-size: 0.8rem; font-weight: 700; color: #888;    display: inline-flex; align-items: center; gap: 4px; }
+.dint-food-val      { font-size: 0.875rem; }
 
 .dint-loading   { text-align: center; padding: 1.5rem; color: #888; }
-.dint-loading p { font-size: 0.82rem; }
-.dint-empty     { color: #aaa; font-size: 0.85rem; text-align: center; padding: 1.5rem 0; }
-.dint-ok        { color: #16a34a; font-size: 0.85rem; }
+.dint-loading p { font-size: 0.9rem; }
+.dint-empty     { color: #aaa; font-size: 0.9rem; text-align: center; padding: 1.5rem 0; }
+.dint-ok        { color: #16a34a; font-size: 0.9rem; }
 
 [data-theme="dark"] .dint-card                            { background: #1a1a2e; border-color: #2a2a40; }
 [data-theme="dark"] .dint-header                          { background: #2a1a1a; border-color: #7f1d1d; }

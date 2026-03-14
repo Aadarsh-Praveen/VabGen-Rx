@@ -12,7 +12,7 @@
   border-bottom: 1px solid #eeebff;
 }
 .pcoun-title {
-  font-size: 0.8rem; font-weight: 700;
+  font-size: 0.9rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.06em;
   color: #1a73e8;
   display: flex; align-items: center; gap: 8px;
@@ -21,20 +21,20 @@
   background: #f0fdf4; color: #16a34a;
   border: 1px solid #86efac;
   border-radius: 20px; padding: 2px 8px;
-  font-size: 0.68rem; font-weight: 700;
+  font-size: 0.75rem; font-weight: 700;
 }
 .pcoun-denied-badge {
   background: #fff0f0; color: #e05252;
   border: 1px solid #fca5a5;
   border-radius: 20px; padding: 2px 8px;
-  font-size: 0.68rem; font-weight: 700;
+  font-size: 0.75rem; font-weight: 700;
 }
 
 .pcoun-prescribe-btn {
   display: inline-flex; align-items: center; gap: 6px;
   background: linear-gradient(135deg, #16a34a, #15803d);
   border: none; color: #fff; border-radius: 8px;
-  padding: 8px 20px; font-size: 0.82rem; font-weight: 700;
+  padding: 8px 20px; font-size: 0.9rem; font-weight: 700;
   box-shadow: 0 2px 6px rgba(22,163,74,0.28);
   transition: opacity 0.15s;
 }
@@ -43,7 +43,7 @@
 .pcoun-tabs { display: flex; padding: 0 1.1rem; border-bottom: 1px solid #eeebff; }
 .pcoun-tab {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 9px 18px; font-size: 0.8rem; font-weight: 600;
+  padding: 9px 18px; font-size: 0.875rem; font-weight: 600;
   background: transparent; border: none; cursor: pointer;
   color: #888; border-bottom: 2px solid transparent;
   transition: all 0.15s;
@@ -52,21 +52,21 @@
 .pcoun-tab:hover:not(.active) { color: #1a1a2e; }
 
 .pcoun-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 10px; }
-.pcoun-loading { color: #888; font-size: 0.82rem; text-align: center; padding: 1rem 0; }
-.pcoun-empty   { color: #aaa; font-size: 0.82rem; text-align: center; padding: 0.75rem 0; }
+.pcoun-loading { color: #888; font-size: 0.9rem; text-align: center; padding: 1rem 0; }
+.pcoun-empty   { color: #aaa; font-size: 0.9rem; text-align: center; padding: 0.75rem 0; }
 
 .pcoun-drug-label {
   display: flex; align-items: center; gap: 6px;
-  font-weight: 700; font-size: 0.82rem; color: #1a73e8; margin-bottom: 8px;
+  font-weight: 700; font-size: 0.9rem; color: #1a73e8; margin-bottom: 8px;
 }
 .pcoun-cond-label {
   display: flex; align-items: center; gap: 6px;
-  font-weight: 700; font-size: 0.82rem; color: #1a73e8; margin-bottom: 8px;
+  font-weight: 700; font-size: 0.9rem; color: #1a73e8; margin-bottom: 8px;
 }
 .pcoun-section { margin-bottom: 10px; }
 .pcoun-section-label {
   display: flex; align-items: center; gap: 5px;
-  font-size: 0.7rem; font-weight: 700; color: #888;
+  font-size: 0.78rem; font-weight: 700; color: #888;
   margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em;
 }
 .pcoun-section-label-warn { color: #e05252; }
@@ -79,7 +79,7 @@
   display: inline-flex; align-items: center; gap: 7px;
   background: #f0f0f8; border: 1.5px solid #e0e3ef; color: #1a73e8;
   border-radius: 8px; padding: 9px 18px;
-  font-size: 0.82rem; font-weight: 700;
+  font-size: 0.9rem; font-weight: 700;
   cursor: pointer; transition: background 0.15s;
 }
 .pcoun-preview-btn:hover { background: #eff6ff; }
@@ -93,17 +93,17 @@
 .pcoun-item-denied      { opacity: 0.42; background: #f5f5f8 !important; border-color: #ddd !important; }
 .pcoun-item-top         { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
 .pcoun-item-icon        { font-size: 1rem; flex-shrink: 0; }
-.pcoun-item-title       { font-weight: 700; font-size: 0.82rem; flex-shrink: 0; }
-.pcoun-item-desc        { font-size: 0.8rem; color: #555; line-height: 1.5; padding-left: 26px; }
+.pcoun-item-title       { font-weight: 700; font-size: 0.9rem; flex-shrink: 0; }
+.pcoun-item-desc        { font-size: 0.875rem; color: #555; line-height: 1.5; padding-left: 26px; }
 
-.pcoun-badge            { padding: 2px 9px; border-radius: 20px; font-size: 0.68rem; font-weight: 700; border: 1px solid; flex-shrink: 0; }
+.pcoun-badge            { padding: 2px 9px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; border: 1px solid; flex-shrink: 0; }
 .pcoun-badge-red        { background: #fff0f0; color: #e05252; border-color: #fca5a5; }
 .pcoun-badge-orange     { background: #fff7ed; color: #f59e0b; border-color: #fcd34d; }
 .pcoun-badge-gray       { background: #f0f0f8; color: #888;    border-color: #e0e3ef; }
 
 .pcoun-denied-tag {
   display: inline-flex; align-items: center;
-  font-size: 0.68rem; font-weight: 700;
+  font-size: 0.72rem; font-weight: 700;
   color: #e05252; background: #fff0f0;
   border: 1px solid #fca5a5; border-radius: 20px;
   padding: 2px 8px; flex-shrink: 0;
@@ -113,14 +113,14 @@
 
 .pcoun-btn-deny {
   display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;
+  padding: 3px 10px; border-radius: 6px; font-size: 0.78rem; font-weight: 700;
   cursor: pointer; border: 1.5px solid #fca5a5; background: #fff; color: #e05252; transition: all 0.12s;
 }
 .pcoun-btn-deny:hover { background: #fff0f0; }
 
 .pcoun-btn-retrieve {
   display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700;
+  padding: 3px 10px; border-radius: 6px; font-size: 0.78rem; font-weight: 700;
   cursor: pointer; border: 1.5px solid #93c5fd; background: #fff; color: #1a73e8; transition: all 0.12s;
 }
 .pcoun-btn-retrieve:hover { background: #eff6ff; border-color: #1a73e8; }
@@ -142,7 +142,7 @@
 }
 .pcoun-modal-title {
   display: flex; align-items: center; gap: 7px;
-  font-size: 0.9rem; font-weight: 700; color: #1a73e8;
+  font-size: 0.95rem; font-weight: 700; color: #1a73e8;
 }
 .pcoun-modal-header-right { display: flex; align-items: center; gap: 10px; }
 .pcoun-modal-close {
@@ -161,13 +161,13 @@
 .pcoun-lang-input-wrap:hover { border-color: #1a73e8; }
 .pcoun-lang-icon  { font-size: 0.9rem; flex-shrink: 0; }
 .pcoun-lang-input {
-  border: none; outline: none; font-size: 0.8rem; color: #1a1a2e;
+  border: none; outline: none; font-size: 0.875rem; color: #1a1a2e;
   background: transparent; width: 100%; font-family: inherit;
 }
 .pcoun-lang-input::placeholder { color: #aaa; }
 .pcoun-lang-selected-tag {
   background: #1a73e8; color: #fff; border-radius: 20px;
-  padding: 1px 8px; font-size: 0.68rem; font-weight: 700; flex-shrink: 0;
+  padding: 1px 8px; font-size: 0.72rem; font-weight: 700; flex-shrink: 0;
 }
 .pcoun-lang-dropdown {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0;
@@ -175,15 +175,15 @@
   box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 99999;
   max-height: 220px; overflow-y: auto;
 }
-.pcoun-lang-option { padding: 8px 14px; font-size: 0.82rem; cursor: pointer; color: #1a1a2e; transition: background 0.1s; }
+.pcoun-lang-option { padding: 8px 14px; font-size: 0.875rem; cursor: pointer; color: #1a1a2e; transition: background 0.1s; }
 .pcoun-lang-option:hover  { background: #f0f5ff; }
 .pcoun-lang-option.active { background: #eff6ff; color: #1a73e8; font-weight: 700; }
-.pcoun-lang-no-result     { padding: 10px 14px; font-size: 0.8rem; color: #aaa; text-align: center; }
+.pcoun-lang-no-result     { padding: 10px 14px; font-size: 0.875rem; color: #aaa; text-align: center; }
 
 .pcoun-modal-body { flex: 1; overflow-y: auto; padding: 1.2rem; }
 .pcoun-modal-translating {
   display: flex; align-items: center; gap: 12px;
-  justify-content: center; padding: 3rem; color: #1a73e8; font-size: 0.85rem;
+  justify-content: center; padding: 3rem; color: #1a73e8; font-size: 0.9rem;
 }
 .pcoun-spinner {
   width: 20px; height: 20px;
@@ -191,19 +191,19 @@
   border-radius: 50%; animation: pcoun-spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes pcoun-spin { to { transform: rotate(360deg); } }
-.pcoun-modal-empty { color: #aaa; font-size: 0.85rem; text-align: center; padding: 2rem; }
+.pcoun-modal-empty { color: #aaa; font-size: 0.9rem; text-align: center; padding: 2rem; }
 
 .pcoun-modal-section       { margin-bottom: 1.5rem; }
 .pcoun-modal-section-title {
   display: flex; align-items: center; gap: 6px;
-  font-size: 0.85rem; font-weight: 700; color: #1a73e8;
+  font-size: 0.92rem; font-weight: 700; color: #1a73e8;
   padding-bottom: 6px; border-bottom: 1.5px solid #eeebff; margin-bottom: 12px;
 }
 .pcoun-modal-drug-block { margin-bottom: 14px; }
-.pcoun-modal-drug-name  { font-weight: 700; font-size: 0.82rem; color: #1a1a2e; margin-bottom: 6px; }
+.pcoun-modal-drug-name  { font-weight: 700; font-size: 0.9rem; color: #1a1a2e; margin-bottom: 6px; }
 .pcoun-modal-sub-label  {
   display: flex; align-items: center; gap: 4px;
-  font-size: 0.68rem; font-weight: 700; color: #888;
+  font-size: 0.75rem; font-weight: 700; color: #888;
   text-transform: uppercase; letter-spacing: 0.06em; margin: 8px 0 4px;
 }
 .pcoun-modal-item {
@@ -211,19 +211,19 @@
   border-radius: 8px; padding: 8px 12px; margin-bottom: 5px;
 }
 .pcoun-modal-item-top   { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; flex-wrap: wrap; }
-.pcoun-modal-item-title { font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
-.pcoun-modal-item-desc  { font-size: 0.78rem; color: #555; line-height: 1.5; padding-left: 4px; }
+.pcoun-modal-item-title { font-weight: 700; font-size: 0.875rem; flex-shrink: 0; }
+.pcoun-modal-item-desc  { font-size: 0.85rem; color: #555; line-height: 1.5; padding-left: 4px; }
 
 .pcoun-modal-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.75rem 1.2rem; background: #f8f7ff; border-top: 1px solid #eeebff; flex-shrink: 0;
 }
-.pcoun-modal-footer-note { font-size: 0.78rem; color: #888; }
+.pcoun-modal-footer-note { font-size: 0.85rem; color: #888; }
 .pcoun-pdf-btn {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 20px; background: linear-gradient(135deg,#1a73e8,#1558b0);
   color: #fff; border: none; border-radius: 8px;
-  font-size: 0.82rem; font-weight: 700;
+  font-size: 0.9rem; font-weight: 700;
   cursor: pointer; box-shadow: 0 2px 8px rgba(26,115,232,0.3);
   transition: opacity 0.15s;
 }

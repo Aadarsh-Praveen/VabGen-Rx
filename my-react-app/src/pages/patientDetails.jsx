@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Nav from "../components/nav";
 import DiagnosisTab from "../components/diagnosis";
@@ -10,6 +10,86 @@ import patientIcon  from "../assets/patient_s.png";
 import labIcon      from "../assets/lab.png";
 import referralIcon from "../assets/referral.png";
 
+/* ══════════════════════════════════════
+   HERO BANNER NODE ANIMATION
+   ══════════════════════════════════════ */
+const rand = (min, max) => Math.round(min + Math.random() * (max - min));
+
+const HeroBackground = ({ canvasRef, svgRef }) => {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const svg    = svgRef.current;
+    if (!canvas || !svg) return;
+
+    const W = canvas.offsetWidth  || 900;
+    const H = canvas.offsetHeight || 100;
+    const NODE_COUNT = 16;
+
+    const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
+      id: i,
+      x: (0.02 + Math.random() * 0.96) * W,
+      y: (0.05 + Math.random() * 0.90) * H,
+      dur: 10 + Math.random() * 14,
+      del: -(Math.random() * 16),
+    }));
+
+    const nodeEls = nodes.map((n) => {
+      const wrap = document.createElement("div");
+      wrap.className = "hero-node";
+      wrap.style.cssText = `
+        left:${n.x}px; top:${n.y}px;
+        --dx1:${rand(-20,20)}px; --dy1:${rand(-12,12)}px;
+        --dx2:${rand(-20,20)}px; --dy2:${rand(-12,12)}px;
+        --dx3:${rand(-20,20)}px; --dy3:${rand(-12,12)}px;
+        animation: node-drift ${n.dur}s ease-in-out ${n.del}s infinite;
+      `;
+      const dot  = document.createElement("div");
+      dot.className = "hero-node-dot";
+      dot.style.animationDelay = `${Math.random() * -3}s`;
+      const ring = document.createElement("div");
+      ring.className = "hero-node-ring";
+      ring.style.animationDelay = `${Math.random() * -3}s`;
+      wrap.appendChild(dot);
+      wrap.appendChild(ring);
+      canvas.appendChild(wrap);
+      return wrap;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+
+    const lines = [];
+    const MAX_DIST = W * 0.22;
+    nodes.forEach((a) => {
+      nodes
+        .filter((b) => b.id !== a.id)
+        .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
+        .sort((x, y) => x.d - y.d)
+        .slice(0, 2)
+        .forEach(({ b, d }) => {
+          if (d > MAX_DIST) return;
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+          line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+          line.setAttribute("class", "hero-connector");
+          line.style.animationDelay = `${Math.random() * -4}s`;
+          svg.appendChild(line);
+          lines.push(line);
+        });
+    });
+
+    return () => {
+      nodeEls.forEach(el => el.remove());
+      lines.forEach(el => el.remove());
+    };
+  }, [canvasRef, svgRef]);
+
+  return null;
+};
+
+/* ══════════════════════════════════════
+   ICONS
+   ══════════════════════════════════════ */
 const UserIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
@@ -365,7 +445,6 @@ const ReferralTab = ({ p, isOutpatient }) => {
                 {allDepts.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
-
             <div className="pd-form-group">
               <label>Refer To Doctor</label>
               <select
@@ -382,7 +461,6 @@ const ReferralTab = ({ p, isOutpatient }) => {
               </select>
               {!referral.to_dept && <span className="pd-form-hint">Select a department first</span>}
             </div>
-
             <div className="pd-form-group">
               <label>Urgency</label>
               <select value={referral.urgency} onChange={e => setReferral(r => ({ ...r, urgency: e.target.value }))}>
@@ -391,35 +469,29 @@ const ReferralTab = ({ p, isOutpatient }) => {
                 <option>Emergency</option>
               </select>
             </div>
-
             <div className="pd-form-group">
               <label>Referral Date</label>
               <input type="date" value={referral.date} onChange={e => setReferral(r => ({ ...r, date: e.target.value }))} />
             </div>
           </div>
-
           <div className="pd-form-group pd-form-full">
             <label>Reason for Referral <span style={{ color: "#e05252" }}>*</span></label>
             <textarea
-              rows={3}
-              value={referral.reason}
+              rows={3} value={referral.reason}
               onChange={e => setReferral(r => ({ ...r, reason: e.target.value }))}
               placeholder="Describe the clinical reason..."
               className={!referral.reason && saveMsg === "error-validation" ? "pd-input-error" : ""}
             />
           </div>
-
           <div className="pd-form-group pd-form-full">
             <label>Additional Notes</label>
             <textarea
-              rows={3}
-              value={referral.notes}
+              rows={3} value={referral.notes}
               onChange={e => setReferral(r => ({ ...r, notes: e.target.value }))}
               placeholder="Any additional notes..."
             />
           </div>
         </div>
-
         <div className="pd-referral-actions">
           {saveMsg === "error-validation" && <span className="ref-msg ref-msg-error"><WarningIcon /> Department and Reason are required.</span>}
           {saveMsg === "success"          && <span className="ref-msg ref-msg-success"><CheckIcon /> Referral sent successfully!</span>}
@@ -470,6 +542,9 @@ const ReferralTab = ({ p, isOutpatient }) => {
   );
 };
 
+/* ══════════════════════════════════════
+   MAIN COMPONENT
+   ══════════════════════════════════════ */
 const PatientDetail = ({ user, onLogout }) => {
   const { id: patientNo } = useParams();
   const navigate          = useNavigate();
@@ -477,6 +552,9 @@ const PatientDetail = ({ user, onLogout }) => {
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState(null);
   const [activeTab, setActiveTab] = useState("info");
+
+  const heroCanvasRef = useRef(null);
+  const heroSvgRef    = useRef(null);
 
   const isOutpatient = patientNo?.toUpperCase().startsWith("OP");
 
@@ -509,7 +587,17 @@ const PatientDetail = ({ user, onLogout }) => {
 
         {patient && (
           <>
+            {/* ── Hero banner with node animation ── */}
             <div className="pd-hero">
+              {/* background layers */}
+              <div className="hero-blob hero-blob-1" />
+              <div className="hero-blob hero-blob-2" />
+              <div className="hero-mesh" />
+              <svg  className="hero-svg"    ref={heroSvgRef}    />
+              <div  className="hero-canvas" ref={heroCanvasRef} />
+              <HeroBackground canvasRef={heroCanvasRef} svgRef={heroSvgRef} />
+
+              {/* content */}
               <div className="pd-hero-avatar">{patient.Name?.charAt(0)}</div>
               <div className="pd-hero-info">
                 <h1 className="pd-hero-name">{patient.Name}</h1>

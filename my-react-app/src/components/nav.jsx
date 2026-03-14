@@ -1,11 +1,85 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import logo          from "../assets/vabgen_logo.png";
 import dashboardIcon from "../assets/dashboard.png";
 import patientIcon   from "../assets/patient.png";
 import settingsIcon  from "../assets/settings.png";
 import logoutIcon    from "../assets/logout.png";
 import "../components/styles/nav.css";
+
+const rand = (min, max) => Math.round(min + Math.random() * (max - min));
+
+const NavBackground = ({ canvasRef, svgRef }) => {
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const svg    = svgRef.current;
+    if (!canvas || !svg) return;
+
+    const W = 220;          // sidebar width
+    const H = window.innerHeight;
+    const NODE_COUNT = 10;  // fewer nodes to suit narrow sidebar
+
+    const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
+      id: i,
+      x: (0.08 + Math.random() * 0.84) * W,
+      y: (0.02 + Math.random() * 0.96) * H,
+      dur: 12 + Math.random() * 16,
+      del: -(Math.random() * 20),
+    }));
+
+    const nodeEls = nodes.map((n) => {
+      const wrap = document.createElement("div");
+      wrap.className = "login-node";
+      wrap.style.cssText = `
+        left: ${n.x}px; top: ${n.y}px;
+        --dx1: ${rand(-20,20)}px; --dy1: ${rand(-18,18)}px;
+        --dx2: ${rand(-20,20)}px; --dy2: ${rand(-18,18)}px;
+        --dx3: ${rand(-20,20)}px; --dy3: ${rand(-18,18)}px;
+        animation: node-drift ${n.dur}s ease-in-out ${n.del}s infinite;
+      `;
+      const dot  = document.createElement("div");
+      dot.className = "login-node-dot";
+      dot.style.animationDelay = `${Math.random() * -3}s`;
+      const ring = document.createElement("div");
+      ring.className = "login-node-ring";
+      ring.style.animationDelay = `${Math.random() * -3}s`;
+      wrap.appendChild(dot);
+      wrap.appendChild(ring);
+      canvas.appendChild(wrap);
+      return wrap;
+    });
+
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+
+    const lines = [];
+    const MAX_DIST = W * 0.9;
+    nodes.forEach((a) => {
+      nodes
+        .filter((b) => b.id !== a.id)
+        .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
+        .sort((x, y) => x.d - y.d)
+        .slice(0, 2)
+        .forEach(({ b, d }) => {
+          if (d > MAX_DIST) return;
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+          line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+          line.setAttribute("class", "login-connector");
+          line.style.animationDelay = `${Math.random() * -4}s`;
+          svg.appendChild(line);
+          lines.push(line);
+        });
+    });
+
+    return () => {
+      nodeEls.forEach((el) => el.remove());
+      lines.forEach((el)   => el.remove());
+    };
+  }, [canvasRef, svgRef]);
+
+  return null;
+};
 
 const NavPngIcon = ({ src, alt }) => (
   <img src={src} alt={alt} className="nav-png-icon" />
@@ -52,6 +126,9 @@ const Nav = ({ user, onLogout }) => {
   const [profile,         setProfile]        = useState(null);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
+  const canvasRef = useRef(null);
+  const svgRef    = useRef(null);
+
   useEffect(() => {
     if (!user?.email) return;
     const fetchProfile = async () => {
@@ -66,7 +143,7 @@ const Nav = ({ user, onLogout }) => {
 
   const handleLogoutConfirm = () => {
     setShowLogoutModal(false);
-    onLogout(); // clears Redux token → Protected redirects to /login automatically
+    onLogout();
   };
 
   const displayUser = profile || user;
@@ -74,6 +151,18 @@ const Nav = ({ user, onLogout }) => {
   return (
     <>
       <aside className="nav-sidebar">
+
+        {/* ── Background layers ── */}
+        <div className="nav-bg-blob nav-bg-blob-1" />
+        <div className="nav-bg-blob nav-bg-blob-2" />
+        <div className="nav-bg-blob nav-bg-blob-3" />
+        <svg className="nav-bg-svg" ref={svgRef} />
+        <div className="nav-bg-canvas" ref={canvasRef} />
+        <NavBackground canvasRef={canvasRef} svgRef={svgRef} />
+
+        {/* ── Mesh dot overlay ── */}
+        <div className="nav-bg-mesh" />
+
         <div className="nav-brand">
           <img src={logo} alt="VabGen Rx" className="nav-logo" />
           <span className="nav-brand-name">

@@ -34,16 +34,13 @@
 }
 
 .settings-page-header-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 46px; height: 46px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #1a73e8, #0d47a1);
+  display: flex; align-items: center; justify-content: center;
   color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(26, 115, 232, 0.3);
+  box-shadow: 0 4px 14px rgba(26,115,232,0.35);
 }
 
 .settings-page-title {
@@ -166,6 +163,7 @@
   flex-shrink: 0;
 }
 
+
 .settings-card-header-icon.blue   { background: #eff6ff; color: #1a73e8; }
 .settings-card-header-icon.orange { background: #fff7ed; color: #ea580c; }
 .settings-card-header-icon.red    { background: #fef2f2; color: #dc2626; }
@@ -189,7 +187,15 @@
   justify-content: center;
   padding: 32px;
 }
-
+.settings-page-header-icon {
+  width: 46px; height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0a192d, #5278b1);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(26,115,232,0.35);
+}
 .profile-banner {
   border-radius: 14px;
   margin-bottom: 24px;
@@ -594,4 +600,161 @@
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }/* ═══════════════════════════════════════════════════════
+   Paste these rules into settings.css
+   They replace / enhance the .profile-banner block only
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Banner container ── */
+.profile-banner {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  margin-bottom: 24px;
+  padding: 28px 28px 28px 24px;
+  background: linear-gradient(145deg, #060d14 0%, #0b1e2d 35%, #101828 60%, #0a1520 100%);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  min-height: 110px;
+}
+
+/* remove the old solid bg div */
+.profile-banner-bg { display: none; }
+
+/* content sits above all bg layers */
+.profile-banner-content {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+/* ── Blobs ── */
+.banner-blob {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(50px);
+  will-change: transform;
+}
+.banner-blob-1 {
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(26,115,232,0.32) 0%, transparent 65%);
+  top: -120px; left: -80px;
+  animation: blob-move-1 18s ease-in-out infinite;
+}
+.banner-blob-2 {
+  width: 240px; height: 240px;
+  background: radial-gradient(circle, rgba(167,139,250,0.22) 0%, transparent 65%);
+  bottom: -80px; right: -60px;
+  animation: blob-move-2 22s ease-in-out infinite;
+  animation-delay: -8s;
+}
+
+/* ── Mesh dot pattern ── */
+.banner-mesh {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(116,192,252,0.2) 1px, transparent 1px);
+  background-size: 28px 28px;
+  animation: mesh-drift 20s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Node canvas + SVG ── */
+.banner-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+.banner-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+/* ── Node dot + ring ── */
+.banner-node {
+  position: absolute; border-radius: 50%;
+  pointer-events: none; will-change: transform, opacity;
+}
+.banner-node-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(116,192,252,0.9);
+  box-shadow: 0 0 7px 2px rgba(116,192,252,0.5);
+  animation: node-pulse 3s ease-in-out infinite;
+}
+.banner-node-ring {
+  position: absolute; top: 50%; left: 50%;
+  width: 4px; height: 4px; border-radius: 50%;
+  border: 1px solid rgba(116,192,252,0.45);
+  transform: translate(-50%,-50%);
+  animation: ring-expand 3s ease-out infinite;
+}
+
+/* ── Connector lines ── */
+.banner-connector {
+  stroke: rgba(116,192,252,0.14);
+  stroke-width: 1;
+  animation: line-fade 4s ease-in-out infinite;
+}
+
+/* ── Avatar ── */
+.sp-avatar-img {
+  width: 64px; height: 64px;
+  border-radius: 50%; object-fit: cover;
+  border: 3px solid rgba(116,192,252,0.4);
+  box-shadow: 0 0 0 4px rgba(116,192,252,0.12), 0 4px 16px rgba(0,0,0,0.4);
+  flex-shrink: 0;
+  position: relative; z-index: 3;
+}
+.sp-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #74c0fc, #a78bfa);
+  color: #02040d;
+  font-size: 22px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 3px solid rgba(116,192,252,0.35);
+  box-shadow: 0 0 0 4px rgba(116,192,252,0.12), 0 4px 16px rgba(0,0,0,0.3);
+  position: relative; z-index: 3;
+}
+
+/* ── Name / role text ── */
+.sp-name {
+  font-size: 18px; font-weight: 800;
+  color: #fff; margin: 0 0 3px;
+  letter-spacing: -0.2px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.sp-role {
+  font-size: 13px;
+  color: rgba(255,255,255,0.6);
+  margin: 0 0 10px;
+}
+.sp-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.sp-badge {
+  font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px;
+}
+.sp-badge.green {
+  background: rgba(52,211,153,0.2);
+  color: #34d399;
+  border: 1px solid rgba(52,211,153,0.3);
+}
+.sp-badge.blue {
+  background: rgba(116,192,252,0.15);
+  color: #74c0fc;
+  border: 1px solid rgba(116,192,252,0.3);
+}
+/* REMOVE this line: */
+[data-theme="dark"] .settings-page-header-icon { background: rgba(255,255,255,0.06); }

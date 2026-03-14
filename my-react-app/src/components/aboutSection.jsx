@@ -125,16 +125,7 @@ const AboutSection = () => {
 
       <div className="about-section" id="about">
 
-        <div className="about-hero">
-          <p className="about-hero-label reveal">About the Platform</p>
-          <h2 className="about-hero-title reveal reveal-delay-1">
-            Redefining <span>Medication Safety</span><br />for Modern Healthcare
-          </h2>
-          <p className="about-hero-sub reveal reveal-delay-2">
-            VabGen Rx is an intelligent, physician-exclusive platform built to eliminate medication
-            errors, streamline clinical decisions, and protect patients — at every prescription.
-          </p>
-        </div>
+        {/* Hero block removed — now lives in the login left panel */}
 
         <div className="about-stats-ribbon">
           {STATS.map((s, i) => (
