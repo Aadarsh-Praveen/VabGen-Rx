@@ -5,8 +5,6 @@
 # VabGenRx
 ## AI-Powered Clinical Drug Safety & Decision Support
 
-> **AI Dev Days Hackathon 2025** · Microsoft Foundry · Microsoft Agent Framework · Azure MCP · GitHub Copilot
-
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4?logo=microsoftazure)](https://yellow-sea-05177870f.2.azurestaticapps.net/login)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -26,7 +24,7 @@ VabGenRx was built for that moment.
 
 It is a production-ready, evidence-based, AI-powered clinical medication safety platform that works in the background of a clinician's workflow doing in seconds what would otherwise take hours of cross-referencing across databases, literature, lab reports and pharmacy systems. When a prescription is written, VabGenRx gets to work immediately.
 
-It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a six-phase multi-agent AI pipeline built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report.
+It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a **six-phase multi-agent AI pipeline** built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report in under 90 seconds.
 
 Not a list of warnings. A clinical narrative that tells the prescriber exactly what the risks are, how serious they are and what to do next grounded strictly in PubMed literature and FDA databases. Never in guesswork.
 
@@ -36,9 +34,9 @@ Not a list of warnings. A clinical narrative that tells the prescriber exactly w
 
 **VabGenRx** is a production-ready, multi-agent clinical pharmacology platform that solves one of healthcare's most dangerous and overlooked problems: the impossibility of safely managing polypharmacy at the point of care.
 
-**Who is it for?** Built for prescribers, clinical pharmacists and hospital pharmacy teams who need real-time, evidence-grounded medication safety intelligence at the moment a prescribing decision is made.
+**Who is it for?** Built for prescribers, clinical pharmacists, and hospital pharmacy teams who need real-time, evidence-grounded medication safety intelligence at the moment a prescribing decision is made.
 
-**What does it do?** It runs a complete six-phase AI pipeline — evidence gathering from PubMed and FDA, drug-drug interaction analysis, drug-disease contraindication checking, precision dosing based on patient labs, patient counselling in 100+ languages and a final cross-domain orchestration layer that detects compounding risks no single check would catch. All grounded strictly in published evidence. Never in hallucination.
+**What does it do?** It runs a complete six-phase AI pipeline — evidence gathering from PubMed and FDA, drug-drug interaction analysis, drug-disease contraindication checking, precision dosing based on patient labs, patient counselling in 100+ languages, and a final cross-domain orchestration layer that detects compounding risks no single check would catch. All grounded strictly in published evidence. Never in hallucination.
 
 **How is it built?** Five specialist Azure AI Agents (Safety, Disease, Dosing, Counselling, Orchestrator) run on Microsoft Foundry using Microsoft Agent Framework. Evidence is sourced live from PubMed NCBI and FDA OpenFDA APIs. Results are cached in Azure SQL. All prescriber-facing output is scanned through Azure AI Content Safety. The platform is deployed on Azure App Service and Azure Static Web Apps, with HIPAA-compliant audit logging and 9 Application Insights monitoring alerts. The A2A protocol endpoint at `/.well-known/agent.json` allows external agents to discover and invoke VabGenRx skills programmatically via Azure MCP.
 
@@ -70,25 +68,25 @@ Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR
 
 ### Four Capabilities, One Clinical Workflow
 
-**💊 Drug, Disease & Food Interaction Checker**
+**Drug, Disease & Food Interaction Checker**
 
 Modern prescribing does not happen in isolation. A drug interacts not just with other drugs, but with the patient's diagnosed conditions, their diet and their entire clinical history. VabGenRx checks every prescription in real time across all three dimensions simultaneously flagging interactions before the prescription is even written.
 
 Every interaction is classified by clinical severity Major, Moderate or Minor so clinicians know instantly which findings demand immediate action and which simply need monitoring. All data is pulled directly from the National Library of Medicine and the FDA via live API calls. This is real-world, live clinical evidence the same gold standard sources that clinical pharmacologists use, delivered in real time at the point of care.
 
-**🧬 Precision Dosing — Tailored to the Individual Patient**
+**Precision Dosing — Tailored to the Individual Patient**
 
 The textbook dose is written for an average patient. Your patient is never average.
 
 VabGenRx calculates the right dose for the specific individual factoring in their renal function, liver impairment, lab values, age, weight and intersubject variability drawn from live FDA label data. A patient with stage 3 chronic kidney disease does not need the same dose of metformin as a healthy 35-year-old. VabGenRx knows the difference, calculates accordingly and presents the clinician with a dose that is right for this patient, right now.
 
-**📦 Out-of-Stock Checker — Connected to Live Hospital Inventory**
+**Out-of-Stock Checker — Connected to Live Hospital Inventory**
 
 Writing the right prescription only matters if the medication is actually available. Before a prescription is printed, VabGenRx queries the hospital's live pharmacy inventory database directly. If a medication is unavailable, it instantly surfaces formulary compliant alternatives with real-time pricing so the clinician can make an informed switch in one click, before the patient leaves the room.
 
 U.S. hospitals spent 20 million hours and nearly $900 million in labour costs managing drug shortages in 2023 alone. And 88% of physicians only found out a drug was unavailable after the patient had already left through a call from the pharmacist or the patient themselves returning empty-handed. VabGenRx closes that loop before it opens.
 
-**🌍 Patient Counselling — Translated into Any Language**
+**Patient Counselling — Translated into Any Language**
 
 A prescription without understanding is an incomplete prescription. Inadequate counselling accounts for 55% of medication non-adherence and when a patient cannot understand their discharge instructions because they are in a language they do not speak, the clinical encounter has already begun to fail.
 
@@ -213,7 +211,10 @@ flowchart TD
 ### Diagnosis & Prescription
 ![Diagnosis and Prescription](./screenshots/diagnosis-prescription.png)
 
-### Drug Interaction Warning — Drug-Drug
+### Out-of-Stock Medication Finder
+![Out of Stock Finder](./screenshots/out-of-stock.png)
+
+### Drug Interaction Warning — Drug-Drug & Dosing Recommendations
 ![Drug-Drug Interactions](./screenshots/drug-drug.png)
 
 ### Drug Interaction Warning — Drug-Disease
@@ -221,6 +222,9 @@ flowchart TD
 
 ### Drug Interaction Warning — Drug-Food
 ![Drug-Food Interactions](./screenshots/drug-food.png)
+
+### E-Prescription
+![E-Prescription](./screenshots/e-prescription.png)
 
 ### Patient Education — Drug Counselling
 ![Drug Counselling](./screenshots/drug-counselling.png)
@@ -234,38 +238,35 @@ flowchart TD
 ### Patient Counselling PDF Export
 ![PDF Export](./screenshots/pdf-export.png)
 
-### E-Prescription
-![E-Prescription](./screenshots/e-prescription.png)
-
 ---
 
 ## Frontend Features
 
-- 🔐 **Secure Authentication (JWT)**
+-  **Secure Authentication (JWT)**
   Role-based login using JSON Web Tokens. Tokens are attached to all secure API requests, enabling stateless, secure communication between client and server.
 
-- 🔒 **Password Security (bcrypt)**
+-  **Password Security (bcrypt)**
   All passwords are hashed with bcrypt before storage. Passwords are never stored in plain text even a database breach cannot expose credentials directly.
 
-- 📅 **90-Day Password Expiration**
+-  **90-Day Password Expiration**
   Doctors are required to update their password every 90 days, reducing long-term credential exposure risks.
 
-- ⏱️ **15-Minute Session Timeout**
+-  **15-Minute Session Timeout**
   Inactive sessions automatically expire after 15 minutes to prevent unauthorized access on unattended devices.
 
-- 👤 **Role-Based Access Control (RBAC)**
+-  **Role-Based Access Control (RBAC)**
   Doctors are categorized by specialty (Cardiology, Neurology, Oncology, Pediatrics, etc.) and can only access patients assigned to their role ensuring data separation and patient privacy.
 
-- 📧 **Account Recovery & Change Notifications**
+-  **Account Recovery & Change Notifications**
   Secure email-based password recovery. After any password change, an automated notification email is sent as an additional security safeguard.
 
-- 🤖 **Integrated Chatbot Assistant**
+-  **Integrated Chatbot Assistant**
   An in-platform chatbot helps doctors navigate clinical workflows more efficiently.
 
-- 🌗 **Dark Mode / Light Mode**
+-  **Dark Mode / Light Mode**
   Full theme support for reduced eye strain and customizable readability.
 
-- 🗃️ **Redux State Management**
+-  **Redux State Management**
   Centralized, predictable application state with secure handling of sensitive user data in the client environment.
 
 ---
@@ -282,11 +283,11 @@ flowchart TD
 ### Phase 2 — Round 1 Specialist Synthesis (Parallel)
 Three Azure AI Agents run simultaneously on Microsoft Foundry:
 
-- 🛡️ **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
+-  **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
   - 3-layer resilience: cache bypass, retry on truncation, fill-from-cache/placeholder
-- 🧬 **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
+-  **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
   - Injects full core FDA sections (up to 600 chars each) directly into agent prompts
-- 💊 **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
+-  **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
   - Runs via `DosingService` directly in parallel with no Azure Agent overhead
 
 > After synthesis, evidence patch methods (`patch_drug_drug_evidence`, `patch_drug_disease_evidence`) stamp correct evidence counts from raw evidence, bypassing any agent misreporting.
