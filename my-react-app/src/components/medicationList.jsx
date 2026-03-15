@@ -272,7 +272,7 @@ const MedicationList = ({
           <button
             className={agentLoading ? "med-stop-btn" : "med-analyse-btn"}
             onClick={agentLoading ? onInterrupt : triggerAnalysis}
-            style={agentLoading ? {} : { background: "linear-gradient(135deg, #1a73e8, #1558b0)", boxShadow: "0 2px 8px rgba(26,115,232,0.3)" }}
+            style={agentLoading ? {} : {  boxShadow: "0 2px 8px rgba(26,115,232,0.3)" }}
           >
             {agentLoading
               ? <><div className="med-analyse-spinner" style={{ borderTopColor: "#e05252", borderColor: "rgba(224,82,82,0.3)" }} /><StopCircle size={13} />Stop Analysis</>

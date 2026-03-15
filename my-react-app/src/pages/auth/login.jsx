@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useDispatch } from "react-redux";
 import { loginSuccess } from "../../store/authSlice";
@@ -6,8 +6,6 @@ import logo from "../../assets/vabgen_logo.png";
 import "./login.css";
 import AccountLockedModal from "../../components/accountLockedModal";
 import AboutSection from "../../components/aboutSection";
-
-const rand = (min, max) => Math.round(min + Math.random() * (max - min));
 
 const HERO_TITLE_WORDS = [
   { text: "AI-Powered",   grad: false },
@@ -25,84 +23,9 @@ const HERO_SUB_TEXT =
 
 const TRUST_BADGES = [
   { label: "HIPAA Aligned"    },
-  { label: "Physicians Only"  },
-  { label: "Azure AI Powered" },
+  { label: "Evidence Based"  },
+  { label: "Patient Centric" },
 ];
-
-/* ════════════════════════════════════
-   BACKGROUND — floating nodes + lines
-   ════════════════════════════════════ */
-const LoginBackground = ({ canvasRef, svgRef }) => {
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const svg    = svgRef.current;
-    if (!canvas || !svg) return;
-
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const NODE_COUNT = 18;
-
-    const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
-      id: i,
-      x: (0.08 + Math.random() * 0.84) * W,
-      y: (0.05 + Math.random() * 0.90) * H,
-      dur: 12 + Math.random() * 16,
-      del: -(Math.random() * 20),
-    }));
-
-    const nodeEls = nodes.map((n) => {
-      const wrap = document.createElement("div");
-      wrap.className = "login-node";
-      wrap.style.cssText = `
-        left: ${n.x}px; top: ${n.y}px;
-        --dx1: ${rand(-30,30)}px; --dy1: ${rand(-25,25)}px;
-        --dx2: ${rand(-30,30)}px; --dy2: ${rand(-25,25)}px;
-        --dx3: ${rand(-30,30)}px; --dy3: ${rand(-25,25)}px;
-        animation: node-drift ${n.dur}s ease-in-out ${n.del}s infinite;
-      `;
-      const dot  = document.createElement("div");
-      dot.className = "login-node-dot";
-      dot.style.animationDelay = `${Math.random() * -3}s`;
-      const ring = document.createElement("div");
-      ring.className = "login-node-ring";
-      ring.style.animationDelay = `${Math.random() * -3}s`;
-      wrap.appendChild(dot);
-      wrap.appendChild(ring);
-      canvas.appendChild(wrap);
-      return wrap;
-    });
-
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
-
-    const lines = [];
-    const MAX_DIST = W * 0.22;
-    nodes.forEach((a) => {
-      nodes
-        .filter((b) => b.id !== a.id)
-        .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
-        .sort((x, y) => x.d - y.d)
-        .slice(0, 2)
-        .forEach(({ b, d }) => {
-          if (d > MAX_DIST) return;
-          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
-          line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
-          line.setAttribute("class", "login-connector");
-          line.style.animationDelay = `${Math.random() * -4}s`;
-          svg.appendChild(line);
-          lines.push(line);
-        });
-    });
-
-    return () => {
-      nodeEls.forEach((el) => el.remove());
-      lines.forEach((el)   => el.remove());
-    };
-  }, [canvasRef, svgRef]);
-
-  return null;
-};
 
 /* ════════════════════════════════════
    ICON COMPONENTS
@@ -147,7 +70,7 @@ const pwdWarningColor = (days) => ({
 });
 
 const gradientText = {
-  background: "linear-gradient(90deg, #74c0fc, #a78bfa)",
+  background: "linear-gradient(90deg, #0e7490, #1e4078)",
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
   backgroundClip: "text",
@@ -166,9 +89,6 @@ const Login = () => {
   const [loading,     setLoading]     = useState(false);
   const [lockedEmail, setLockedEmail] = useState(null);
   const [pwdWarning,  setPwdWarning]  = useState(null);
-
-  const canvasRef = useRef(null);
-  const svgRef    = useRef(null);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -215,12 +135,12 @@ const Login = () => {
 
   return (
     <div className="login-container">
+
+      {/* Background blobs only — no node canvas/SVG */}
       <div className="login-bg-blob login-bg-blob-1" />
       <div className="login-bg-blob login-bg-blob-2" />
       <div className="login-bg-blob login-bg-blob-3" />
-      <svg className="login-bg-svg" ref={svgRef} />
-      <div className="login-bg-canvas" ref={canvasRef} />
-      <LoginBackground canvasRef={canvasRef} svgRef={svgRef} />
+      <div className="login-bg-canvas" />
 
       {lockedEmail && (
         <AccountLockedModal
@@ -254,7 +174,7 @@ const Login = () => {
 
       <div className="login-hero-section">
 
-        {/* ── LEFT PANEL — slides in from left ── */}
+        {/* ── LEFT PANEL ── */}
         <div className="login-left-panel">
 
           <div className="login-brand-row">
@@ -267,6 +187,7 @@ const Login = () => {
             </div>
           </div>
 
+        
           <h2 className="login-hero-title">
             {HERO_TITLE_WORDS.map((w, i) => (
               <span key={i}>
@@ -285,14 +206,12 @@ const Login = () => {
 
           <div className="login-trust-badges">
             {TRUST_BADGES.map((b) => (
-              <span key={b.label} className="login-trust-badge">
-                {b.label}
-              </span>
+              <span key={b.label} className="login-trust-badge">{b.label}</span>
             ))}
           </div>
         </div>
 
-        {/* ── RIGHT PANEL — slides in from right ── */}
+        {/* ── RIGHT PANEL ── */}
         <div className="login-right-panel">
           <div className="login-card">
 
@@ -300,7 +219,7 @@ const Login = () => {
               <h2 className="form-title">
                 Welcome, <span style={gradientText}>Doctor!</span>
               </h2>
-              <p className="form-subtitle">Sign in to your account to continue</p>
+      
             </div>
 
             {msg && (
@@ -376,4 +295,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Login;    

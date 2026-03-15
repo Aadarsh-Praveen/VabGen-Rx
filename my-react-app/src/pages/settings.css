@@ -388,7 +388,7 @@
   justify-content: center;
   gap: 8px;
   padding: 12px;
-  background: linear-gradient(135deg, #1a73e8, #1558b0);
+ background: linear-gradient(105deg, #0e7490 0%, #1565a8 55%, #1e3f7a 100%);
   color: #fff;
   border: none;
   border-radius: 10px;

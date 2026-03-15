@@ -188,7 +188,7 @@
   border: 1px solid rgba(52,211,153,0.4);
 }
 .pd-hero-chip.white {
-  background: rgba(116,192,252,0.15); color: #187cc9;
+  background: rgba(116,192,252,0.15); color: #e9e9e9;
   border: 1px solid rgba(116,192,252,0.3);
 }
 
@@ -326,8 +326,8 @@
 .pd-send-btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 0.65rem 1.5rem;
-  background: linear-gradient(90deg, #187cc9, #a78bfa);
-  color: #02040d; border: none; border-radius: 9px;
+    background: linear-gradient(105deg, #0e7490 0%, #1565a8 55%, #1e3f7a 100%);
+  color: #ffffff; border: none; border-radius: 9px;
   font-size: 0.95rem; font-weight: 700;
   cursor: pointer; transition: all 0.2s;
   box-shadow: 0 3px 12px rgba(116,192,252,0.3);

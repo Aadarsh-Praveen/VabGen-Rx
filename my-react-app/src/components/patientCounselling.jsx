@@ -104,7 +104,7 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
     if (lang === "English") { setTranslated(null); return; }
     setTranslating(true);
     try {
-      const res  = await fetch(`${import.meta.env.VITE_AGENT_BASE_URL}/agent/translate`, { 
+      const res  = await fetch(`${import.meta.env.VITE_AGENT_BASE_URL}/agent/translate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -271,24 +271,28 @@ const PatientCounselling = ({ agentResult, agentLoading, counselTab, setCounselT
 
   return (
     <>
+      {/* ── Prescribe button sits ABOVE the card ── */}
+      {onPrescribe && (
+        <div className="pcoun-prescribe-top">
+          <button
+            onClick={onPrescribe}
+            disabled={prescribeDisabled}
+            className="pcoun-prescribe-btn"
+            style={{ opacity: prescribeDisabled ? 0.5 : 1, cursor: prescribeDisabled ? "not-allowed" : "pointer" }}
+          >
+            <ClipboardList size={15} />Prescribe
+          </button>
+        </div>
+      )}
+
       <div className="pcoun-card">
         <div className="pcoun-header">
           <div className="pcoun-title">
             <Stethoscope size={14} strokeWidth={2.5} />
-            Patient Counselling
+            Patient Education
             {totalPoints > 0 && <span className="pcoun-points-badge">{totalPoints} points</span>}
             {deniedCount > 0 && <span className="pcoun-denied-badge">{deniedCount} denied</span>}
           </div>
-          {onPrescribe && (
-            <button
-              onClick={onPrescribe}
-              disabled={prescribeDisabled}
-              className="pcoun-prescribe-btn"
-              style={{ opacity: prescribeDisabled ? 0.5 : 1, cursor: prescribeDisabled ? "not-allowed" : "pointer" }}
-            >
-              <ClipboardList size={15} />Prescribe
-            </button>
-          )}
         </div>
 
         <div className="pcoun-tabs">

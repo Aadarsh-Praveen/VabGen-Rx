@@ -11,83 +11,6 @@ import labIcon      from "../assets/lab.png";
 import referralIcon from "../assets/referral.png";
 
 /* ══════════════════════════════════════
-   HERO BANNER NODE ANIMATION
-   ══════════════════════════════════════ */
-const rand = (min, max) => Math.round(min + Math.random() * (max - min));
-
-const HeroBackground = ({ canvasRef, svgRef }) => {
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const svg    = svgRef.current;
-    if (!canvas || !svg) return;
-
-    const W = canvas.offsetWidth  || 900;
-    const H = canvas.offsetHeight || 100;
-    const NODE_COUNT = 16;
-
-    const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
-      id: i,
-      x: (0.02 + Math.random() * 0.96) * W,
-      y: (0.05 + Math.random() * 0.90) * H,
-      dur: 10 + Math.random() * 14,
-      del: -(Math.random() * 16),
-    }));
-
-    const nodeEls = nodes.map((n) => {
-      const wrap = document.createElement("div");
-      wrap.className = "hero-node";
-      wrap.style.cssText = `
-        left:${n.x}px; top:${n.y}px;
-        --dx1:${rand(-20,20)}px; --dy1:${rand(-12,12)}px;
-        --dx2:${rand(-20,20)}px; --dy2:${rand(-12,12)}px;
-        --dx3:${rand(-20,20)}px; --dy3:${rand(-12,12)}px;
-        animation: node-drift ${n.dur}s ease-in-out ${n.del}s infinite;
-      `;
-      const dot  = document.createElement("div");
-      dot.className = "hero-node-dot";
-      dot.style.animationDelay = `${Math.random() * -3}s`;
-      const ring = document.createElement("div");
-      ring.className = "hero-node-ring";
-      ring.style.animationDelay = `${Math.random() * -3}s`;
-      wrap.appendChild(dot);
-      wrap.appendChild(ring);
-      canvas.appendChild(wrap);
-      return wrap;
-    });
-
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
-
-    const lines = [];
-    const MAX_DIST = W * 0.22;
-    nodes.forEach((a) => {
-      nodes
-        .filter((b) => b.id !== a.id)
-        .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
-        .sort((x, y) => x.d - y.d)
-        .slice(0, 2)
-        .forEach(({ b, d }) => {
-          if (d > MAX_DIST) return;
-          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-          line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
-          line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
-          line.setAttribute("class", "hero-connector");
-          line.style.animationDelay = `${Math.random() * -4}s`;
-          svg.appendChild(line);
-          lines.push(line);
-        });
-    });
-
-    return () => {
-      nodeEls.forEach(el => el.remove());
-      lines.forEach(el => el.remove());
-    };
-  }, [canvasRef, svgRef]);
-
-  return null;
-};
-
-/* ══════════════════════════════════════
    ICONS
    ══════════════════════════════════════ */
 const UserIcon = () => (
@@ -553,9 +476,6 @@ const PatientDetail = ({ user, onLogout }) => {
   const [error,     setError]     = useState(null);
   const [activeTab, setActiveTab] = useState("info");
 
-  const heroCanvasRef = useRef(null);
-  const heroSvgRef    = useRef(null);
-
   const isOutpatient = patientNo?.toUpperCase().startsWith("OP");
 
   useEffect(() => {
@@ -587,15 +507,12 @@ const PatientDetail = ({ user, onLogout }) => {
 
         {patient && (
           <>
-            {/* ── Hero banner with node animation ── */}
-            <div className="pd-hero">
-              {/* background layers */}
+            {/* ── Hero banner — clean, no node animation ── */}
+            <div className={`pd-hero ${isOutpatient ? "pd-hero-op" : "pd-hero-ip"}`}>
+              {/* decorative blobs only */}
               <div className="hero-blob hero-blob-1" />
               <div className="hero-blob hero-blob-2" />
               <div className="hero-mesh" />
-              <svg  className="hero-svg"    ref={heroSvgRef}    />
-              <div  className="hero-canvas" ref={heroCanvasRef} />
-              <HeroBackground canvasRef={heroCanvasRef} svgRef={heroSvgRef} />
 
               {/* content */}
               <div className="pd-hero-avatar">{patient.Name?.charAt(0)}</div>

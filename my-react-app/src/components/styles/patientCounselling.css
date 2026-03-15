@@ -230,6 +230,13 @@
 .pcoun-pdf-btn:hover    { opacity: 0.9; }
 .pcoun-pdf-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+
+.pcoun-prescribe-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
 [data-theme="dark"] .pcoun-card              { background: #1a1a2e; border-color: #2a2a40; }
 [data-theme="dark"] .pcoun-header            { background: #16162a; border-color: #2a2a40; }
 [data-theme="dark"] .pcoun-item              { background: #16162a; border-color: #2a2a40; }

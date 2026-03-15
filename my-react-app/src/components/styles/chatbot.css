@@ -89,7 +89,7 @@
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  background: linear-gradient(135deg, #1a73e8, #0d47a1);
+  background: linear-gradient(105deg, #0e7490 0%, #1565a8 55%, #1e3f7a 100%);
   color: #fff;
   flex-shrink: 0;
 }
