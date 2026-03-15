@@ -2,7 +2,8 @@
   <img src="./vabgen_logo.png" alt="Vab Gen Rx Logo" width="250"/>
 </p>
 
-# VabGenRx — AI-Powered Clinical Drug Safety & Decision Support
+# VabGenRx 
+## AI-Powered Clinical Drug Safety & Decision Support
 
 ---
 
@@ -12,11 +13,11 @@ Think about the last time a doctor had ten minutes to see a patient, review thei
 
 VabGenRx was built for that moment.
 
-It is a production-ready, evidence-based, AI-powered clinical medication safety platform that works in the background of a clinician's workflow, doing in seconds what would otherwise take hours of cross-referencing across databases, literature, lab reports and pharmacy systems. When a prescription is written, VabGenRx gets to work immediately.
+It is a production-ready, evidence-based, AI-powered clinical medication safety platform that works in the background of a clinician's workflow doing in seconds what would otherwise take hours of cross-referencing across databases, literature, lab reports and pharmacy systems. When a prescription is written, VabGenRx gets to work immediately.
 
-It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a six-phase multi-agent AI pipeline built on Microsoft Agent Framework, hosted on Microsoft Foundry — returning a complete, evidence-grounded clinical safety report in under 90 seconds.
+It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a six-phase multi-agent AI pipeline built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report in under 90 seconds.
 
-Not a list of warnings. A clinical narrative that tells the prescriber exactly what the risks are, how serious they are and what to do next — grounded strictly in PubMed literature and FDA databases. Never in guesswork.
+Not a list of warnings. A clinical narrative that tells the prescriber exactly what the risks are, how serious they are and what to do next grounded strictly in PubMed literature and FDA databases. Never in guesswork.
 
 ---
 
@@ -24,13 +25,13 @@ Not a list of warnings. A clinical narrative that tells the prescriber exactly w
 
 Every year, the World Health Organization estimates that medication-related harm costs the global healthcare system $42 billion. Not from carelessness. Not from bad doctors. From the sheer, overwhelming complexity of modern prescribing that no human being can fully process alone, in real time, at the point of care.
 
-The reality of modern medicine is that patients are sicker, older and on more medications than ever before. Polypharmacy — defined as five or more concurrent medications is no longer the exception. It is the everyday reality for elderly patients, patients managing chronic diseases and anyone who has passed through the hands of more than one specialist.
+The reality of modern medicine is that patients are sicker, older and on more medications than ever before. Polypharmacy defined as five or more concurrent medications is no longer the exception. It is the everyday reality for elderly patients, patients managing chronic diseases and anyone who has passed through the hands of more than one specialist.
 
 A patient on eight medications does not just have eight drugs to think about. They have 28 possible drug-drug interaction pairs, 40 drug-disease combinations and 8 individual dosing checks that all need to be evaluated at the same time, against each other, in the context of that specific patient's lab values, organ function and comorbidities. And there are over 125,000 possible drug-drug interaction pairs among the 500 most commonly prescribed drugs alone.
 
-No prescriber — however experienced, however diligent — can do that in ten minutes. The information exists. It is buried across thousands of FDA label PDFs, pharmacovigilance databases, PubMed studies and clinical guidelines that no human can realistically search at the moment a decision must be made.
+No prescriber however experienced, however diligent can do that in ten minutes. The information exists. It is buried across thousands of FDA label PDFs, pharmacovigilance databases, PubMed studies and clinical guidelines that no human can realistically search at the moment a decision must be made.
 
-The consequences of missing even one signal are severe: hospitalisation, organ failure, life-threatening bleeding events and death from drug combinations that were individually safe but catastrophic together.
+The consequences of missing even one signal are severe: hospitalisation, organ failure, life-threatening bleeding events and death — from drug combinations that were individually safe but catastrophic together.
 
 What makes this even harder is that patients today routinely see multiple specialists who prescribe independently, with no single clinician seeing the complete medication picture. A cardiologist adds a drug. A nephrologist adds another. A GP renews a third. Nobody has the full picture. Nobody flags the compound risk that only emerges when all three are seen together.
 
@@ -38,29 +39,29 @@ The problem is not ignorance. It is the impossibility of processing that informa
 
 ### Why Current Tools Fall Short
 
-Existing drug interaction checkers were built for a simpler era of medicine. They flag too many low-severity warnings — creating alert fatigue that causes clinicians to dismiss even the serious ones. And at the same time, they miss the complex, compounding risks that only emerge when you look across drug-drug, drug-disease and dosing findings together.
+Existing drug interaction checkers were built for a simpler era of medicine. They flag too many low-severity warnings creating alert fatigue that causes clinicians to dismiss even the serious ones. And at the same time, they miss the complex, compounding risks that only emerge when you look across drug-drug, drug-disease and dosing findings together.
 
 They do not reason. They pattern match. They do not explain why a risk exists or what to do about it. And they almost never integrate with clinical context like lab values, patient age or organ function.
 
-Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR is low, whose potassium is elevated, who is simultaneously on an ACE inhibitor, an NSAID and a potassium-sparing diuretic. A basic checker flags each drug independently. VabGenRx detects that all three findings converge on the same renal pathway, triggers a second round of specialist analysis with that compounding context injected, and returns a unified clinical narrative telling the prescriber precisely what is happening, why it is dangerous and what to do. All grounded in evidence. Never in assumption.
+Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR is low, whose potassium is elevated, who is simultaneously on an ACE inhibitor, an NSAID and a potassium-sparing diuretic. A basic checker flags each drug independently. VabGenRx detects that all three findings converge on the same renal pathway, triggers a second round of specialist analysis with that compounding context injected and returns a unified clinical narrative telling the prescriber precisely what is happening, why it is dangerous and what to do. All grounded in evidence. Never in assumption.
 
 ### Four Capabilities, One Clinical Workflow
 
 **💊 Drug, Disease & Food Interaction Checker**
 
-Modern prescribing does not happen in isolation. A drug interacts not just with other drugs, but with the patient's diagnosed conditions, their diet and their entire clinical history. VabGenRx checks every prescription in real time across all three dimensions simultaneously — flagging interactions before the prescription is even written.
+Modern prescribing does not happen in isolation. A drug interacts not just with other drugs, but with the patient's diagnosed conditions, their diet and their entire clinical history. VabGenRx checks every prescription in real time across all three dimensions simultaneously flagging interactions before the prescription is even written.
 
-Every interaction is classified by clinical severity — Major, Moderate or Minor so clinicians know instantly which findings demand immediate action and which simply need monitoring. All data is pulled directly from the National Library of Medicine and the FDA via live API calls. This is real-world, live clinical evidence the same gold standard sources that clinical pharmacologists use, delivered in real time at the point of care.
+Every interaction is classified by clinical severity Major, Moderate or Minor — so clinicians know instantly which findings demand immediate action and which simply need monitoring. All data is pulled directly from the National Library of Medicine and the FDA via live API calls. This is real-world, live clinical evidence the same gold standard sources that clinical pharmacologists use, delivered in real time at the point of care.
 
 **🧬 Precision Dosing — Tailored to the Individual Patient**
 
 The textbook dose is written for an average patient. Your patient is never average.
 
-VabGenRx calculates the right dose for the specific individual — factoring in their renal function, liver impairment, lab values, age, weight and intersubject variability drawn from live FDA label data. A patient with stage 3 chronic kidney disease does not need the same dose of metformin as a healthy 35-year-old. VabGenRx knows the difference, calculates accordingly and presents the clinician with a dose that is right for this patient, right now.
+VabGenRx calculates the right dose for the specific individual factoring in their renal function, liver impairment, lab values, age, weight and intersubject variability drawn from live FDA label data. A patient with stage 3 chronic kidney disease does not need the same dose of metformin as a healthy 35-year-old. VabGenRx knows the difference, calculates accordingly and presents the clinician with a dose that is right for this patient, right now.
 
 **📦 Out-of-Stock Checker — Connected to Live Hospital Inventory**
 
-Writing the right prescription only matters if the medication is actually available. Before a prescription is printed, VabGenRx queries the hospital's live pharmacy inventory database directly. If a medication is unavailable, it instantly surfaces formulary-compliant alternatives with real-time pricing, so the clinician can make an informed switch in one click, before the patient leaves the room.
+Writing the right prescription only matters if the medication is actually available. Before a prescription is printed, VabGenRx queries the hospital's live pharmacy inventory database directly. If a medication is unavailable, it instantly surfaces formulary compliant alternatives with real-time pricing so the clinician can make an informed switch in one click, before the patient leaves the room.
 
 U.S. hospitals spent 20 million hours and nearly $900 million in labour costs managing drug shortages in 2023 alone. And 88% of physicians only found out a drug was unavailable after the patient had already left through a call from the pharmacist or the patient themselves returning empty-handed. VabGenRx closes that loop before it opens.
 
@@ -68,7 +69,7 @@ U.S. hospitals spent 20 million hours and nearly $900 million in labour costs ma
 
 A prescription without understanding is an incomplete prescription. Inadequate counselling accounts for 55% of medication non-adherence and when a patient cannot understand their discharge instructions because they are in a language they do not speak, the clinical encounter has already begun to fail.
 
-VabGenRx generates personalised disease and drug counselling for every patient — explaining their condition in plain terms, detailing how to take their medication, what foods or activities to avoid and what warning signs to watch for. It then translates that counselling into 100+ languages, powered by Azure OpenAI (GPT-4o). Not a generic machine translation a clinically accurate, patient-safe communication that preserves drug names, dose values and lab abbreviations exactly as written. Because a patient who genuinely understands their treatment is a patient who follows it, recovers and does not come back through the emergency door.
+VabGenRx generates personalised disease and drug counselling for every patient explaining their condition in plain terms, detailing how to take their medication, what foods or activities to avoid and what warning signs to watch for. It then translates that counselling into 100+ languages, powered by Azure OpenAI (GPT-4o). Not a generic machine translation a clinically accurate, patient-safe communication that preserves drug names, dose values and lab abbreviations exactly as written. Because a patient who genuinely understands their treatment is a patient who follows it, recovers and does not come back through the emergency door.
 
 ---
 
@@ -171,57 +172,81 @@ flowchart TD
 
 ## Frontend Features
 
-### Secure Authentication (JWT)
-Role-based login using JSON Web Tokens. Tokens are attached to all secure API requests, enabling stateless, secure communication between client and server.
+- 🔐 **Secure Authentication (JWT)**
+  Role-based login using JSON Web Tokens. Tokens are attached to all secure API requests, enabling stateless, secure communication between client and server.
 
-### Password Security (bcrypt)
-All passwords are hashed with bcrypt before storage. Passwords are never stored in plain text even a database breach cannot expose credentials directly.
+- 🔒 **Password Security (bcrypt)**
+  All passwords are hashed with bcrypt before storage. Passwords are never stored in plain text even a database breach cannot expose credentials directly.
 
-### 90-Day Password Expiration
-Doctors are required to update their password every 90 days, reducing long-term credential exposure risks.
+- 📅 **90-Day Password Expiration**
+  Doctors are required to update their password every 90 days, reducing long-term credential exposure risks.
 
-### 15-Minute Session Timeout
-Inactive sessions automatically expire after 15 minutes to prevent unauthorized access on unattended devices.
+- ⏱️ **15-Minute Session Timeout**
+  Inactive sessions automatically expire after 15 minutes to prevent unauthorized access on unattended devices.
 
-### Role-Based Access Control (RBAC)
-Doctors are categorized by specialty (Cardiology, Neurology, Oncology, Pediatrics, etc.) and can only access patients assigned to their role ensuring data separation and patient privacy.
+- 👤 **Role-Based Access Control (RBAC)**
+  Doctors are categorized by specialty (Cardiology, Neurology, Oncology, Pediatrics, etc.) and can only access patients assigned to their role ensuring data separation and patient privacy.
 
-### Account Recovery & Change Notifications
-Secure email-based password recovery. After any password change, an automated notification email is sent as an additional security safeguard.
+- 📧 **Account Recovery & Change Notifications**
+  Secure email-based password recovery. After any password change, an automated notification email is sent as an additional security safeguard.
 
-### Integrated Chatbot Assistant
-An in-platform chatbot helps doctors navigate clinical workflows more efficiently.
+- 🤖 **Integrated Chatbot Assistant**
+  An in-platform chatbot helps doctors navigate clinical workflows more efficiently.
 
-### Dark Mode / Light Mode
-Full theme support for reduced eye strain and customizable readability.
+- 🌗 **Dark Mode / Light Mode**
+  Full theme support for reduced eye strain and customizable readability.
 
-### Redux State Management
-Centralized, predictable application state with secure handling of sensitive user data in the client environment.
+- 🗃️ **Redux State Management**
+  Centralized, predictable application state with secure handling of sensitive user data in the client environment.
 
 ---
 
 ## Backend: Six-Phase AI Pipeline
 
 ### Phase 1 — Parallel Evidence Gathering
-`SafetyEvidenceService` and `DiseaseEvidenceService` run concurrently. Azure SQL cache is checked first (parallel), then PubMed and FDA OpenFDA are queried for cache misses. Semaphores cap concurrent PubMed requests at 20 and FDA at 3. Combination drugs are split into components for accurate FAERS lookup.
+- `SafetyEvidenceService` and `DiseaseEvidenceService` run concurrently
+- Azure SQL cache is checked first (parallel) before any external API call
+- PubMed and FDA OpenFDA are queried only for cache misses
+- Semaphores cap concurrent PubMed requests at 20 and FDA at 3
+- Combination drugs (e.g. `rosiglitazone/Metformin`) are split into components for accurate FAERS lookup
 
 ### Phase 2 — Round 1 Specialist Synthesis (Parallel)
 Three Azure AI Agents run simultaneously on Microsoft Foundry:
-- **VabGenRxSafetyAgent** — Drug-drug interactions in batches of ≤5. 3-layer resilience: cache bypass → retry → fill-from-cache/placeholder.
-- **VabGenRxDiseaseAgent** — Drug-disease contraindications in batches of ≤8. Injects full core FDA sections into prompts.
-- **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds in parallel.
+
+- 🛡️ **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
+  - 3-layer resilience: cache bypass, retry on truncation, fill-from-cache/placeholder
+- 🧬 **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
+  - Injects full core FDA sections (up to 600 chars each) directly into agent prompts
+- 💊 **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
+  - Runs via `DosingService` directly in parallel with no Azure Agent overhead
+
+> After synthesis, evidence patch methods (`patch_drug_drug_evidence`, `patch_drug_disease_evidence`) stamp correct evidence counts from raw evidence, bypassing any agent misreporting.
 
 ### Phase 3 — Signal Extraction
-A single GPT-4o call detects compounding organ-system risk patterns — where findings from different domains (drug-drug, drug-disease, dosing) converge on the same physiological pathway. Returns structured signals with `round2_instructions`. Degrades gracefully on failure.
+- A single GPT-4o call reviews all Round 1 findings
+- Detects compounding organ-system risk patterns where findings from drug-drug, drug-disease and dosing domains converge on the same physiological pathway
+- Returns structured signals with `round2_instructions` per organ system
+- Degrades gracefully to empty dict on failure so the pipeline never blocks
 
 ### Phase 4 — Conditional Round 2 Re-evaluation
-Executes only when Phase 3 detects compounding signals. DiseaseAgent and DosingAgent re-run in parallel with injected context. Marks `round2_updated=true` only when recommendations actually change.
+- Executes only when Phase 3 detects compounding signals
+- `DiseaseAgent` and `DosingAgent` re-run in parallel with compounding context injected
+- Compounding signals are passed via `patient_data["other_investigations"]` with service code unchanged
+- Sets `round2_updated=true` only when recommendations actually change from Round 1
 
 ### Phase 5 — Patient Counselling
-Drug and condition counseling generated in parallel. Compounding context and confirmed interactions are injected. Supports 100+ languages via `TranslationService`. Cached per `drug|sex|age_group|habits` composite key.
+- Drug and condition counseling generated in parallel
+- Compounding context and confirmed interactions injected as a summary string
+- Strictly evidence-based and never assumes unconfirmed patient habits
+- Supports 100+ languages via `TranslationService` (Azure OpenAI GPT-4o)
+- Results cached per `drug|sex|age_group|habits` composite key (30-day TTL)
 
 ### Phase 6 — Orchestrator Synthesis
-`VabGenRxOrchestratorAgent` performs cross-domain reasoning across all specialist outputs. All output text is scanned through Azure AI Content Safety. `trace_session_id` (UUID, never PHI) is attached for OpenTelemetry correlation in Microsoft Foundry.
+- `VabGenRxOrchestratorAgent` performs cross-domain reasoning across all specialist outputs
+- Produces compounding risk patterns, prioritized clinical actions and a narrative clinical summary
+- All output text scanned through Azure AI Content Safety (single combined API call)
+- `trace_session_id` (UUID, never PHI) attached for OpenTelemetry correlation in Microsoft Foundry
+- Falls back to basic count-based summary if agent fails so the pipeline always returns a valid response
 
 ---
 
@@ -235,13 +260,13 @@ Drug and condition counseling generated in parallel. Compounding context and con
 | `VabGenRxCounsellingAgent` | Patient drug + condition counseling | Phase 5 |
 | `VabGenRxOrchestratorAgent` | Cross-domain clinical intelligence synthesis | Phase 6 |
 
-All agents inherit from `_BaseAgent` which enforces `temperature=0, top_p=1` for deterministic clinical outputs, a shared concurrency semaphore on the `AgentsClient` instance, robust JSON parsing and guaranteed Azure Agent cleanup in a `finally` block.
+All agents inherit from `_BaseAgent` which enforces `temperature=0, top_p=1` for deterministic clinical outputs, a shared concurrency semaphore on the `AgentsClient` instance, robust JSON parsing, and guaranteed Azure Agent cleanup in a `finally` block.
 
 ---
 
 ## Evidence-Only Policy
 
-VabGenRx **never hallucinates clinical conclusions**. Every assessment is grounded in published evidence:
+VabGenRx never hallucinates clinical conclusions. Every assessment is grounded in published evidence:
 
 | Tier | Evidence | Confidence |
 |---|---|---|
@@ -279,20 +304,20 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 
 | Metric | Score | Result |
 |---|---|---|
-| Relevance | **100%** | 15/15 passed |
-| Coherence | **100%** | 15/15 passed |
-| Fluency | **100%** | 15/15 passed |
-| Groundedness | **100%** | 15/15 passed |
+| Relevance | 100% | 15/15 passed |
+| Coherence | 100% | 15/15 passed |
+| Fluency | 100% | 15/15 passed |
+| Groundedness | 100% | 15/15 passed |
 
 ---
 
 ## HIPAA Compliance
 
-- All patient IDs (OP_No / IP_No) are **SHA-256 hashed** before storage — raw identifiers never appear in any log
-- Audit logs written to a **physically separate Azure SQL server** from the cache database
-- PHI audit log retention: **6 years (2,190 days)** as required by HIPAA
+- All patient IDs (OP_No / IP_No) are SHA-256 hashed before storage — raw identifiers never appear in any log
+- Audit logs written to a physically separate Azure SQL server from the cache database
+- PHI audit log retention: 6 years (2,190 days) as required by HIPAA
 - `enforce_retention_policy()` runs on FastAPI startup
-- HIPAA audit failure triggers Alert 6 at **threshold 0** — any single missed entry fires immediately
+- HIPAA audit failure triggers Alert 6 at threshold 0 — any single missed entry fires immediately
 
 ---
 
@@ -338,7 +363,6 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 - React + Vite
 - Redux (state management)
 - Custom CSS
-- JWT Authentication
 
 **Backend**
 - Python 3.11 + FastAPI
@@ -364,61 +388,82 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 ```
 VabGenRx/
 │
-├── frontend/                         # React + Vite application
-│   ├── src/
-│   │   ├── components/               # UI components
-│   │   ├── pages/                    # Route pages
-│   │   ├── redux/                    # State management
-│   │   └── services/                 # API calls
-│   └── README.md
+├── api/
+│   ├── app.py                        # FastAPI entry point
+│   └── keyvault.py                   # Azure Key Vault integration
 │
-├── server/                           # Node.js auth server
-│   └── index.js                      # JWT, bcrypt, RBAC, routing
+├── database/
+│   ├── drug_database.py              # SQL DDL — cache tables
+│   └── counselling_database.py       # SQL DDL — counseling cache
 │
-├── backend/                          # Python FastAPI + AI agents
-│   ├── agents/
+├── evaluation/
+│   └── drug_disease_eval.jsonl       # Microsoft Foundry evaluation dataset
+│
+├── logs/
+│   └── audit_service.py              # HIPAA PHI audit logging
+│
+├── services/
+│   ├── evidence/
+│   │   ├── safety_evidence.py        # DDI + food evidence gathering
+│   │   └── disease_evidence.py       # Drug-disease evidence gathering
+│   ├── signals/
+│   │   └── signal_extractor.py       # Compounding risk detection
+│   ├── patient/
+│   │   ├── dosing_service.py         # FDA label dosing logic
+│   │   ├── counselling_service.py    # Drug counseling generation
+│   │   └── condition_service.py      # Condition counseling generation
+│   ├── translation/
+│   │   └── translation_service.py    # 100+ language translation
+│   ├── a2a/
+│   │   ├── agent_card.py             # A2A discovery manifest
+│   │   ├── models.py                 # Task state definitions
+│   │   ├── skill_router.py           # Skill detection + dispatch
+│   │   └── task_store.py             # In-memory task store
+│   ├── vabgenrx_agents/
 │   │   ├── base_agent.py             # Shared Azure Agent infrastructure
 │   │   ├── safety_agent.py           # Drug-drug + food synthesis
 │   │   ├── disease_agent.py          # Drug-disease contraindication
-│   │   ├── dosing_agent.py           # FDA-based dosing
-│   │   ├── counselling_agent.py      # Patient counseling
-│   │   ├── orchestrator_agent.py     # Cross-domain synthesis
+│   │   ├── dosing_agent.py           # FDA-based dosing agent
+│   │   ├── counselling_agent.py      # Patient counseling agent
+│   │   ├── orchestrator_agent.py     # Cross-domain synthesis + Content Safety
 │   │   └── orchestrator.py           # 6-phase pipeline coordinator
-│   │
-│   ├── services/
-│   │   ├── evidence/
-│   │   │   ├── safety_evidence.py    # DDI + food evidence gathering
-│   │   │   └── disease_evidence.py   # Drug-disease evidence gathering
-│   │   ├── signals/
-│   │   │   └── signal_extractor.py   # Compounding risk detection
-│   │   ├── patient/
-│   │   │   ├── dosing_service.py     # FDA label dosing logic
-│   │   │   ├── counselling_service.py
-│   │   │   └── condition_service.py
-│   │   ├── translation/
-│   │   │   └── translation_service.py  # 100+ languages
-│   │   ├── pubmed_service.py         # NCBI PubMed (4-key rotation)
-│   │   ├── fda_service.py            # FDA OpenFDA API
-│   │   ├── cache_service.py          # Azure SQL caching
-│   │   ├── evidence_analyzer.py      # GPT-4o evidence synthesis
-│   │   ├── content_safety.py         # Azure AI Content Safety
-│   │   └── db_connection.py          # Thread-local SQL connections
-│   │
-│   ├── a2a/
-│   │   ├── models.py                 # Task state definitions
-│   │   ├── task_store.py             # In-memory task store
-│   │   ├── skill_router.py           # Skill detection + dispatch
-│   │   └── agent_card.py             # A2A discovery manifest
-│   │
-│   ├── logs/
-│   │   └── audit_service.py          # HIPAA PHI audit logging
-│   │
-│   ├── drug_database.py              # SQL DDL — cache tables
-│   ├── counselling_database.py       # SQL DDL — counseling cache
-│   ├── drug_disease_eval.jsonl       # Foundry evaluation dataset
-│   └── requirements.txt
+│   ├── cache_service.py              # Azure SQL caching layer
+│   ├── content_safety.py             # Azure AI Content Safety scan
+│   ├── db_connection.py              # Thread-local SQL connection manager
+│   ├── evidence_analyzer.py          # GPT-4o evidence synthesis
+│   ├── fda_service.py                # FDA OpenFDA API
+│   ├── fda_semaphore.py              # FDA concurrency control
+│   ├── pubmed_service.py             # NCBI PubMed API (4-key rotation)
+│   └── pubmed_semaphore.py           # PubMed concurrency control
 │
-└── README.md                         # This file
+├── tests/
+│   ├── comprehensive_checker.py
+│   ├── test_agent_drugs.py
+│   ├── test_counselling.py
+│   ├── test_dosing.py
+│   └── test_translation.py
+│
+├── server/                           # Node.js auth server
+│   ├── index.js                      # JWT, bcrypt, RBAC, email routing
+│   ├── db.js                         # Database connection
+│   ├── secrets.js                    # Secrets management
+│   └── scripts/
+│       └── migratePasswords.js
+│
+├── my-react-app/                     # React + Vite frontend
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── components/               # UI components
+│   │   ├── pages/                    # Route pages
+│   │   ├── services/                 # API calls
+│   │   ├── store/                    # Redux state management
+│   │   └── hooks/                    # Custom React hooks
+│   ├── staticwebapp.config.json
+│   └── vite.config.js
+│
+├── requirements.txt
+├── vabgen_logo.png
+└── README.md
 ```
 
 ---
@@ -436,61 +481,21 @@ VabGenRx/
 
 ```bash
 git clone https://github.com/Aadarsh-Praveen/VabGen-Rx.git
-cd VabGen-Rx/backend
+cd VabGen-Rx
 pip install -r requirements.txt
-```
 
-Create a `.env` file in `backend/`:
-
-```env
-# Azure AI
-AZURE_AI_PROJECT_ENDPOINT=https://<your-project>.api.azureml.ms
-AZURE_OPENAI_KEY=<key>
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com
-AZURE_OPENAI_API_VERSION=2025-05-01
-AZURE_OPENAI_DEPLOYMENT=gpt-4o
-
-# Azure SQL — Cache DB
-AZURE_SQL_SERVER=<cache-server>.database.windows.net
-AZURE_SQL_DATABASE=vabgenrx-drug-interactions-cache
-AZURE_SQL_USERNAME=<username>
-AZURE_SQL_PASSWORD=<password>
-
-# Azure SQL — Audit DB (separate server — HIPAA requirement)
-AZURE_SQL_AUDIT_SERVER=<audit-server>.database.windows.net
-AZURE_SQL_AUDIT_DATABASE=vabgenrx-audit-logs
-AZURE_SQL_AUDIT_USERNAME=<username>
-AZURE_SQL_AUDIT_PASSWORD=<password>
-
-# Azure AI Content Safety
-AZURE_CONTENT_SAFETY_ENDPOINT=https://<resource>.cognitiveservices.azure.com
-
-# PubMed — up to 4 keys for 40 req/s combined
-NCBI_API_KEY=<key1>
-NCBI_API_KEY_2=<key2>
-
-# FDA OpenFDA
-FDA_API_KEY=<key>
-
-# Retention
-CACHE_TTL_DAYS=30
-ANALYSIS_LOG_TTL_DAYS=365
-AUDIT_LOG_TTL_DAYS=2190
-```
-
-```bash
 # Initialize databases
-python drug_database.py
-python counselling_database.py
+python database/drug_database.py
+python database/counselling_database.py
 
 # Run locally
-uvicorn app:app --reload --port 8000
+uvicorn api.app:app --reload --port 8000
 ```
 
 ### Frontend Setup
 
 ```bash
-cd VabGen-Rx/frontend
+cd VabGen-Rx/my-react-app
 npm install
 npm run dev
 ```
@@ -541,7 +546,8 @@ Built for the **AI Dev Days Hackathon 2025** by:
 | **Bharathi Kishna Vinayaga Sundar** | vsbk01@gmail.com | Frontend Development |
 
 - **GitHub:** [github.com/Aadarsh-Praveen/VabGen-Rx](https://github.com/Aadarsh-Praveen/VabGen-Rx)
-- **Contact:** vabgenrx@outlook.com
+- **Website Link:** [VabGenRx](https://yellow-sea-05177870f.2.azurestaticapps.net/login)
+- **Contact:** vabgenrx@team.com
 
 ---
 

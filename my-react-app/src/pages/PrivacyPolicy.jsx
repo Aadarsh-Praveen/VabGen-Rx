@@ -295,8 +295,7 @@ const PrivacyPolicy = () => {
           <div className="pp-contact">
             <strong>VabGenRx Team</strong><br />
             Email: <a href={`mailto:${contact}`} className="pp-link">{contact}</a><br />
-            Platform: <span className="pp-contact-platform">VabGenRx Clinical Decision Support Platform — deployment URL available upon request</span>
-          </div>
+            Platform: <a href="https://yellow-sea-05177870f.2.azurestaticapps.net/login" className="pp-link" target="_blank" rel="noopener noreferrer">VabGenRx Clinical Decision Support Platform</a>          </div>
         </Section>
 
         <div className="pp-footer">
