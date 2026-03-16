@@ -5,8 +5,6 @@
 # VabGenRx
 ## AI-Powered Clinical Drug Safety & Decision Support
 
-> **AI Dev Days Hackathon 2025** · Microsoft Foundry · Microsoft Agent Framework · Azure MCP · GitHub Copilot
-
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4?logo=microsoftazure)](https://yellow-sea-05177870f.2.azurestaticapps.net/login)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -26,7 +24,7 @@ VabGenRx was built for that moment.
 
 It is a production-ready, evidence-based, AI-powered clinical medication safety platform that works in the background of a clinician's workflow doing in seconds what would otherwise take hours of cross-referencing across databases, literature, lab reports and pharmacy systems. When a prescription is written, VabGenRx gets to work immediately.
 
-It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a six-phase multi-agent AI pipeline built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report in under 90 seconds.
+It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a **six-phase multi-agent AI pipeline** built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report in under 90 seconds.
 
 Not a list of warnings. A clinical narrative that tells the prescriber exactly what the risks are, how serious they are and what to do next grounded strictly in PubMed literature and FDA databases. Never in guesswork.
 
@@ -112,7 +110,6 @@ VabGenRx generates personalised disease and drug counselling for every patient e
 ### 1. System Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'background': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#ffffff', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
 flowchart TD
     A[Doctor / User] --> B[React Frontend\nVite + Redux]
     B --> C[Node.js API Server\nJWT Auth + RBAC]
@@ -141,7 +138,6 @@ flowchart TD
 ### 2. Backend Agent Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'background': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#ffffff', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
 flowchart TD
     A[Clinical Query] --> B[Orchestrator\nVabGenRxOrchestrator]
     B --> C[SafetyAgent\nDrug-Drug + Food]
@@ -162,7 +158,6 @@ flowchart TD
 ### 3. Evidence Retrieval Pipeline
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'background': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#ffffff', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
 flowchart LR
     A[Clinical Query] --> B{Cache Check}
     B -->|Cache Hit| C[Return Cached Result]
@@ -180,7 +175,6 @@ flowchart LR
 ### 4. Azure Deployment Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'background': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#ffffff', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
 flowchart TD
     A[Users] --> B[Azure Static Web App\nReact Frontend]
     B --> C[Azure App Service\nNode.js Backend]
@@ -248,31 +242,31 @@ flowchart TD
 
 ## Frontend Features
 
-- **Secure Authentication (JWT)**
+-  **Secure Authentication (JWT)**
   Role-based login using JSON Web Tokens. Tokens are attached to all secure API requests, enabling stateless, secure communication between client and server.
 
-- **Password Security (bcrypt)**
+-  **Password Security (bcrypt)**
   All passwords are hashed with bcrypt before storage. Passwords are never stored in plain text even a database breach cannot expose credentials directly.
 
-- **90-Day Password Expiration**
+-  **90-Day Password Expiration**
   Doctors are required to update their password every 90 days, reducing long-term credential exposure risks.
 
-- **15-Minute Session Timeout**
+-  **15-Minute Session Timeout**
   Inactive sessions automatically expire after 15 minutes to prevent unauthorized access on unattended devices.
 
-- **Role-Based Access Control (RBAC)**
+-  **Role-Based Access Control (RBAC)**
   Doctors are categorized by specialty (Cardiology, Neurology, Oncology, Pediatrics, etc.) and can only access patients assigned to their role ensuring data separation and patient privacy.
 
-- **Account Recovery & Change Notifications**
+-  **Account Recovery & Change Notifications**
   Secure email-based password recovery. After any password change, an automated notification email is sent as an additional security safeguard.
 
-- **Integrated Chatbot Assistant**
+-  **Integrated Chatbot Assistant**
   An in-platform chatbot helps doctors navigate clinical workflows more efficiently.
 
-- **Dark Mode / Light Mode**
+-  **Dark Mode / Light Mode**
   Full theme support for reduced eye strain and customizable readability.
 
-- **Redux State Management**
+-  **Redux State Management**
   Centralized, predictable application state with secure handling of sensitive user data in the client environment.
 
 ---
@@ -289,11 +283,11 @@ flowchart TD
 ### Phase 2 — Round 1 Specialist Synthesis (Parallel)
 Three Azure AI Agents run simultaneously on Microsoft Foundry:
 
-- **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
+-  **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
   - 3-layer resilience: cache bypass, retry on truncation, fill-from-cache/placeholder
-- **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
+-  **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
   - Injects full core FDA sections (up to 600 chars each) directly into agent prompts
-- **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
+-  **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
   - Runs via `DosingService` directly in parallel with no Azure Agent overhead
 
 > After synthesis, evidence patch methods (`patch_drug_drug_evidence`, `patch_drug_disease_evidence`) stamp correct evidence counts from raw evidence, bypassing any agent misreporting.
