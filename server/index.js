@@ -185,11 +185,15 @@ const { loadSecrets } = require('./secrets');
     { method: 'GET',  url: '/'                      },
     // ✅ Patient login — public
     { method: 'POST', url: '/api/patient/signin'    },
+    // ✅ Doctor list — needed by patient portal for booking
+    { method: 'GET',  url: '/api/users'             },
   ];
 
   const PUBLIC_PREFIXES = [
     '/api/profile',
     '/api/password-expiry-status',
+    // ✅ Doctor appointment lookup — needed by patient portal (no doctor token)
+    '/api/appointments/doctor/',
   ];
 
   const isPublic = (method, url) =>
@@ -1566,6 +1570,127 @@ const { loadSecrets } = require('./secrets');
           return sendJSON(res, 200, { prescriptions: result.recordset });
         }
         sendJSON(res, 404, { message: 'No patient record linked.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ── APPOINTMENT ROUTES ────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── Book appointment (called by patient portal) ────────────────────────
+    // Requires patient JWT token. Reads patient_no and type from token.
+    if (req.method === 'POST' && req.url === '/api/appointments') {
+      const { doctor_name, doctor_dept, date, time, reason } = await getBody(req);
+      if (!doctor_name || !date || !time)
+        return sendJSON(res, 400, { message: 'Doctor name, date and time are required.' });
+
+      const patientNo   = req.user.ip_no || req.user.op_no;
+      const patientType = req.user.ip_no ? 'IP' : 'OP';
+
+      if (!patientNo)
+        return sendJSON(res, 400, { message: 'No patient record linked to this account.' });
+
+      try {
+        const pool = await patientsPoolPromise;
+
+        // Check the slot isn't already taken
+        const conflict = await pool.request()
+          .input('doctorName', sql.VarChar, doctor_name)
+          .input('date',       sql.Date,    date)
+          .input('time',       sql.VarChar, time)
+          .query(`SELECT ID FROM dbo.appointments
+                  WHERE Doctor_Name=@doctorName
+                    AND Appointment_Date=@date
+                    AND Appointment_Time=@time
+                    AND Status != 'Cancelled'`);
+
+        if (conflict.recordset.length > 0)
+          return sendJSON(res, 409, { message: 'This time slot has already been booked. Please choose another.' });
+
+        await pool.request()
+          .input('patientNo',   sql.VarChar, patientNo)
+          .input('patientType', sql.VarChar, patientType)
+          .input('patientName', sql.VarChar, req.user.name || '')
+          .input('doctorName',  sql.VarChar, doctor_name)
+          .input('doctorDept',  sql.VarChar, doctor_dept || '')
+          .input('date',        sql.Date,    date)
+          .input('time',        sql.VarChar, time)
+          .input('reason',      sql.VarChar, reason || '')
+          .query(`INSERT INTO dbo.appointments
+            (Patient_No, Patient_Type, Patient_Name, Doctor_Name, Doctor_Dept,
+             Appointment_Date, Appointment_Time, Reason, Status)
+            VALUES
+            (@patientNo, @patientType, @patientName, @doctorName, @doctorDept,
+             @date, @time, @reason, 'Scheduled')`);
+
+        sendJSON(res, 201, { message: 'Appointment booked successfully.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Get appointments for a specific doctor (used by doctor dashboard) ──
+    // PUBLIC — no token required (doctor_name comes from doctor's own session
+    // on the frontend; no sensitive patient data is needed here for slot checks).
+    if (req.method === 'GET' && req.url.startsWith('/api/appointments/doctor/')) {
+      const doctorName = decodeURIComponent(req.url.split('/api/appointments/doctor/')[1]);
+      if (!doctorName)
+        return sendJSON(res, 400, { message: 'Doctor name required.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request()
+          .input('name', sql.VarChar, doctorName)
+          .query(`SELECT ID, Patient_No, Patient_Type, Patient_Name,
+                         Doctor_Name, Doctor_Dept,
+                         Appointment_Date, Appointment_Time,
+                         Reason, Status, Created_At
+                  FROM dbo.appointments
+                  WHERE Doctor_Name = @name
+                  ORDER BY Appointment_Date ASC, Appointment_Time ASC`);
+        sendJSON(res, 200, { appointments: result.recordset });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Get a patient's own appointments ───────────────────────────────────
+    // Requires patient JWT token.
+    if (req.method === 'GET' && req.url === '/api/patient/me/appointments') {
+      if (req.user?.role !== 'patient')
+        return sendJSON(res, 403, { message: 'Access denied.' });
+
+      const patientNo = req.user.ip_no || req.user.op_no;
+      if (!patientNo)
+        return sendJSON(res, 404, { message: 'No patient record linked.' });
+
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request()
+          .input('no', sql.VarChar, patientNo)
+          .query(`SELECT ID, Doctor_Name, Doctor_Dept,
+                         Appointment_Date, Appointment_Time,
+                         Reason, Status, Created_At
+                  FROM dbo.appointments
+                  WHERE Patient_No = @no
+                  ORDER BY Appointment_Date DESC, Appointment_Time ASC`);
+        sendJSON(res, 200, { appointments: result.recordset });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── Update appointment status (doctor only) ────────────────────────────
+    // Allows a doctor to mark an appointment as Completed / Cancelled etc.
+    if (req.method === 'POST' && req.url === '/api/appointments/update-status') {
+      const { id, status } = await getBody(req);
+      const VALID = ['Scheduled', 'Checked In', 'Waiting', 'Completed', 'Cancelled'];
+      if (!id || !VALID.includes(status))
+        return sendJSON(res, 400, { message: `Status must be one of: ${VALID.join(', ')}` });
+      try {
+        const pool = await patientsPoolPromise;
+        await pool.request()
+          .input('id',     sql.Int,     id)
+          .input('status', sql.VarChar, status)
+          .query(`UPDATE dbo.appointments SET Status=@status WHERE ID=@id`);
+        sendJSON(res, 200, { message: 'Appointment status updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
     }
