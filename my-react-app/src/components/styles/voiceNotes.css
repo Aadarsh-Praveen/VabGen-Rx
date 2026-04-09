@@ -580,3 +580,314 @@
 [data-theme="dark"] .vn-card-dur {
   background: #2d3748;
 }
+
+/* ══════════════════════════════════════════
+   TRANSCRIPT PANEL — add to voiceNotes.css
+   ══════════════════════════════════════════ */
+
+/* Collapsible toggle button on each card */
+.vn-transcript-panel {
+  margin-top: 10px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.vn-transcript-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.78rem;
+  font-weight: 500;
+  gap: 6px;
+  transition: color 0.15s;
+}
+.vn-transcript-toggle:hover { color: var(--primary, #3b82f6); }
+
+.vn-transcript-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Expanded body */
+.vn-transcript-body {
+  padding: 10px 0 4px;
+}
+
+.vn-transcript-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--danger, #e05252);
+  padding: 6px 0;
+}
+
+/* Language badge */
+.vn-lang-badge {
+  display: inline-block;
+  background: var(--tag-bg, #eff6ff);
+  color: var(--primary, #3b82f6);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  text-transform: capitalize;
+}
+
+/* Tab bar */
+.vn-transcript-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.vn-ttab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.vn-ttab.active {
+  color: var(--primary, #3b82f6);
+  border-bottom-color: var(--primary, #3b82f6);
+}
+.vn-ttab:hover { color: var(--primary, #3b82f6); }
+
+/* ── Diarized conversation ── */
+.vn-diarized {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vn-dialog-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vn-dialog-line.vn-dialog-doctor  { align-items: flex-start; }
+.vn-dialog-line.vn-dialog-patient { align-items: flex-end; }
+
+.vn-dialog-speaker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #6b7280);
+  padding: 0 4px;
+}
+
+.vn-dialog-text {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-width: 88%;
+}
+
+.vn-dialog-doctor  .vn-dialog-text {
+  background: var(--doctor-bg,  #eff6ff);
+  color:       var(--doctor-txt, #1e40af);
+  border-bottom-left-radius: 2px;
+}
+.vn-dialog-patient .vn-dialog-text {
+  background: var(--patient-bg,  #f0fdf4);
+  color:       var(--patient-txt, #166534);
+  border-bottom-right-radius: 2px;
+}
+
+[data-theme="dark"] .vn-dialog-doctor  .vn-dialog-text {
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+}
+[data-theme="dark"] .vn-dialog-patient .vn-dialog-text {
+  background: rgba(34,197,94,0.12);
+  color: #86efac;
+}
+
+/* ── Raw transcript ── */
+.vn-raw-transcript {
+  background: var(--surface-alt, #f9fafb);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  padding: 12px 14px;
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-primary, #111827);
+}
+
+[data-theme="dark"] .vn-raw-transcript {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-primary, #f1f5f9);
+}
+
+/* ── SOAP Note ── */
+.vn-soap-note {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vn-soap-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+  margin: 0 0 4px;
+}
+
+.vn-soap-section {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.vn-soap-section-title {
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-alt, #f3f4f6);
+  color: var(--text-secondary, #6b7280);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+[data-theme="dark"] .vn-soap-section-title {
+  background: rgba(255,255,255,0.05);
+}
+
+.vn-soap-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 4px 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  align-items: start;
+}
+.vn-soap-row:last-child { border-bottom: none; }
+
+.vn-soap-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-secondary, #6b7280);
+  padding-top: 2px;
+}
+
+.vn-soap-val {
+  font-size: 0.82rem;
+  color: var(--text-primary, #111827);
+  line-height: 1.5;
+}
+
+.vn-soap-text { margin: 0; }
+
+.vn-soap-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vn-soap-list li { font-size: 0.81rem; }
+
+/* ── Live transcript panel (shown right after save) ── */
+.vn-live-transcript {
+  margin: 10px 0;
+  border: 1px solid var(--primary, #3b82f6);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.vn-live-transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--primary-10, #eff6ff);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary, #3b82f6);
+}
+
+[data-theme="dark"] .vn-live-transcript-header {
+  background: rgba(59,130,246,0.12);
+}
+
+.vn-live-transcript-header span { flex: 1; }
+
+.vn-live-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary, #6b7280);
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.vn-live-close:hover { background: rgba(0,0,0,0.06); }
+
+.vn-live-transcript .vn-transcript-panel {
+  padding: 0 12px 10px;
+  border-top: none;
+}
+
+/* ── Transcript toast variant ── */
+.vn-toast--info {
+  background: var(--primary-10, #eff6ff) !important;
+  color: var(--primary, #1d4ed8) !important;
+  border: 1px solid var(--primary, #93c5fd);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vn-spinner--sm {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+/* ── small state variant ── */
+.vn-state--sm {
+  padding: 8px 0;
+  font-size: 0.8rem;
+  gap: 6px;
+}
+
+/* ── Scrollbar styling ── */
+.vn-diarized::-webkit-scrollbar,
+.vn-raw-transcript::-webkit-scrollbar,
+.vn-soap-note::-webkit-scrollbar { width: 4px; }
+
+.vn-diarized::-webkit-scrollbar-thumb,
+.vn-raw-transcript::-webkit-scrollbar-thumb,
+.vn-soap-note::-webkit-scrollbar-thumb {
+  background: var(--border, #d1d5db);
+  border-radius: 2px;
+}

@@ -9,7 +9,12 @@ const { loadSecrets } = require('./secrets');
   const jwt        = require('jsonwebtoken');
   const bcrypt     = require('bcrypt');
   const nodemailer = require('nodemailer');
-  const { BlobServiceClient } = require('@azure/storage-blob');
+  const {
+    BlobServiceClient,
+    generateBlobSASQueryParameters,
+    BlobSASPermissions,
+    StorageSharedKeyCredential,
+  } = require('@azure/storage-blob');
   const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
   const SALT_ROUNDS          = 12;
@@ -141,6 +146,42 @@ const { loadSecrets } = require('./secrets');
     process.env.AZURE_CONTAINER_NAME
   );
 
+  // ── SAS token helper ────────────────────────────────────────────────────────
+  const _parseStorageConnStr = (connStr) => {
+    const parts = {};
+    (connStr || '').split(';').forEach(part => {
+      const eq = part.indexOf('=');
+      if (eq > 0) parts[part.slice(0, eq)] = part.slice(eq + 1);
+    });
+    return { accountName: parts.AccountName || '', accountKey: parts.AccountKey || '' };
+  };
+
+  const generateVoiceNoteSasUrl = (blobName) => {
+    try {
+      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
+      const { accountName, accountKey } = _parseStorageConnStr(connStr);
+      if (!accountName || !accountKey) {
+        console.warn('SAS: Missing storage credentials — returning null');
+        return null;
+      }
+      const credential = new StorageSharedKeyCredential(accountName, accountKey);
+      const sasToken   = generateBlobSASQueryParameters(
+        {
+          containerName: process.env.AZURE_CONTAINER_NAME,
+          blobName,
+          permissions:   BlobSASPermissions.parse('r'),
+          startsOn:      new Date(),
+          expiresOn:     new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        },
+        credential
+      ).toString();
+      return `https://${accountName}.blob.core.windows.net/${process.env.AZURE_CONTAINER_NAME}/${blobName}?${sasToken}`;
+    } catch (err) {
+      console.error('SAS generation error:', err.message);
+      return null;
+    }
+  };
+
   const parseMultipart = (req) => new Promise((resolve, reject) => {
     upload.single('image')(req, {}, (err) => {
       if (err) reject(err);
@@ -148,7 +189,6 @@ const { loadSecrets } = require('./secrets');
     });
   });
 
-  // ── Generic multipart parser (field name configurable) ─────────────────
   const parseMultipartField = (req, fieldName) => new Promise((resolve, reject) => {
     upload.single(fieldName)(req, {}, (err) => {
       if (err) reject(err);
@@ -1622,30 +1662,63 @@ const { loadSecrets } = require('./secrets');
     // ══════════════════════════════════════════════════════════════════════
     // ── VOICE NOTES ROUTES ────────────────────────────────────────────────
     //
-    // Required SQL (run once):
+    // SQL migration (run once — safe to re-run):
+    //
+    //   IF NOT EXISTS (
+    //     SELECT 1 FROM sys.tables
+    //     WHERE object_id = OBJECT_ID('dbo.voice_notes')
+    //   )
     //   CREATE TABLE dbo.voice_notes (
-    //     ID               INT IDENTITY(1,1) PRIMARY KEY,
-    //     Patient_No       VARCHAR(50)   NOT NULL,
-    //     Patient_Type     VARCHAR(10)   NOT NULL,
-    //     Blob_Name        VARCHAR(500)  NOT NULL,
-    //     Blob_URL         VARCHAR(1000) NOT NULL,
-    //     Duration_Seconds FLOAT         NULL,
-    //     Recorded_By      VARCHAR(200)  NULL,
-    //     Created_At       DATETIME      DEFAULT GETDATE()
+    //     ID                  INT IDENTITY(1,1) PRIMARY KEY,
+    //     Patient_No          VARCHAR(50)   NOT NULL,
+    //     Patient_Type        VARCHAR(10)   NOT NULL,
+    //     Blob_Name           VARCHAR(500)  NOT NULL,
+    //     Duration_Seconds    FLOAT         NULL,
+    //     Recorded_By         VARCHAR(200)  NULL,
+    //     Transcript          NVARCHAR(MAX) NULL,   -- raw Whisper text
+    //     Diarized_Transcript NVARCHAR(MAX) NULL,   -- JSON array [{speaker,text}]
+    //     Soap_Note           NVARCHAR(MAX) NULL,   -- JSON object (SOAP sections)
+    //     Language_Detected   NVARCHAR(20)  NULL,   -- e.g. "english", "hindi"
+    //     Created_At          DATETIME      DEFAULT GETDATE()
     //   );
+    //
+    //   -- Safe column additions if table already exists:
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Transcript')
+    //     ALTER TABLE dbo.voice_notes ADD Transcript NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Diarized_Transcript')
+    //     ALTER TABLE dbo.voice_notes ADD Diarized_Transcript NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Soap_Note')
+    //     ALTER TABLE dbo.voice_notes ADD Soap_Note NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Language_Detected')
+    //     ALTER TABLE dbo.voice_notes ADD Language_Detected NVARCHAR(20) NULL;
+    //
     // ══════════════════════════════════════════════════════════════════════
 
-    // ── Upload a voice note (multipart/form-data, field: 'audio') ─────────
+    // ── POST /api/voice-notes — Upload audio + store transcript data ───────
     if (req.method === 'POST' && req.url === '/api/voice-notes') {
       try {
         await parseMultipartField(req, 'audio');
         const file = req.file;
         if (!file) return sendJSON(res, 400, { message: 'No audio file uploaded.' });
 
-        const patientNo   = req.body?.patientNo    || '';
-        const patientType = req.body?.patientType  || 'IP';
-        const duration    = parseFloat(req.body?.duration) || null;
-        const recordedBy  = req.body?.recordedBy   || req.user?.name || '';
+        const patientNo   = req.body?.patientNo   || '';
+        const patientType = req.body?.patientType || 'IP';
+        const duration    = parseFloat(req.body?.duration)  || null;
+        const recordedBy  = req.body?.recordedBy  || req.user?.name || '';
+
+        // Transcript fields — sent from frontend after calling /agent/transcribe-summarize
+        const transcript         = req.body?.transcript          || null;
+        const diarizedRaw        = req.body?.diarized_transcript || null;
+        const soapRaw            = req.body?.soap_note           || null;
+        const languageDetected   = req.body?.language_detected   || null;
+
+        // Validate and normalise JSON fields
+        const safeJson = (raw) => {
+          if (!raw) return null;
+          if (typeof raw === 'object') return JSON.stringify(raw);
+          try { JSON.parse(raw); return raw; }   // already valid JSON string
+          catch { return null; }
+        };
 
         if (!patientNo) return sendJSON(res, 400, { message: 'patientNo is required.' });
 
@@ -1659,23 +1732,125 @@ const { loadSecrets } = require('./secrets');
 
         const pool = await patientsPoolPromise;
         await pool.request()
-          .input('patientNo',   sql.VarChar, patientNo)
-          .input('patientType', sql.VarChar, patientType)
-          .input('blobName',    sql.VarChar, blobName)
-          .input('blobUrl',     sql.VarChar, blockBlobClient.url)
-          .input('duration',    sql.Float,   duration)
-          .input('recordedBy',  sql.VarChar, recordedBy)
+          .input('patientNo',          sql.VarChar,  patientNo)
+          .input('patientType',        sql.VarChar,  patientType)
+          .input('blobName',           sql.VarChar,  blobName)
+          .input('duration',           sql.Float,    duration)
+          .input('recordedBy',         sql.VarChar,  recordedBy)
+          .input('transcript',         sql.NVarChar, transcript)
+          .input('diarizedTranscript', sql.NVarChar, safeJson(diarizedRaw))
+          .input('soapNote',           sql.NVarChar, safeJson(soapRaw))
+          .input('languageDetected',   sql.NVarChar, languageDetected)
           .query(`INSERT INTO dbo.voice_notes
-                    (Patient_No, Patient_Type, Blob_Name, Blob_URL, Duration_Seconds, Recorded_By)
+                    (Patient_No, Patient_Type, Blob_Name, Duration_Seconds,
+                     Recorded_By, Transcript, Diarized_Transcript, Soap_Note, Language_Detected)
                   VALUES
-                    (@patientNo, @patientType, @blobName, @blobUrl, @duration, @recordedBy)`);
+                    (@patientNo, @patientType, @blobName, @duration,
+                     @recordedBy, @transcript, @diarizedTranscript, @soapNote, @languageDetected)`);
 
         sendJSON(res, 201, { message: 'Voice note saved.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
     }
 
-    // ── Delete a voice note ────────────────────────────────────────────────
+    // ── GET /api/voice-notes/:patientNo?type=IP|OP — List notes ───────────
+    // IMPORTANT: this route MUST be checked BEFORE the transcript route
+    // because both start with /api/voice-notes/. The transcript route
+    // matches /api/voice-notes/:id/transcript (has a second path segment).
+    if (req.method === 'GET' && req.url.startsWith('/api/voice-notes/')) {
+      const rawSeg  = req.url.split('/api/voice-notes/')[1] || '';
+      const segments = rawSeg.split('?')[0].split('/');
+
+      // ── GET /api/voice-notes/:id/transcript — Lazy-load transcript ───────
+      // Matches when there are exactly 2 path segments: <id>/transcript
+      if (segments.length === 2 && segments[1] === 'transcript') {
+        const id = parseInt(segments[0], 10);
+        if (!id || isNaN(id)) return sendJSON(res, 400, { message: 'Invalid voice note ID.' });
+        try {
+          const pool   = await patientsPoolPromise;
+          const result = await pool.request()
+            .input('id', sql.Int, id)
+            .query(`SELECT ID, Patient_No, Patient_Type,
+                           Transcript, Diarized_Transcript, Soap_Note, Language_Detected
+                    FROM dbo.voice_notes WHERE ID = @id`);
+
+          if (!result.recordset.length)
+            return sendJSON(res, 404, { message: 'Voice note not found.' });
+
+          const row = result.recordset[0];
+
+          // Verify the requesting doctor can access this patient
+          const patientType = row.Patient_Type || 'IP';
+          const access = await canAccessPatient(
+            pool, row.Patient_No, patientType, req.user.department
+          );
+          if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
+
+          const parseJson = (val) => {
+            if (!val) return null;
+            if (typeof val === 'object') return val;
+            try { return JSON.parse(val); } catch { return null; }
+          };
+
+          const transcript  = row.Transcript         || '';
+          const diarized    = parseJson(row.Diarized_Transcript) || [];
+          const soap        = parseJson(row.Soap_Note)           || {};
+          const language    = row.Language_Detected              || '';
+
+          if (!transcript && !diarized.length && !Object.keys(soap).length) {
+            return sendJSON(res, 404, { message: 'No transcript stored for this note yet.' });
+          }
+
+          return sendJSON(res, 200, {
+            transcript,
+            diarized_transcript: diarized,
+            soap_note:           soap,
+            language_detected:   language,
+          });
+        } catch (err) { return sendJSON(res, 500, { message: err.message }); }
+      }
+
+      // ── GET /api/voice-notes/:patientNo?type=IP|OP — List all notes ──────
+      const patientNo   = decodeURIComponent(segments[0]);
+      const patientType = rawSeg.includes('type=OP') ? 'OP' : 'IP';
+
+      if (!patientNo) return sendJSON(res, 400, { message: 'Patient number required.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const access = await canAccessPatient(pool, patientNo, patientType, req.user.department);
+        if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
+
+        const result = await pool.request()
+          .input('patientNo',   sql.VarChar, patientNo)
+          .input('patientType', sql.VarChar, patientType)
+          .query(`SELECT ID, Patient_No, Patient_Type, Blob_Name,
+                         Duration_Seconds, Recorded_By, Created_At,
+                         -- include a flag so frontend knows if transcript exists
+                         CASE WHEN Transcript IS NOT NULL AND LEN(Transcript) > 0
+                              THEN 1 ELSE 0 END AS Has_Transcript
+                  FROM dbo.voice_notes
+                  WHERE Patient_No = @patientNo AND Patient_Type = @patientType
+                  ORDER BY Created_At DESC`);
+
+        // Generate 1-hour SAS URL per note. Transcript text is NOT included
+        // in the list response — it is fetched on demand via the /transcript route.
+        const notes = result.recordset.map(note => ({
+          ID:               note.ID,
+          Patient_No:       note.Patient_No,
+          Patient_Type:     note.Patient_Type,
+          Blob_URL:         note.Blob_Name ? generateVoiceNoteSasUrl(note.Blob_Name) : null,
+          Duration_Seconds: note.Duration_Seconds,
+          Recorded_By:      note.Recorded_By,
+          Created_At:       note.Created_At,
+          Has_Transcript:   !!note.Has_Transcript,  // tells frontend whether to show accordion
+        }));
+
+        sendJSON(res, 200, { notes });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── DELETE /api/voice-notes/:id — Delete a voice note ─────────────────
     if (req.method === 'DELETE' && req.url.startsWith('/api/voice-notes/')) {
       const seg = req.url.split('/api/voice-notes/')[1] || '';
       const id  = parseInt(seg, 10);
@@ -1687,13 +1862,11 @@ const { loadSecrets } = require('./secrets');
           .query('SELECT Blob_Name FROM dbo.voice_notes WHERE ID = @id');
         if (!row.recordset.length) return sendJSON(res, 404, { message: 'Voice note not found.' });
 
-        // remove from Azure Blob Storage
         try {
           const blockBlobClient = containerClient.getBlockBlobClient(row.recordset[0].Blob_Name);
           await blockBlobClient.deleteIfExists();
         } catch (blobErr) {
           console.warn('Azure blob delete warning:', blobErr.message);
-          // proceed — delete the DB record even if blob is already gone
         }
 
         await pool.request()
@@ -1705,40 +1878,11 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
-    // ── Get voice notes for a patient ──────────────────────────────────────
-    // URL: /api/voice-notes/:patientNo?type=IP   or   ?type=OP
-    if (req.method === 'GET' && req.url.startsWith('/api/voice-notes/')) {
-      const rawSeg      = req.url.split('/api/voice-notes/')[1] || '';
-      const [patSegRaw] = rawSeg.split('?');
-      const patientNo   = decodeURIComponent(patSegRaw);
-      const patientType = req.url.includes('type=OP') ? 'OP' : 'IP';
-
-      if (!patientNo) return sendJSON(res, 400, { message: 'Patient number required.' });
-      try {
-        const pool   = await patientsPoolPromise;
-        const access = await canAccessPatient(pool, patientNo, patientType, req.user.department);
-        if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
-
-        const result = await pool.request()
-          .input('patientNo',   sql.VarChar, patientNo)
-          .input('patientType', sql.VarChar, patientType)
-          .query(`SELECT ID, Patient_No, Patient_Type, Blob_URL,
-                         Duration_Seconds, Recorded_By, Created_At
-                  FROM dbo.voice_notes
-                  WHERE Patient_No = @patientNo AND Patient_Type = @patientType
-                  ORDER BY Created_At DESC`);
-
-        sendJSON(res, 200, { notes: result.recordset });
-      } catch (err) { sendJSON(res, 500, { message: err.message }); }
-      return;
-    }
-
     // ── 404 fallback ───────────────────────────────────────────────────────
     sendJSON(res, 404, { message: 'Route not found' });
   });
 
   const PORT = process.env.PORT || 8080;
-
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 VabGenRx API running on port ${PORT}`);
   });

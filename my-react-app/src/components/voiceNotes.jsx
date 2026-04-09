@@ -4,8 +4,6 @@ import "./styles/voiceNotes.css";
 
 /* ══════════════════════════════════════
    AUTH TOKEN HELPER
-   Reads the JWT from wherever apiFetch stores it.
-   Tries the most common localStorage key names.
    ══════════════════════════════════════ */
 const getAuthToken = () => {
   const keys = ["token", "authToken", "jwt", "access_token", "userToken"];
@@ -13,7 +11,6 @@ const getAuthToken = () => {
     const v = localStorage.getItem(k);
     if (v) return v;
   }
-  // fallback: parse any stored JSON user/auth object
   try {
     const raw = localStorage.getItem("user") || localStorage.getItem("auth");
     if (raw) {
@@ -24,7 +21,6 @@ const getAuthToken = () => {
   return null;
 };
 
-/* ── Upload FormData WITHOUT letting apiFetch touch Content-Type ── */
 const uploadFormData = async (url, formData) => {
   const token = getAuthToken();
   const headers = {};
@@ -82,6 +78,20 @@ const AlertIcon = ({ size = 14 }) => (
     <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
   </svg>
 );
+const ChevronIcon = ({ open, size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+    style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+);
+const TranscriptIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+    <polyline points="10 9 9 9 8 9"/>
+  </svg>
+);
 
 /* ══════════════════════════════════════
    WAVEFORM VISUALISER
@@ -102,26 +112,22 @@ const LiveWaveform = ({ analyserRef, isRecording }) => {
       rafRef.current = requestAnimationFrame(draw);
       analyser.getByteFrequencyData(dataArr);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const bars   = 40;
-      const barW   = canvas.width / bars - 2;
-      const step   = Math.floor(bufLen / bars);
+      const bars  = 40;
+      const barW  = canvas.width / bars - 2;
+      const step  = Math.floor(bufLen / bars);
       const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      const col1   = isDark ? "#60a5fa" : "#3b82f6";
-      const col2   = isDark ? "#818cf8" : "#6366f1";
-
+      const col1  = isDark ? "#60a5fa" : "#3b82f6";
+      const col2  = isDark ? "#818cf8" : "#6366f1";
       for (let i = 0; i < bars; i++) {
         const val  = dataArr[i * step] / 255;
         const barH = Math.max(3, val * canvas.height * 0.85);
         const x    = i * (barW + 2);
         const y    = (canvas.height - barH) / 2;
         const frac = i / bars;
-
         const lerp = (a, b, t) => Math.round(parseInt(a, 16) + (parseInt(b, 16) - parseInt(a, 16)) * t);
-        const r = lerp(col1.slice(1, 3), col2.slice(1, 3), frac);
-        const g = lerp(col1.slice(3, 5), col2.slice(3, 5), frac);
-        const b = lerp(col1.slice(5, 7), col2.slice(5, 7), frac);
-
+        const r = lerp(col1.slice(1,3), col2.slice(1,3), frac);
+        const g = lerp(col1.slice(3,5), col2.slice(3,5), frac);
+        const b = lerp(col1.slice(5,7), col2.slice(5,7), frac);
         const grad = ctx.createLinearGradient(x, y, x, y + barH);
         grad.addColorStop(0,   `rgba(${r},${g},${b},0.5)`);
         grad.addColorStop(0.5, `rgba(${r},${g},${b},1)`);
@@ -141,8 +147,6 @@ const LiveWaveform = ({ analyserRef, isRecording }) => {
 
 /* ══════════════════════════════════════
    AUDIO PLAYER
-   FIX: accepts `knownDuration` (seconds) as fallback for when
-        MediaRecorder blobs report Infinity or NaN for duration.
    ══════════════════════════════════════ */
 const AudioPlayer = ({ url, knownDuration = null }) => {
   const audioRef  = useRef(null);
@@ -151,17 +155,9 @@ const AudioPlayer = ({ url, knownDuration = null }) => {
   const [duration, setDuration] = useState(knownDuration ?? 0);
   const [current,  setCurrent]  = useState(0);
 
-  /* FIX: resolve Infinity / NaN from MediaRecorder blobs.
-     We seek to a huge timestamp; the browser clamps it to the real end,
-     which updates duration to the actual value. */
   const resolveDuration = (audio) => {
     if (!isFinite(audio.duration) || isNaN(audio.duration)) {
-      // If we already know it from the recording timer, use that
-      if (knownDuration && knownDuration > 0) {
-        setDuration(knownDuration);
-        return;
-      }
-      // Otherwise use the seek trick
+      if (knownDuration && knownDuration > 0) { setDuration(knownDuration); return; }
       audio.currentTime = 1e101;
       const onUpdate = () => {
         audio.removeEventListener("timeupdate", onUpdate);
@@ -192,21 +188,18 @@ const AudioPlayer = ({ url, knownDuration = null }) => {
 
   const fmt = (s) => {
     if (!isFinite(s) || isNaN(s) || s < 0) return "00:00";
-    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    return `${String(Math.floor(s / 60)).padStart(2,"0")}:${String(Math.floor(s % 60)).padStart(2,"0")}`;
   };
 
   return (
     <div className="vn-player">
       <audio
-        ref={audioRef}
-        src={url}
+        ref={audioRef} src={url}
         onLoadedMetadata={() => resolveDuration(audioRef.current)}
         onTimeUpdate={() => {
-          const a = audioRef.current;
-          if (!a) return;
-          const cur = a.currentTime;
-          setCurrent(cur);
-          if (duration > 0) setProgress((cur / duration) * 100);
+          const a = audioRef.current; if (!a) return;
+          setCurrent(a.currentTime);
+          if (duration > 0) setProgress((a.currentTime / duration) * 100);
         }}
         onEnded={() => { setPlaying(false); setProgress(0); setCurrent(0); if (audioRef.current) audioRef.current.currentTime = 0; }}
       />
@@ -223,20 +216,210 @@ const AudioPlayer = ({ url, knownDuration = null }) => {
 };
 
 /* ══════════════════════════════════════
+   SOAP NOTE PANEL
+   Renders a structured clinical note.
+   ══════════════════════════════════════ */
+const SoapNote = ({ soap }) => {
+  if (!soap || Object.keys(soap).length === 0) return null;
+
+  const renderValue = (val) => {
+    if (!val) return null;
+    if (Array.isArray(val)) {
+      if (val.length === 0) return null;
+      return (
+        <ul className="vn-soap-list">
+          {val.map((item, i) => <li key={i}>{item}</li>)}
+        </ul>
+      );
+    }
+    return <p className="vn-soap-text">{val}</p>;
+  };
+
+  const renderSection = (title, data) => {
+    if (!data || Object.keys(data).length === 0) return null;
+    return (
+      <div className="vn-soap-section">
+        <h6 className="vn-soap-section-title">{title}</h6>
+        {Object.entries(data).map(([k, v]) => {
+          const rendered = renderValue(v);
+          if (!rendered) return null;
+          const label = k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          return (
+            <div key={k} className="vn-soap-row">
+              <span className="vn-soap-label">{label}</span>
+              <div className="vn-soap-val">{rendered}</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="vn-soap-note">
+      <h5 className="vn-soap-title">SOAP Clinical Note</h5>
+      {renderSection("S — Subjective",    soap.subjective)}
+      {renderSection("O — Objective",     soap.objective)}
+      {renderSection("A — Assessment",    soap.assessment)}
+      {renderSection("P — Plan",          soap.plan)}
+    </div>
+  );
+};
+
+/* ══════════════════════════════════════
+   TRANSCRIPT PANEL
+   Shows diarized and raw transcript
+   as a collapsible section on each card.
+   ══════════════════════════════════════ */
+const TranscriptPanel = ({ noteId, savedTranscript }) => {
+  const [open,        setOpen]        = useState(false);
+  const [loading,     setLoading]     = useState(false);
+  const [data,        setData]        = useState(savedTranscript || null);
+  const [activeTab,   setActiveTab]   = useState("diarized"); // "diarized" | "raw" | "soap"
+  const [error,       setError]       = useState(null);
+  const fetchedRef = useRef(false);
+
+  const load = async () => {
+    if (data || fetchedRef.current) return;
+    fetchedRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const res  = await apiFetch(`/api/voice-notes/${noteId}/transcript`);
+      const json = await res.json();
+      if (res.ok && json.transcript) {
+        setData(json);
+      } else {
+        setError(json.message || "No transcript available for this note.");
+      }
+    } catch {
+      setError("Failed to load transcript.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) load();
+  };
+
+  const hasDiarized = data?.diarized_transcript?.length > 0;
+  const hasRaw      = !!data?.transcript;
+  const hasSoap     = data?.soap_note && Object.keys(data.soap_note).length > 0;
+
+  return (
+    <div className="vn-transcript-panel">
+      <button className="vn-transcript-toggle" onClick={handleToggle}>
+        <span className="vn-transcript-toggle-left">
+          <TranscriptIcon size={13} />
+          Transcript &amp; SOAP Note
+        </span>
+        <ChevronIcon open={open} size={13} />
+      </button>
+
+      {open && (
+        <div className="vn-transcript-body">
+          {loading && (
+            <div className="vn-state vn-state--sm">
+              <div className="vn-spinner" /><span>Loading transcript…</span>
+            </div>
+          )}
+
+          {error && !loading && (
+            <p className="vn-transcript-error"><AlertIcon size={13} /> {error}</p>
+          )}
+
+          {data && !loading && (
+            <>
+              {/* Language badge */}
+              {data.language_detected && (
+                <span className="vn-lang-badge">
+                  Language: {data.language_detected}
+                </span>
+              )}
+
+              {/* Tab bar */}
+              <div className="vn-transcript-tabs">
+                {hasDiarized && (
+                  <button
+                    className={`vn-ttab${activeTab === "diarized" ? " active" : ""}`}
+                    onClick={() => setActiveTab("diarized")}
+                  >
+                    Conversation
+                  </button>
+                )}
+                {hasRaw && (
+                  <button
+                    className={`vn-ttab${activeTab === "raw" ? " active" : ""}`}
+                    onClick={() => setActiveTab("raw")}
+                  >
+                    Raw Transcript
+                  </button>
+                )}
+                {hasSoap && (
+                  <button
+                    className={`vn-ttab${activeTab === "soap" ? " active" : ""}`}
+                    onClick={() => setActiveTab("soap")}
+                  >
+                    SOAP Note
+                  </button>
+                )}
+              </div>
+
+              {/* Diarized conversation view */}
+              {activeTab === "diarized" && hasDiarized && (
+                <div className="vn-diarized">
+                  {data.diarized_transcript.map((line, i) => (
+                    <div
+                      key={i}
+                      className={`vn-dialog-line vn-dialog-${line.speaker?.toLowerCase() === "doctor" ? "doctor" : "patient"}`}
+                    >
+                      <span className="vn-dialog-speaker">{line.speaker}</span>
+                      <p className="vn-dialog-text">{line.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Raw transcript view */}
+              {activeTab === "raw" && hasRaw && (
+                <div className="vn-raw-transcript">
+                  <p>{data.transcript}</p>
+                </div>
+              )}
+
+              {/* SOAP note view */}
+              {activeTab === "soap" && hasSoap && (
+                <SoapNote soap={data.soap_note} />
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ══════════════════════════════════════
    MAIN COMPONENT
    ══════════════════════════════════════ */
 const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
   const [recordings,   setRecordings]   = useState([]);
   const [loadingList,  setLoadingList]  = useState(true);
-  const [recState,     setRecState]     = useState("idle");  // idle | recording | preview
+  const [recState,     setRecState]     = useState("idle");
   const [audioBlob,    setAudioBlob]    = useState(null);
   const [previewUrl,   setPreviewUrl]   = useState(null);
   const [timer,        setTimer]        = useState(0);
   const [saving,       setSaving]       = useState(false);
   const [saveMsg,      setSaveMsg]      = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);    // { id, step: 1|2 }
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletingId,   setDeletingId]   = useState(null);
   const [micError,     setMicError]     = useState(null);
+
+  // NEW: live transcript result shown right after save (before page reload)
+  const [liveTranscript, setLiveTranscript] = useState(null);
 
   const mediaRecRef = useRef(null);
   const chunksRef   = useRef([]);
@@ -244,12 +427,10 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
   const analyserRef = useRef(null);
   const audioCtxRef = useRef(null);
   const streamRef   = useRef(null);
-  // keep a ref to timer so onstop closure sees latest value
   const timerValRef = useRef(0);
 
   const patientType = isOutpatient ? "OP" : "IP";
 
-  /* ── fetch saved recordings ── */
   const fetchRecordings = useCallback(async () => {
     setLoadingList(true);
     try {
@@ -262,48 +443,40 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
 
   useEffect(() => { fetchRecordings(); }, [fetchRecordings]);
 
-  /* ── cleanup on unmount ── */
   useEffect(() => () => {
     clearInterval(timerRef.current);
     streamRef.current?.getTracks().forEach(t => t.stop());
     if (audioCtxRef.current?.state !== "closed") audioCtxRef.current?.close();
   }, []);
 
-  /* ── start recording ── */
   const startRecording = async () => {
     setMicError(null);
+    setLiveTranscript(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-
       audioCtxRef.current = new AudioContext();
       const source   = audioCtxRef.current.createMediaStreamSource(stream);
       const analyser = audioCtxRef.current.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
       analyserRef.current = analyser;
-
       chunksRef.current = [];
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
-
+        : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
       const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
         setAudioBlob(blob);
         setPreviewUrl(URL.createObjectURL(blob));
-        // preserve timer value in state for AudioPlayer knownDuration
         setTimer(timerValRef.current);
         setRecState("preview");
         clearInterval(timerRef.current);
         stream.getTracks().forEach(t => t.stop());
         if (audioCtxRef.current?.state !== "closed") audioCtxRef.current.close();
       };
-
       timerValRef.current = 0;
       setTimer(0);
       mr.start(100);
@@ -318,13 +491,11 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
     }
   };
 
-  /* ── stop recording ── */
   const stopRecording = () => {
     mediaRecRef.current?.stop();
     clearInterval(timerRef.current);
   };
 
-  /* ── discard preview ── */
   const discardRecording = () => {
     URL.revokeObjectURL(previewUrl);
     setAudioBlob(null);
@@ -332,49 +503,90 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
     setTimer(0);
     timerValRef.current = 0;
     setRecState("idle");
+    setLiveTranscript(null);
   };
 
-  /* ── save recording ──────────────────────────────────────────────────────
-     FIX: Use raw fetch (not apiFetch) so the browser sets its own
-     multipart/form-data Content-Type + boundary automatically.
-     apiFetch adds "Content-Type: application/json" which corrupts
-     the multipart payload and causes the 500 / parse error.
-  ── */
+  /* ── save recording + call transcription pipeline ── */
   const saveRecording = async () => {
     if (!audioBlob) return;
-    setSaving(true); setSaveMsg(null);
+    setSaving(true); setSaveMsg(null); setLiveTranscript(null);
+
+    // ── Capture everything we need in local vars BEFORE clearing any state ──
+    const blobToSave     = audioBlob;
+    const durationSecs   = timerValRef.current;
+    const ext            = blobToSave.type.includes("ogg") ? "ogg" : "webm";
+    const filename       = `voice-note-${Date.now()}.${ext}`;
+
     try {
-      const ext  = audioBlob.type.includes("ogg") ? "ogg" : "webm";
+      // ── Step 1: transcribe FIRST (so we can save transcript alongside audio) ──
+      setSaveMsg("transcribing");
+      let transcriptData = null;
+      try {
+        const transcribeForm = new FormData();
+        transcribeForm.append("audio", blobToSave, filename);
+        const token = getAuthToken();
+        const tRes  = await fetch("/agent/transcribe-summarize", {
+          method:  "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body:    transcribeForm,
+        });
+        const tData = await tRes.json().catch(() => ({}));
+        if (tRes.ok && tData.transcript) {
+          transcriptData = tData;
+        } else {
+          console.warn("Transcription returned no result:", tData);
+        }
+      } catch (tErr) {
+        console.warn("Transcription call failed (will save without transcript):", tErr);
+      }
+
+      // ── Step 2: save audio blob + transcript data together ──
       const form = new FormData();
-      form.append("audio",       audioBlob, `voice-note-${Date.now()}.${ext}`);
+      form.append("audio",       blobToSave, filename);
       form.append("patientNo",   patientNo);
       form.append("patientType", patientType);
-      form.append("duration",    String(timerValRef.current));
+      form.append("duration",    String(durationSecs));
       form.append("recordedBy",  user?.name || "");
 
-      // ✅ uploadFormData uses raw fetch — NO Content-Type header set manually
+      // Attach transcript fields if we got them
+      if (transcriptData) {
+        form.append("transcript",          transcriptData.transcript         || "");
+        form.append("diarized_transcript", JSON.stringify(transcriptData.diarized_transcript || []));
+        form.append("soap_note",           JSON.stringify(transcriptData.soap_note           || {}));
+        form.append("language_detected",   transcriptData.language_detected  || "");
+      }
+
       const res  = await uploadFormData("/api/voice-notes", form);
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok) {
-        setSaveMsg("success");
-        URL.revokeObjectURL(previewUrl);
-        setAudioBlob(null);
-        setPreviewUrl(null);
-        setTimer(0);
-        timerValRef.current = 0;
-        setRecState("idle");
-        await fetchRecordings();
-      } else {
+      if (!res.ok) {
         console.error("Voice note save failed:", data.message || res.status);
         setSaveMsg("error");
+        return;
       }
+
+      // ── Step 3: clear state only after successful save ──
+      URL.revokeObjectURL(previewUrl);
+      setAudioBlob(null);
+      setPreviewUrl(null);
+      setTimer(0);
+      timerValRef.current = 0;
+      setRecState("idle");
+      await fetchRecordings();
+
+      if (transcriptData) {
+        setLiveTranscript(transcriptData);
+        setSaveMsg("transcribed");
+      } else {
+        setSaveMsg("success");
+        setTimeout(() => setSaveMsg(null), 4000);
+      }
+
     } catch (err) {
       console.error("Voice note save exception:", err);
       setSaveMsg("error");
     } finally {
       setSaving(false);
-      setTimeout(() => setSaveMsg(null), 4000);
     }
   };
 
@@ -400,7 +612,6 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
     finally { setDeletingId(null); setDeleteTarget(null); }
   };
 
-  /* ── formatters ── */
   const fmtTimer = (s) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
@@ -412,12 +623,10 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
 
   const fmtDuration = (s) => {
     if (s == null || isNaN(s) || s < 0) return "—";
-    const m = Math.floor(s / 60);
-    const r = Math.floor(s % 60);
+    const m = Math.floor(s / 60), r = Math.floor(s % 60);
     return m > 0 ? `${m}m ${r}s` : `${r}s`;
   };
 
-  /* ── render ── */
   return (
     <div className="vn-section">
       {/* header */}
@@ -463,17 +672,14 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
               <span className="vn-preview-label">Preview recording</span>
               <span className="vn-preview-duration">{fmtTimer(timer)}</span>
             </div>
-
-            {/* FIX: pass timer as knownDuration so player shows real time, not Infinity */}
             <AudioPlayer url={previewUrl} knownDuration={timer} />
-
             <div className="vn-preview-actions">
               <button className="vn-discard-btn" onClick={discardRecording} disabled={saving}>
                 <DiscardIcon size={13} /> Discard
               </button>
               <button className="vn-save-btn" onClick={saveRecording} disabled={saving}>
                 <SaveIcon size={13} />
-                {saving ? "Saving…" : "Save Note"}
+                {saving ? "Saving…" : "Save & Transcribe"}
               </button>
             </div>
             {saveMsg === "error" && (
@@ -485,17 +691,32 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
         )}
       </div>
 
-      {/* success toast */}
-      {saveMsg === "success" && (
-        <div className="vn-toast">✓ Voice note saved successfully</div>
+      {/* toasts */}
+      {saveMsg === "success"      && <div className="vn-toast">✓ Voice note saved successfully</div>}
+      {saveMsg === "transcribing" && (
+        <div className="vn-toast vn-toast--info">
+          <div className="vn-spinner vn-spinner--sm" /> Generating transcript &amp; SOAP note…
+        </div>
+      )}
+      {saveMsg === "transcribed"  && <div className="vn-toast">✓ Transcript &amp; SOAP note ready</div>}
+
+      {/* Live transcript panel — shown immediately after save+transcribe */}
+      {liveTranscript && (
+        <div className="vn-live-transcript">
+          <div className="vn-live-transcript-header">
+            <TranscriptIcon size={14} />
+            <span>New Recording — Transcript &amp; SOAP Note</span>
+            <button className="vn-live-close" onClick={() => setLiveTranscript(null)} title="Dismiss">✕</button>
+          </div>
+          <TranscriptPanel noteId={null} savedTranscript={liveTranscript} />
+        </div>
       )}
 
       {/* saved recordings list */}
       <div className="vn-list">
         {loadingList ? (
           <div className="vn-state">
-            <div className="vn-spinner" />
-            <span>Loading voice notes…</span>
+            <div className="vn-spinner" /><span>Loading voice notes…</span>
           </div>
         ) : recordings.length === 0 ? (
           <div className="vn-empty">
@@ -511,20 +732,14 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
                 <div className="vn-card-top">
                   <div className="vn-card-meta">
                     <span className="vn-card-date">{fmtDate(note.Created_At)}</span>
-                    {note.Recorded_By && (
-                      <span className="vn-card-by">by {note.Recorded_By}</span>
-                    )}
-                    {note.Duration_Seconds != null && (
-                      <span className="vn-card-dur">{fmtDuration(note.Duration_Seconds)}</span>
-                    )}
+                    {note.Recorded_By && <span className="vn-card-by">by {note.Recorded_By}</span>}
+                    {note.Duration_Seconds != null && <span className="vn-card-dur">{fmtDuration(note.Duration_Seconds)}</span>}
                   </div>
                   <div className="vn-card-actions">
                     {isPending ? (
                       <div className="vn-confirm-row">
                         <span className="vn-confirm-label"><AlertIcon /> Confirm delete?</span>
-                        <button className="vn-confirm-yes" onClick={() => handleDeleteClick(note.ID)} disabled={isDeleting}>
-                          Yes, delete
-                        </button>
+                        <button className="vn-confirm-yes" onClick={() => handleDeleteClick(note.ID)} disabled={isDeleting}>Yes, delete</button>
                         <button className="vn-confirm-no" onClick={cancelDelete}>Cancel</button>
                       </div>
                     ) : (
@@ -540,8 +755,19 @@ const VoiceNotesSection = ({ patientNo, isOutpatient, user }) => {
                     )}
                   </div>
                 </div>
-                {/* pass saved duration for proper playback time display */}
+
                 <AudioPlayer url={note.Blob_URL} knownDuration={note.Duration_Seconds} />
+
+                {/* ── Transcript accordion — lazy-loaded per card ── */}
+                <TranscriptPanel
+                  noteId={note.ID}
+                  savedTranscript={note.Transcript ? {
+                    transcript:          note.Transcript,
+                    diarized_transcript: note.Diarized_Transcript || [],
+                    soap_note:           note.Soap_Note           || {},
+                    language_detected:   note.Language_Detected   || "",
+                  } : null}
+                />
               </div>
             );
           })

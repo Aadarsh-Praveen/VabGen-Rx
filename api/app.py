@@ -36,7 +36,7 @@ import asyncio
 from typing             import List, Optional, Dict, Any
 from itertools          import combinations
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi            import FastAPI, HTTPException, Request
+from fastapi            import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic           import BaseModel
 
@@ -149,17 +149,18 @@ app.add_middleware(
 )
 
 # ── Lazy service references ───────────────────────────────────────────────────
-pubmed              = None
-fda                 = None
-analyzer            = None
-cache               = None
-agent_service       = None
-counseling_service  = None
-condition_service   = None
-dosing_service      = None
-translation_service = None
-audit               = None
-_services_ready     = False
+pubmed                = None
+fda                   = None
+analyzer              = None
+cache                 = None
+agent_service         = None
+counseling_service    = None
+condition_service     = None
+dosing_service        = None
+translation_service   = None
+transcription_service = None
+audit                 = None
+_services_ready       = False
 
 # ── PHI audit scope ───────────────────────────────────────────────────────────
 _PHI_ENDPOINTS = (
@@ -175,7 +176,7 @@ def _init_services():
     """Initialize all heavy services in a background thread."""
     global pubmed, fda, analyzer, cache, agent_service
     global counseling_service, condition_service
-    global dosing_service, translation_service, audit, _services_ready
+    global dosing_service, translation_service, transcription_service, audit, _services_ready
 
     print("🔄 Initializing services in background...")
     try:
@@ -197,6 +198,9 @@ def _init_services():
         print("   ✅ TranslationService")
         audit               = AuditLogService()
         print("   ✅ AuditLogService")
+        from services.transcription import TranscriptionService
+        transcription_service = TranscriptionService()
+        print("   ✅ TranscriptionService")
         agent_service       = VabGenRxOrchestrator()
         print("   ✅ VabGenRxOrchestrator")
 
@@ -1344,3 +1348,114 @@ def a2a_tasks_list():
             for tid, t in list(_tasks.items())[-20:]
         ]
     }
+
+# ── Voice Intelligence — Transcription + SOAP Note ───────────────────────────
+
+@app.post("/agent/transcribe-summarize")
+async def transcribe_and_summarize(
+    request: Request,
+    audio:   UploadFile = File(...),
+):
+    """
+    Transcribes recorded doctor-patient audio and generates a
+    diarized SOAP clinical note.
+
+    Input:  multipart/form-data
+            - audio: audio file (webm, mp4, wav, m4a, mp3)
+
+    Output:
+        {
+          "transcript":          str,
+          "diarized_transcript": [{"speaker": "Doctor"|"Patient", "text": "..."}, ...],
+          "soap_note":           { subjective, objective, assessment, plan },
+          "language_detected":   str
+        }
+
+    HIPAA:
+        Audio is transmitted to Azure OpenAI Whisper.
+        Requires BAA with Microsoft and abuse-monitoring opt-out
+        on the Azure OpenAI resource before use with real patient data.
+        All accesses are logged to phi_audit_log.
+    """
+    _check_ready()
+
+    # ── Read uploaded audio ───────────────────────────────────────────────────
+    audio_bytes = await audio.read()
+    filename    = audio.filename or "recording.webm"
+
+    if len(audio_bytes) < 1000:
+        raise HTTPException(
+            status_code = 400,
+            detail      = "Audio too short. Minimum ~3 seconds of audio required."
+        )
+
+    # ── Extract request context for audit log ─────────────────────────────────
+    ip_address = (
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    user_id    = request.headers.get("X-User-Id",    "unknown")
+    patient_id = request.headers.get("X-Patient-Id", "")
+    session_id = str(uuid.uuid4())
+
+    # ── HIPAA audit: log transcription access ─────────────────────────────────
+    if audit:
+        audit.log(
+            action        = AuditAction.VOICE_TRANSCRIPTION,
+            resource_type = ResourceType.VOICE_NOTE,
+            user_id       = user_id,
+            patient_id    = patient_id,
+            ip_address    = ip_address,
+            session_id    = session_id,
+            endpoint      = "/agent/transcribe-summarize",
+            http_method   = "POST",
+            status_code   = 200,
+            success       = True,
+            detail        = f"Audio size: {len(audio_bytes)} bytes, file: {filename}",
+        )
+
+    # ── Run transcription + SOAP in thread pool ───────────────────────────────
+    # TranscriptionService makes blocking HTTP calls to Azure OpenAI.
+    # run_in_executor keeps the async event loop unblocked.
+    try:
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: transcription_service.transcribe_and_summarize(
+                audio_bytes, filename
+            )
+        )
+
+        if result.get("error") == "no_speech_detected":
+            raise HTTPException(
+                status_code = 422,
+                detail      = "No speech detected in the recording. "
+                              "Please check your microphone and try again."
+            )
+
+        logger.info(
+            f"Transcription complete | user={user_id} | "
+            f"lang={result.get('language_detected')} | "
+            f"transcript_len={len(result.get('transcript', ''))}"
+        )
+        return result
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        if audit:
+            audit.log(
+                action        = AuditAction.VOICE_TRANSCRIPTION,
+                resource_type = ResourceType.VOICE_NOTE,
+                user_id       = user_id,
+                patient_id    = patient_id,
+                ip_address    = ip_address,
+                session_id    = session_id,
+                endpoint      = "/agent/transcribe-summarize",
+                http_method   = "POST",
+                status_code   = 500,
+                success       = False,
+                detail        = str(e),
+            )
+        logger.error(f"Transcription endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
