@@ -12,15 +12,9 @@ HIPAA Requirements covered:
 - Retention policies are defined in code (RETENTION_POLICIES)
   and seeded into the DB on startup — no hardcoded SQL values.
 
-CHANGES:
-- log() method now accepts both resource_id (from middleware,
-  already hashed) and patient_id (legacy, hashed here).
-  Fixes: "unexpected keyword argument 'resource_id'" error.
 
 Database: vabgenrx-audit-logs (separate from cache DB)
 Credentials: AZURE_SQL_AUDIT_* env vars (separate from cache)
-
-Folder: logs/ (top-level, outside services/)
 """
 
 import os
@@ -156,6 +150,9 @@ class AuditAction:
     LOGOUT      = "LOGOUT"      # User logout
     COUNSELLING = "COUNSELLING" # Patient counselling generation
     DOSING      = "DOSING"      # Dosing recommendation
+    VOICE_TRANSCRIPTION = "VOICE_TRANSCRIPTION" # Audio → transcript + SOAP note
+    VOICE_NOTE_ACCESS   = "VOICE_NOTE_ACCESS"   # Voice note list accessed
+    VOICE_NOTE_DELETE   = "VOICE_NOTE_DELETE"   # Voice note deleted
 
 
 # ── Resource type constants ───────────────────────────────────────
@@ -168,6 +165,8 @@ class ResourceType:
     PRESCRIPTION    = "prescription"
     DIAGNOSIS       = "diagnosis"
     TRANSLATION     = "translation"
+    VOICE_NOTE      = "voice_note"
+
 
 
 class AuditLogService:

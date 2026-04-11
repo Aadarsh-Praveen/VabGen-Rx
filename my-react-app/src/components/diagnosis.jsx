@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ScanLine, Save, CheckCircle2, AlertCircle, RotateCcw, ClipboardList, FileDown, Zap, X, AlertTriangle } from "lucide-react";
+import { ScanLine, Save, CheckCircle2, AlertCircle, RotateCcw, ClipboardList, FileDown, Zap, X, AlertTriangle, Ban } from "lucide-react";
 import "../components/styles/diagnosisTab.css";
 import { runPhaseAnalysis, buildPatientProfile, buildPatientLabs } from "../services/agentApi";
 import { apiFetch } from "../services/api";
@@ -78,6 +78,7 @@ const DiagnosisTab = ({ p, user }) => {
   const [agentError, setAgentError]           = useState(null);
   const [wasInterrupted, setWasInterrupted]   = useState(false);
 
+
   const agentLoading        = Object.values(loadingState).some(Boolean);
   const searchInputRef      = useRef(null);
   const debounceRef         = useRef(null);
@@ -85,6 +86,7 @@ const DiagnosisTab = ({ p, user }) => {
   const abortRef            = useRef(null);
   const stockToastRef       = useRef(null);
 
+  /* ── Fetch prescriptions (includes No_Sub flag) ── */
   const fetchMeds = async () => {
     setMedLoading(true);
     try {
@@ -93,7 +95,15 @@ const DiagnosisTab = ({ p, user }) => {
         : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`;
       const res  = await apiFetch(ep);
       const data = await res.json();
-      if (res.ok) setMedications((data.prescriptions || []).map(m => ({ ...m, held: m.Is_Held === true || m.Is_Held === 1 })));
+      if (res.ok) {
+        setMedications(
+          (data.prescriptions || []).map(m => ({
+            ...m,
+            held:   m.Is_Held === true || m.Is_Held === 1,
+            no_sub: m.No_Sub  === true || m.No_Sub  === 1,
+          }))
+        );
+      }
     } catch { setMedications([]); }
     finally { setMedLoading(false); }
   };
@@ -406,6 +416,7 @@ const DiagnosisTab = ({ p, user }) => {
     }, 350);
   };
 
+
   const handleSelectDrug = (drug) => {
     setNewMed(drug);
     setSearchQ(`${drug.Brand_Name} — ${drug.Generic_Name} (${drug.Strength})`);
@@ -515,6 +526,22 @@ const DiagnosisTab = ({ p, user }) => {
     } catch (err) { console.error(err); }
   };
 
+  const handleNoSub = async (id) => {
+    const newNoSub = !medications.find(x => x.ID === id)?.no_sub;
+    setMedications(m => m.map(x => x.ID === id ? { ...x, no_sub: newNoSub } : x));
+    setOpenMenu(null);
+    try {
+      await apiFetch(
+        isOutpatient ? "/api/op-prescriptions/no-sub" : "/api/ip-prescriptions/no-sub",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, no_sub: newNoSub }),
+        }
+      );
+    } catch (err) { console.error(err); }
+  };
+
   const handleDelete = async (id) => {
     try {
       await apiFetch(isOutpatient ? "/api/op-prescriptions/delete" : "/api/ip-prescriptions/delete", {
@@ -530,7 +557,7 @@ const DiagnosisTab = ({ p, user }) => {
     e.stopPropagation();
     if (openMenu === id) { setOpenMenu(null); return; }
     const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({ top: rect.bottom + 4, left: rect.right - 150 });
+    setMenuPos({ top: rect.bottom + 4, left: rect.right - 168 });
     setOpenMenu(id);
   };
 
@@ -538,22 +565,32 @@ const DiagnosisTab = ({ p, user }) => {
     ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
 
+  /* ── PDF generation ── */
   const handlePrescriptionPdf = () => {
     setPdfGenerating(true);
     const esc     = (str) => String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     const date    = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
     const now     = new Date().toLocaleString();
     const drName  = user?.name || "Doctor";
-    const medRows = medications.filter(m => !m.held).map((m, i) => `
-      <tr>
-        <td class="tc">${i+1}</td>
-        <td><strong>${esc(m.Brand_Name||"")}</strong><br/><span class="generic">${esc(m.Generic_Name||"")}</span></td>
+    const activeMeds = medications.filter(m => !m.held);
+    const hasNoSub   = activeMeds.some(m => m.no_sub);
+
+    const medRows = activeMeds.map((m, i) => `
+      <tr style="${m.no_sub ? "background:#fffbeb;" : ""}">
+        <td class="tc">${i + 1}</td>
+        <td>
+          <strong>${esc(m.Brand_Name||"")}</strong>
+          ${m.no_sub ? '<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;margin-left:5px;font-weight:700;border:1px solid #fcd34d;letter-spacing:0.04em">⊘ NO SUB</span>' : ""}
+          <br/><span class="generic">${esc(m.Generic_Name||"")}</span>
+        </td>
         <td>${esc(m.Strength||"")}</td>
         <td>${esc(m.Route||"")}</td>
         <td>${esc(m.Frequency||"")}</td>
         <td class="tc">${esc(m.Days||"")}</td>
       </tr>`).join("");
+
     const diagText = [diagnosis.primary, diagnosis.secondary].filter(Boolean).join(", ");
+
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>Prescription</title>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
@@ -581,6 +618,7 @@ const DiagnosisTab = ({ p, user }) => {
   .tc{text-align:center}
   .notes-section{border:1px dashed #86efac;border-radius:6px;padding:10px 14px;margin-bottom:24px;font-size:11.5px;color:#444;line-height:1.6}
   .notes-label{font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;margin-bottom:4px}
+  .nosub-legend{display:flex;align-items:center;gap:8px;margin-bottom:16px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;font-size:11px;color:#92400e}
   .sig-row{display:flex;justify-content:flex-end;margin-top:8px}
   .sig-box{text-align:center}
   .sig-line{width:180px;border-top:1.5px solid #333;margin-bottom:6px}
@@ -612,6 +650,7 @@ const DiagnosisTab = ({ p, user }) => {
     ${p?.Sex    ? `<div class="ps-field"><div class="ps-label">Sex</div><div class="ps-val">${p.Sex==="M"?"Male":"Female"}</div></div>` : ""}
     ${diagText  ? `<div class="ps-field" style="flex:2"><div class="ps-label">Diagnosis</div><div class="ps-val">${esc(diagText)}</div></div>` : ""}
   </div>
+  ${hasNoSub ? `<div class="nosub-legend"><strong>⊘ NO SUB</strong> = Dispense exactly as written. Brand substitution is not permitted for highlighted medications.</div>` : ""}
   <table>
     <thead><tr>
       <th style="width:36px">S.No</th><th>Brand / Generic Name</th>
@@ -634,6 +673,7 @@ const DiagnosisTab = ({ p, user }) => {
     <span>${now}</span>
   </div>
 </body></html>`;
+
     const printWin = window.open("", "_blank", "width=900,height=700,scrollbars=yes");
     if (!printWin) { setPdfGenerating(false); return; }
     printWin.document.open(); printWin.document.write(html); printWin.document.close();
@@ -671,6 +711,9 @@ const DiagnosisTab = ({ p, user }) => {
     );
     return null;
   };
+
+  const activeMedsForModal = medications.filter(m => !m.held);
+  const hasNoSubInModal    = activeMedsForModal.some(m => m.no_sub);
 
   return (
     <>
@@ -725,23 +768,26 @@ const DiagnosisTab = ({ p, user }) => {
         </div>
 
         <div className="diag-grid-2">
-          <MedicationList
-            medications={medications} medLoading={medLoading}
-            showAddRow={showAddRow} setShowAddRow={setShowAddRow}
-            searchQ={searchQ} searchResults={searchResults} searching={searching}
-            newMed={newMed} newForm={newForm} setNewForm={setNewForm}
-            newErrors={newErrors} setNewErrors={setNewErrors} addSaving={addSaving}
-            editingId={editingId} editValues={editValues} setEditValues={setEditValues}
-            openMenu={openMenu} menuPos={menuPos} dropdownPos={dropdownPos}
-            agentLoading={agentLoading} agentResult={agentResult} wasInterrupted={wasInterrupted}
-            handleSearch={handleSearch} handleSelectDrug={handleSelectDrug}
-            handleAutoSave={handleAutoSave} handleCancelAdd={handleCancelAdd}
-            handleEdit={handleEdit} handleSaveEdit={handleSaveEdit}
-            handleHold={handleHold} handleDelete={handleDelete}
-            handleMenuOpen={handleMenuOpen} updateDropdownPos={updateDropdownPos}
-            triggerAnalysis={triggerAnalysis} onInterrupt={onInterrupt}
-            searchInputRef={searchInputRef}
-          />
+            <MedicationList
+              medications={medications} medLoading={medLoading}
+              showAddRow={showAddRow} setShowAddRow={setShowAddRow}
+              searchQ={searchQ} searchResults={searchResults} searching={searching}
+              newMed={newMed} newForm={newForm} setNewForm={setNewForm}
+              newErrors={newErrors} setNewErrors={setNewErrors} addSaving={addSaving}
+              editingId={editingId} editValues={editValues} setEditValues={setEditValues}
+              openMenu={openMenu} menuPos={menuPos} dropdownPos={dropdownPos}
+              agentLoading={agentLoading} agentResult={agentResult} wasInterrupted={wasInterrupted}
+              handleSearch={handleSearch} handleSelectDrug={handleSelectDrug}
+              handleAutoSave={handleAutoSave} handleCancelAdd={handleCancelAdd}
+              handleEdit={handleEdit} handleSaveEdit={handleSaveEdit}
+              handleHold={handleHold} handleDelete={handleDelete}
+              handleNoSub={handleNoSub}
+              handleMenuOpen={handleMenuOpen} updateDropdownPos={updateDropdownPos}
+              triggerAnalysis={triggerAnalysis} onInterrupt={onInterrupt}
+              searchInputRef={searchInputRef}
+            />
+    
+
           <PrescriberNotes
             prescriberNotes={prescriberNotes} noteText={noteText}
             setNoteText={setNoteText} noteSaving={noteSaving} noteMsg={noteMsg}
@@ -811,6 +857,12 @@ const DiagnosisTab = ({ p, user }) => {
                   {[diagnosis.primary, diagnosis.secondary].filter(Boolean).join(", ")}
                 </div>
               )}
+              {hasNoSubInModal && (
+                <div className="presc-ns-legend">
+                  <Ban size={12} />
+                  <strong>NO SUB</strong> — Dispense exactly as written. Brand substitution is not permitted for highlighted rows.
+                </div>
+              )}
               <div className="presc-table-wrap">
                 <table className="presc-table">
                   <thead>
@@ -820,12 +872,25 @@ const DiagnosisTab = ({ p, user }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {medications.filter(m => !m.held).length === 0
+                    {activeMedsForModal.length === 0
                       ? <tr><td colSpan={7} className="presc-empty">No active medications.</td></tr>
-                      : medications.filter(m => !m.held).map((m, i) => (
-                        <tr key={m.ID || i}>
+                      : activeMedsForModal.map((m, i) => (
+                        <tr
+                          key={m.ID || i}
+                          style={{
+                            background:  m.no_sub ? "#fffbeb" : "",
+                            borderLeft:  m.no_sub ? "3px solid #f59e0b" : "",
+                          }}
+                        >
                           <td className="presc-tc">{i + 1}</td>
-                          <td><strong>{m.Brand_Name || "—"}</strong></td>
+                          <td>
+                            <strong>{m.Brand_Name || "—"}</strong>
+                            {m.no_sub && (
+                              <span className="presc-ns-badge">
+                                <Ban size={8} />NO SUB
+                              </span>
+                            )}
+                          </td>
                           <td className="presc-generic">{m.Generic_Name || "—"}</td>
                           <td>{m.Strength  || "—"}</td>
                           <td>{m.Route     || "—"}</td>
@@ -839,8 +904,9 @@ const DiagnosisTab = ({ p, user }) => {
               </div>
               <div className="presc-footer">
                 <span className="presc-footer-note">
-                  {medications.filter(m => !m.held).length} medication{medications.filter(m => !m.held).length !== 1 ? "s" : ""}
+                  {activeMedsForModal.length} medication{activeMedsForModal.length !== 1 ? "s" : ""}
                   {medications.some(m => m.held) ? ` · ${medications.filter(m => m.held).length} on hold` : ""}
+                  {hasNoSubInModal ? ` · ${activeMedsForModal.filter(m => m.no_sub).length} no-sub` : ""}
                   {" · "}{new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}
                 </span>
                 <div className="presc-footer-btns">

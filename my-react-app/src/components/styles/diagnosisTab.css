@@ -468,3 +468,53 @@
 [data-theme="dark"] .stock-toast-fixed           { background: #1c1500; border-color: #854d0e; border-left-color: #f59e0b; }
 [data-theme="dark"] .stock-toast-title           { color: #fde68a; }
 [data-theme="dark"] .stock-toast-detail          { color: #fcd34d; }
+/* ══════════════════════════════════════════════════════════════
+   ADD THESE RULES TO YOUR diagnosisTab.css
+   (No Substitution legend + badge in prescription modal)
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── No-substitution legend bar (above table in modal) ── */
+.presc-ns-legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 7px 12px;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+/* ── NO SUB badge inline with brand name in modal table ── */
+.presc-ns-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 5px;
+  vertical-align: middle;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Dark mode ── */
+[data-theme="dark"] .presc-ns-legend {
+  background: #2a2010;
+  border-color: #92400e;
+  color: #fbbf24;
+}
+
+[data-theme="dark"] .presc-ns-badge {
+  background: #2a2010;
+  border-color: #92400e;
+  color: #fbbf24;
+}

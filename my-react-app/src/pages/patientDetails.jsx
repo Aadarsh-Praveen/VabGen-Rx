@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Nav from "../components/nav";
 import DiagnosisTab from "../components/diagnosis";
+import VoiceNotesSection from "../components/voiceNotes";
+import OrderDiagnosticsModal from "../components/orderDiagnosticsmodal";
 import { apiFetch } from "../services/api";
 import "./patientDetails.css";
 import PageFooter from "../components/pageFooter";
@@ -130,11 +132,118 @@ const Row = ({ label, value }) => (
   </div>
 );
 
-const PatientInfoTab = ({ p, isOutpatient }) => {
+/* ── Patient Info Tab — now accepts user prop and renders VoiceNotesSection ── */
+const PatientInfoTab = ({ p, isOutpatient, user }) => {
   const doa = p.DOA ? new Date(p.DOA).toLocaleDateString() : "—";
   const dod = p.DOD ? new Date(p.DOD).toLocaleDateString() : null;
+  const patientNo = isOutpatient ? p.OP_No : p.IP_No;
+
+  const [fhirLoading, setFhirLoading] = useState(false);
+  const [fhirResult,  setFhirResult]  = useState(null);  // null | "success" | "not_found" | "error"
+  const [fhirData,    setFhirData]    = useState(null);
+
+const loadFromFHIR = async () => {
+    setFhirLoading(true);
+    setFhirResult(null);
+    try {
+      const res  = await fetch(`http://localhost:8000/fhir/patient/${encodeURIComponent(patientNo)}`);
+      const data = await res.json();
+      if (!data.fhir_found) {
+        setFhirResult("not_found");
+        return;
+      }
+      setFhirData(data);
+
+      // Fetch existing medications to avoid duplicates
+      const existingRes  = await apiFetch(isOutpatient
+        ? `/api/op-prescriptions/${encodeURIComponent(patientNo)}`
+        : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`
+      );
+      const existingData = await existingRes.json();
+      const existingMeds = (existingData.prescriptions || []).map(m =>
+        m.Generic_Name?.toLowerCase().trim()
+      );
+
+      // Only add medications that don't already exist
+      for (const drugName of data.medications) {
+        const alreadyExists = existingMeds.includes(drugName.toLowerCase().trim());
+        if (!alreadyExists) {
+          await apiFetch(isOutpatient ? "/api/op-prescriptions" : "/api/ip-prescriptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(isOutpatient
+              ? { opNo: patientNo, brand: drugName, generic: drugName, strength: "as prescribed", route: "oral", frequency: "qd", days: "30" }
+              : { ipNo: patientNo, brand: drugName, generic: drugName, strength: "as prescribed", route: "oral", frequency: "qd", days: "30" }
+            ),
+          });
+        }
+      }
+
+      setFhirResult("success");
+      // Don't clear success — keeps button disabled permanently after load
+    } catch (err) {
+      console.error("FHIR load failed:", err);
+      setFhirResult("error");
+      setTimeout(() => setFhirResult(null), 5000);
+    } finally {
+      setFhirLoading(false);
+    }
+  };
+
   return (
     <div className="pd-tab-content">
+
+      {/* ── Load from FHIR banner ─────────────────────────────────────── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "10px 16px", marginBottom: 16,
+        background: "#f0f7ff", border: "1px solid #c7deff",
+        borderRadius: 10,
+      }}>
+        <button
+          onClick={loadFromFHIR}
+          disabled={fhirLoading}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 16px",
+            background: fhirLoading ? "#e8f0fe" : "#1a73e8",
+            color: fhirLoading ? "#1a73e8" : "#fff",
+            border: "none", borderRadius: 7,
+            fontSize: "0.82rem", fontWeight: 700,
+            cursor: fhirLoading ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap", flexShrink: 0,
+          }}
+        >
+          {fhirLoading ? "⏳ Loading..." : "🏥 Load from FHIR"}
+        </button>
+
+        <div style={{ fontSize: "0.78rem", color: "#555" }}>
+          {!fhirResult && !fhirLoading && (
+            <span>Pull medications, lab values &amp; conditions from InterSystems IRIS EHR for <strong>{patientNo}</strong></span>
+          )}
+          {fhirLoading && (
+            <span style={{ color: "#1a73e8" }}>Connecting to IRIS FHIR server...</span>
+          )}
+          {fhirResult === "success" && fhirData && (
+            <span style={{ color: "#1e8a3c", fontWeight: 600 }}>
+              ✅ Loaded — {fhirData.medications.join(" · ")}
+              {fhirData.lab_values?.egfr ? ` · eGFR ${fhirData.lab_values.egfr}` : ""}
+              {fhirData.lab_values?.potassium ? ` · K⁺ ${fhirData.lab_values.potassium}` : ""}
+            </span>
+          )}
+          {fhirResult === "not_found" && (
+            <span style={{ color: "#b45309", fontWeight: 600 }}>
+              ⚠️ {patientNo} not found in FHIR server
+            </span>
+          )}
+          {fhirResult === "error" && (
+            <span style={{ color: "#dc2626", fontWeight: 600 }}>
+              ❌ Could not connect to FHIR server — is IRIS running?
+            </span>
+          )}
+        </div>
+      </div>
+
       <Section title="Demographics">
         <Row label="Full Name"          value={p.Name} />
         <Row label="Age"                value={`${p.Age} years`} />
@@ -148,6 +257,7 @@ const PatientInfoTab = ({ p, isOutpatient }) => {
         <Row label="BMI"                value={p.BMI} />
         <Row label="Insurance Type"     value={p.Insurance_Type} />
       </Section>
+
       <Section title="Visit Info">
         <Row label={isOutpatient ? "OP Number" : "IP Number"} value={isOutpatient ? p.OP_No : p.IP_No} />
         <Row label="Department"              value={p.Dept} />
@@ -157,18 +267,34 @@ const PatientInfoTab = ({ p, isOutpatient }) => {
         <Row label="Past Medical History"    value={p.Past_Medical_History} />
         <Row label="Past Medication History" value={p.Past_Medication_History} />
       </Section>
+
       <Section title="Lifestyle">
         <Row label="Smoker"    value={p.Smoker} />
         <Row label="Alcoholic" value={p.Alcoholic} />
       </Section>
+
       <Section title="Outcome">
         <Row label="Follow-up Outcome" value={p.Followup_Outcome} />
       </Section>
+
+      <VoiceNotesSection
+        patientNo={isOutpatient ? p.OP_No : p.IP_No}
+        isOutpatient={isOutpatient}
+        user={user}
+      />
     </div>
   );
 };
 
-const LabResultsTab = ({ p, isOutpatient }) => {
+/* ── Order-new-lab button icon ── */
+const PlusFlaskIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 3h6v11l3.5 6H5.5L9 14V3z"/><line x1="9" y1="3" x2="15" y2="3"/>
+    <line x1="3" y1="9" x2="7" y2="9"/><line x1="5" y1="7" x2="5" y2="11"/>
+  </svg>
+);
+
+const LabResultsTab = ({ p, isOutpatient, onOrderNew }) => {
   const [lab,     setLab]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
@@ -190,13 +316,26 @@ const LabResultsTab = ({ p, isOutpatient }) => {
     fetchLab();
   }, [patientNo]);
 
-  if (loading) return <div className="pd-state"><div className="pd-spinner" /><p>Loading lab results...</p></div>;
-  if (error)   return <div className="pd-state pd-error"><WarningIcon /> {error}</div>;
-  if (!lab)    return <div className="pd-state">No lab results found for this patient.</div>;
-
   return (
     <div className="pd-tab-content">
-      <Section title="Vitals">
+      {/* ── Always-visible action bar with Order button ── */}
+      <div className="pd-lab-action-bar">
+        <div className="pd-lab-action-info">
+          <span className="pd-lab-action-label">Lab Results</span>
+          <span className="pd-lab-action-sub">
+            {loading ? "Loading…" : error ? "Error loading results" : lab ? "Results on record" : "No results on record"}
+          </span>
+        </div>
+        <button className="pd-new-lab-btn" onClick={onOrderNew}>
+          <PlusFlaskIcon />
+          Order new lab test
+        </button>
+      </div>
+
+      {loading && <div className="pd-state"><div className="pd-spinner" /><p>Loading lab results...</p></div>}
+      {!loading && error && <div className="pd-state pd-error"><WarningIcon /> {error}</div>}
+      {!loading && !error && !lab && <div className="pd-state">No lab results found for this patient.</div>}
+      {!loading && !error && lab && <><Section title="Vitals">
         {isOutpatient && <Row label="BP" value={lab.BP_Systolic && lab.BP_Diastolic ? `${lab.BP_Systolic}/${lab.BP_Diastolic} mmHg` : null} />}
         <Row label="Pulse (bpm)" value={lab.Pulse} />
         {isOutpatient && <Row label="Temperature (°C)" value={lab.Temperature} />}
@@ -254,6 +393,7 @@ const LabResultsTab = ({ p, isOutpatient }) => {
       <Section title="Other Investigations">
         <p className="pd-long-text">{lab.Other_Investigations || "—"}</p>
       </Section>
+      </>}
     </div>
   );
 };
@@ -475,6 +615,7 @@ const PatientDetail = ({ user, onLogout }) => {
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState(null);
   const [activeTab, setActiveTab] = useState("info");
+  const [showOrderModal, setShowOrderModal] = useState(false);
 
   const isOutpatient = patientNo?.toUpperCase().startsWith("OP");
 
@@ -494,6 +635,8 @@ const PatientDetail = ({ user, onLogout }) => {
     fetchPatient();
   }, [patientNo]);
 
+  const handleOrderNew = () => setShowOrderModal(true);
+
   return (
     <div className="pd-layout">
       <Nav user={user} onLogout={onLogout} />
@@ -507,14 +650,12 @@ const PatientDetail = ({ user, onLogout }) => {
 
         {patient && (
           <>
-            {/* ── Hero banner — clean, no node animation ── */}
+            {/* ── Hero banner ── */}
             <div className={`pd-hero ${isOutpatient ? "pd-hero-op" : "pd-hero-ip"}`}>
-              {/* decorative blobs only */}
               <div className="hero-blob hero-blob-1" />
               <div className="hero-blob hero-blob-2" />
               <div className="hero-mesh" />
 
-              {/* content */}
               <div className="pd-hero-avatar">{patient.Name?.charAt(0)}</div>
               <div className="pd-hero-info">
                 <h1 className="pd-hero-name">{patient.Name}</h1>
@@ -545,10 +686,19 @@ const PatientDetail = ({ user, onLogout }) => {
               ))}
             </div>
 
-            {activeTab === "info"      && <PatientInfoTab p={patient} isOutpatient={isOutpatient} />}
-            {activeTab === "lab"       && <LabResultsTab  p={patient} isOutpatient={isOutpatient} />}
+            {activeTab === "info"      && <PatientInfoTab p={patient} isOutpatient={isOutpatient} user={user} />}
+            {activeTab === "lab"       && <LabResultsTab  p={patient} isOutpatient={isOutpatient} onOrderNew={handleOrderNew} />}
             {activeTab === "diagnosis" && <DiagnosisTab   p={patient} user={user} />}
             {activeTab === "referral"  && <ReferralTab    p={patient} isOutpatient={isOutpatient} user={user} />}
+
+            {/* ── Diagnostic ordering modal — opens over the current page ── */}
+            {showOrderModal && (
+              <OrderDiagnosticsModal
+                patient={patient}
+                isOutpatient={isOutpatient}
+                onClose={() => setShowOrderModal(false)}
+              />
+            )}
           </>
         )}
 

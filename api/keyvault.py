@@ -106,6 +106,8 @@ def load_all_secrets() -> dict:
             get_secret("AZURE-OPENAI-DEPLOYMENT",  "AZURE_OPENAI_DEPLOYMENT"),
         "AZURE_OPENAI_API_VERSION":
             get_secret("AZURE-OPENAI-API-VERSION", "AZURE_OPENAI_API_VERSION"),
+        "AZURE_WHISPER_DEPLOYMENT":
+            get_secret("AZURE-WHISPER-DEPLOYMENT", "AZURE_WHISPER_DEPLOYMENT"),
 
         # ── Azure AI Project (Agent Framework) ───────────────────
         "AZURE_AI_PROJECT_ENDPOINT":

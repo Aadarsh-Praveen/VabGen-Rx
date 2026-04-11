@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Pill, Search, Pencil, Trash2, PauseCircle, PlayCircle, Save, X, ChevronDown, AlertTriangle, RotateCcw, StopCircle, CheckCircle2, Plus } from "lucide-react";
+import { Pill, Search, Pencil, Trash2, PauseCircle, PlayCircle, Save, X, ChevronDown, AlertTriangle, RotateCcw, StopCircle, CheckCircle2, Plus, Ban, RefreshCw } from "lucide-react";
 import "../components/styles/medicationList.css";
 
 const FREQ_OPTIONS = ["bid", "tid", "qid", "qd", "qod", "q2h", "q3h", "q4h", "q4h wa", "prn"];
@@ -11,7 +11,7 @@ const MedicationList = ({
   newErrors, setNewErrors, addSaving, editingId, editValues, setEditValues,
   openMenu, menuPos, dropdownPos, agentLoading, agentResult, wasInterrupted,
   handleSearch, handleSelectDrug, handleAutoSave, handleCancelAdd,
-  handleEdit, handleSaveEdit, handleHold, handleDelete,
+  handleEdit, handleSaveEdit, handleHold, handleDelete, handleNoSub,
   handleMenuOpen, updateDropdownPos, triggerAnalysis, onInterrupt,
   searchInputRef,
 }) => {
@@ -21,27 +21,20 @@ const MedicationList = ({
   const [manualStrength, setManualStrength]= useState("");
   const [dupWarning,     setDupWarning]    = useState(false);
 
-  // ── Recalculate dropdown position on scroll ───────────────────
-  // When showAddRow is open and the user scrolls, update the
-  // dropdown coordinates so it tracks the input field correctly.
+  /* ── Recalculate dropdown position on scroll ── */
   useEffect(() => {
     if (!showAddRow) return;
-
     const handleScroll = () => updateDropdownPos();
-
     window.addEventListener("scroll", handleScroll, { passive: true });
-    // Also listen on any scrollable parent containers
     document.querySelectorAll("*").forEach(el => {
-      if (el.scrollHeight > el.clientHeight) {
+      if (el.scrollHeight > el.clientHeight)
         el.addEventListener("scroll", handleScroll, { passive: true });
-      }
     });
-
     return () => {
       window.removeEventListener("scroll", handleScroll);
-      document.querySelectorAll("*").forEach(el => {
-        el.removeEventListener("scroll", handleScroll);
-      });
+      document.querySelectorAll("*").forEach(el =>
+        el.removeEventListener("scroll", handleScroll)
+      );
     };
   }, [showAddRow, updateDropdownPos]);
 
@@ -76,12 +69,32 @@ const MedicationList = ({
   const showManualTrigger = !searching && searchQ.trim().length >= 2 && searchResults.length === 0 && !newMed && !manualMode;
   const editBorder = { borderColor: "#1a73e8", background: "#fff", borderWidth: 1, borderStyle: "solid" };
 
+  /* ── Row background resolver ── */
+  const rowBg = (m, isEditing) => {
+    if (isEditing)  return "#f0f5ff";
+    if (m.no_sub)   return "#fffbeb";   /* amber-50 — no substitution */
+    return "";
+  };
+
+  const rowStyle = (m, isEditing) => ({
+    opacity:     m.held ? 0.5 : 1,
+    background:  rowBg(m, isEditing),
+    borderLeft:  m.no_sub && !isEditing ? "3px solid #f59e0b" : "",
+  });
+
   return (
     <div className="med-card">
       <div className="med-header">
         <Pill size={14} color="#1a73e8" strokeWidth={2.5} />
         <span className="med-title">Medication List</span>
         <span className="med-count">{medications.length} medication{medications.length !== 1 ? "s" : ""}</span>
+        {/* NS legend — only shown when at least one drug has no_sub */}
+        {medications.some(m => m.no_sub) && (
+          <span className="med-ns-legend">
+            <Ban size={10} />
+            No-substitution drug
+          </span>
+        )}
       </div>
 
       <div className="med-table-wrap">
@@ -101,13 +114,32 @@ const MedicationList = ({
                 {medications.map((m, i) => {
                   const isEditing = editingId === m.ID;
                   return (
-                    <tr key={m.ID} style={{ opacity: m.held ? 0.5 : 1, background: isEditing ? "#f0f5ff" : "" }}>
+                    <tr key={m.ID} style={rowStyle(m, isEditing)}>
                       <td className="med-sno">{i + 1}</td>
+
+                      {/* ── Brand name cell with badges ── */}
                       <td className="med-brand">
                         {isEditing
-                          ? <input className="med-inline-inp" style={editBorder} value={editValues.brand_name ?? m.Brand_Name} placeholder="Brand Name" autoFocus onChange={e => setEditValues(v => ({ ...v, brand_name: e.target.value }))} />
-                          : <>{m.Brand_Name}{m.held && <span className="med-hold-tag">HOLD</span>}</>}
+                          ? <input
+                              className="med-inline-inp"
+                              style={editBorder}
+                              value={editValues.brand_name ?? m.Brand_Name}
+                              placeholder="Brand Name"
+                              autoFocus
+                              onChange={e => setEditValues(v => ({ ...v, brand_name: e.target.value }))}
+                            />
+                          : <>
+                              {m.Brand_Name}
+                              {m.held   && <span className="med-hold-tag">HOLD</span>}
+                              {m.no_sub && (
+                                <span className="med-ns-tag" title="No substitution — dispense exactly as written">
+                                  <Ban size={8} />NO SUB
+                                </span>
+                              )}
+                            </>
+                        }
                       </td>
+
                       <td className="med-generic">
                         {isEditing
                           ? <input className="med-inline-inp" style={editBorder} value={editValues.generic_name ?? m.Generic_Name} placeholder="Generic Name" onChange={e => setEditValues(v => ({ ...v, generic_name: e.target.value }))} />
@@ -136,20 +168,44 @@ const MedicationList = ({
                           ? <input className="med-inline-inp" style={editBorder} value={editValues.days} placeholder="Days" onChange={e => setEditValues(v => ({ ...v, days: e.target.value }))} />
                           : <span>{m.Days || "—"}</span>}
                       </td>
+
+                      {/* ── Action dropdown ── */}
                       <td style={{ position: "relative" }}>
                         <button className="med-menu-btn" onClick={e => handleMenuOpen(e, m.ID)}>
                           <ChevronDown size={13} />
                         </button>
                         {openMenu === m.ID && createPortal(
                           <div className="med-dropdown" style={{ top: menuPos.top, left: menuPos.left }}>
+                            {/* Edit / Save */}
                             {isEditing
-                              ? <div className="med-drop-item" style={{ color: "#1a73e8", fontWeight: 700 }} onClick={() => handleSaveEdit(m.ID)}><Save size={13} style={{ marginRight: 6 }} />Save</div>
-                              : <div className="med-drop-item" onClick={() => handleEdit(m)}><Pencil size={13} style={{ marginRight: 6 }} />Edit</div>}
+                              ? <div className="med-drop-item" style={{ color: "#1a73e8", fontWeight: 700 }} onClick={() => handleSaveEdit(m.ID)}>
+                                  <Save size={13} style={{ marginRight: 6 }} />Save
+                                </div>
+                              : <div className="med-drop-item" onClick={() => handleEdit(m)}>
+                                  <Pencil size={13} style={{ marginRight: 6 }} />Edit
+                                </div>
+                            }
+
+                            {/* Hold / Resume */}
                             <div className="med-drop-item" onClick={() => handleHold(m.ID)}>
                               {m.held
                                 ? <><PlayCircle size={13} style={{ marginRight: 6 }} />Resume</>
-                                : <><PauseCircle size={13} style={{ marginRight: 6 }} />Hold</>}
+                                : <><PauseCircle size={13} style={{ marginRight: 6 }} />Hold</>
+                              }
                             </div>
+
+                            {/* ── No Substitution toggle ── */}
+                            <div
+                              className={`med-drop-item ${m.no_sub ? "med-drop-nosub-on" : "med-drop-nosub"}`}
+                              onClick={() => handleNoSub(m.ID)}
+                            >
+                              {m.no_sub
+                                ? <><RefreshCw size={13} style={{ marginRight: 6 }} />Allow Substitution</>
+                                : <><Ban      size={13} style={{ marginRight: 6 }} />No Substitution</>
+                              }
+                            </div>
+
+                            {/* Delete */}
                             <div className="med-drop-item med-drop-warn" onClick={() => handleDelete(m.ID)}>
                               <Trash2 size={13} style={{ marginRight: 6 }} />Delete
                             </div>
@@ -161,6 +217,7 @@ const MedicationList = ({
                   );
                 })}
 
+                {/* ── Add row ── */}
                 {showAddRow && (
                   <tr className="med-add-row">
                     <td className="med-sno" style={{ color: "#1a73e8" }}><Plus size={14} /></td>
@@ -272,7 +329,7 @@ const MedicationList = ({
           <button
             className={agentLoading ? "med-stop-btn" : "med-analyse-btn"}
             onClick={agentLoading ? onInterrupt : triggerAnalysis}
-            style={agentLoading ? {} : {  boxShadow: "0 2px 8px rgba(26,115,232,0.3)" }}
+            style={agentLoading ? {} : { boxShadow: "0 2px 8px rgba(26,115,232,0.3)" }}
           >
             {agentLoading
               ? <><div className="med-analyse-spinner" style={{ borderTopColor: "#e05252", borderColor: "rgba(224,82,82,0.3)" }} /><StopCircle size={13} />Stop Analysis</>
