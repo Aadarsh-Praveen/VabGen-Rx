@@ -39,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi            import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic           import BaseModel
+from services.fhir_service import get_patient_data as fhir_get_patient
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.getcwd())
@@ -133,7 +134,6 @@ app = FastAPI(
     ),
     version     = "3.0.0"
 )
-
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -1459,3 +1459,16 @@ async def transcribe_and_summarize(
             )
         logger.error(f"Transcription endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/fhir/patient/{patient_id}")
+def fhir_patient(patient_id: str):
+    """
+    Load patient data from InterSystems IRIS FHIR server.
+    Returns medications, lab values, allergies, and conditions.
+    Used by the frontend 'Load from FHIR' button.
+    """
+    try:
+        data = fhir_get_patient(patient_id)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"FHIR fetch failed: {str(e)}")

@@ -78,6 +78,7 @@ const DiagnosisTab = ({ p, user }) => {
   const [agentError, setAgentError]           = useState(null);
   const [wasInterrupted, setWasInterrupted]   = useState(false);
 
+
   const agentLoading        = Object.values(loadingState).some(Boolean);
   const searchInputRef      = useRef(null);
   const debounceRef         = useRef(null);
@@ -99,7 +100,7 @@ const DiagnosisTab = ({ p, user }) => {
           (data.prescriptions || []).map(m => ({
             ...m,
             held:   m.Is_Held === true || m.Is_Held === 1,
-            no_sub: m.No_Sub  === true || m.No_Sub  === 1,  // ← no-substitution flag
+            no_sub: m.No_Sub  === true || m.No_Sub  === 1,
           }))
         );
       }
@@ -415,6 +416,7 @@ const DiagnosisTab = ({ p, user }) => {
     }, 350);
   };
 
+
   const handleSelectDrug = (drug) => {
     setNewMed(drug);
     setSearchQ(`${drug.Brand_Name} — ${drug.Generic_Name} (${drug.Strength})`);
@@ -524,11 +526,6 @@ const DiagnosisTab = ({ p, user }) => {
     } catch (err) { console.error(err); }
   };
 
-  /* ══════════════════════════════════════
-     handleNoSub — toggle No Substitution
-     Calls  POST /api/ip-prescriptions/no-sub  { id, no_sub }
-     See server.js additions at the bottom of this file.
-     ══════════════════════════════════════ */
   const handleNoSub = async (id) => {
     const newNoSub = !medications.find(x => x.ID === id)?.no_sub;
     setMedications(m => m.map(x => x.ID === id ? { ...x, no_sub: newNoSub } : x));
@@ -568,7 +565,7 @@ const DiagnosisTab = ({ p, user }) => {
     ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "";
 
-  /* ── PDF generation (includes NO SUB indicator) ── */
+  /* ── PDF generation ── */
   const handlePrescriptionPdf = () => {
     setPdfGenerating(true);
     const esc     = (str) => String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -715,7 +712,6 @@ const DiagnosisTab = ({ p, user }) => {
     return null;
   };
 
-  /* ── helper for prescription modal ── */
   const activeMedsForModal = medications.filter(m => !m.held);
   const hasNoSubInModal    = activeMedsForModal.some(m => m.no_sub);
 
@@ -772,24 +768,26 @@ const DiagnosisTab = ({ p, user }) => {
         </div>
 
         <div className="diag-grid-2">
-          <MedicationList
-            medications={medications} medLoading={medLoading}
-            showAddRow={showAddRow} setShowAddRow={setShowAddRow}
-            searchQ={searchQ} searchResults={searchResults} searching={searching}
-            newMed={newMed} newForm={newForm} setNewForm={setNewForm}
-            newErrors={newErrors} setNewErrors={setNewErrors} addSaving={addSaving}
-            editingId={editingId} editValues={editValues} setEditValues={setEditValues}
-            openMenu={openMenu} menuPos={menuPos} dropdownPos={dropdownPos}
-            agentLoading={agentLoading} agentResult={agentResult} wasInterrupted={wasInterrupted}
-            handleSearch={handleSearch} handleSelectDrug={handleSelectDrug}
-            handleAutoSave={handleAutoSave} handleCancelAdd={handleCancelAdd}
-            handleEdit={handleEdit} handleSaveEdit={handleSaveEdit}
-            handleHold={handleHold} handleDelete={handleDelete}
-            handleNoSub={handleNoSub}
-            handleMenuOpen={handleMenuOpen} updateDropdownPos={updateDropdownPos}
-            triggerAnalysis={triggerAnalysis} onInterrupt={onInterrupt}
-            searchInputRef={searchInputRef}
-          />
+            <MedicationList
+              medications={medications} medLoading={medLoading}
+              showAddRow={showAddRow} setShowAddRow={setShowAddRow}
+              searchQ={searchQ} searchResults={searchResults} searching={searching}
+              newMed={newMed} newForm={newForm} setNewForm={setNewForm}
+              newErrors={newErrors} setNewErrors={setNewErrors} addSaving={addSaving}
+              editingId={editingId} editValues={editValues} setEditValues={setEditValues}
+              openMenu={openMenu} menuPos={menuPos} dropdownPos={dropdownPos}
+              agentLoading={agentLoading} agentResult={agentResult} wasInterrupted={wasInterrupted}
+              handleSearch={handleSearch} handleSelectDrug={handleSelectDrug}
+              handleAutoSave={handleAutoSave} handleCancelAdd={handleCancelAdd}
+              handleEdit={handleEdit} handleSaveEdit={handleSaveEdit}
+              handleHold={handleHold} handleDelete={handleDelete}
+              handleNoSub={handleNoSub}
+              handleMenuOpen={handleMenuOpen} updateDropdownPos={updateDropdownPos}
+              triggerAnalysis={triggerAnalysis} onInterrupt={onInterrupt}
+              searchInputRef={searchInputRef}
+            />
+    
+
           <PrescriberNotes
             prescriberNotes={prescriberNotes} noteText={noteText}
             setNoteText={setNoteText} noteSaving={noteSaving} noteMsg={noteMsg}
@@ -824,10 +822,6 @@ const DiagnosisTab = ({ p, user }) => {
           prescribeDisabled={medications.length === 0}
         />
 
-        {/* ══════════════════════════════════════
-            PRESCRIPTION MODAL
-            — NS badge + legend row added
-            ══════════════════════════════════════ */}
         {showPrescribe && (
           <div className="presc-overlay" onClick={() => setShowPrescribe(false)}>
             <div className="presc-modal" onClick={e => e.stopPropagation()}>
@@ -863,15 +857,12 @@ const DiagnosisTab = ({ p, user }) => {
                   {[diagnosis.primary, diagnosis.secondary].filter(Boolean).join(", ")}
                 </div>
               )}
-
-              {/* ── No Substitution legend (only when applicable) ── */}
               {hasNoSubInModal && (
                 <div className="presc-ns-legend">
                   <Ban size={12} />
                   <strong>NO SUB</strong> — Dispense exactly as written. Brand substitution is not permitted for highlighted rows.
                 </div>
               )}
-
               <div className="presc-table-wrap">
                 <table className="presc-table">
                   <thead>
@@ -911,7 +902,6 @@ const DiagnosisTab = ({ p, user }) => {
                   </tbody>
                 </table>
               </div>
-
               <div className="presc-footer">
                 <span className="presc-footer-note">
                   {activeMedsForModal.length} medication{activeMedsForModal.length !== 1 ? "s" : ""}

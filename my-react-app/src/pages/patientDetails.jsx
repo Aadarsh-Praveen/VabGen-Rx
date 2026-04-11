@@ -136,8 +136,114 @@ const Row = ({ label, value }) => (
 const PatientInfoTab = ({ p, isOutpatient, user }) => {
   const doa = p.DOA ? new Date(p.DOA).toLocaleDateString() : "—";
   const dod = p.DOD ? new Date(p.DOD).toLocaleDateString() : null;
+  const patientNo = isOutpatient ? p.OP_No : p.IP_No;
+
+  const [fhirLoading, setFhirLoading] = useState(false);
+  const [fhirResult,  setFhirResult]  = useState(null);  // null | "success" | "not_found" | "error"
+  const [fhirData,    setFhirData]    = useState(null);
+
+const loadFromFHIR = async () => {
+    setFhirLoading(true);
+    setFhirResult(null);
+    try {
+      const res  = await fetch(`http://localhost:8000/fhir/patient/${encodeURIComponent(patientNo)}`);
+      const data = await res.json();
+      if (!data.fhir_found) {
+        setFhirResult("not_found");
+        return;
+      }
+      setFhirData(data);
+
+      // Fetch existing medications to avoid duplicates
+      const existingRes  = await apiFetch(isOutpatient
+        ? `/api/op-prescriptions/${encodeURIComponent(patientNo)}`
+        : `/api/ip-prescriptions/${encodeURIComponent(patientNo)}`
+      );
+      const existingData = await existingRes.json();
+      const existingMeds = (existingData.prescriptions || []).map(m =>
+        m.Generic_Name?.toLowerCase().trim()
+      );
+
+      // Only add medications that don't already exist
+      for (const drugName of data.medications) {
+        const alreadyExists = existingMeds.includes(drugName.toLowerCase().trim());
+        if (!alreadyExists) {
+          await apiFetch(isOutpatient ? "/api/op-prescriptions" : "/api/ip-prescriptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(isOutpatient
+              ? { opNo: patientNo, brand: drugName, generic: drugName, strength: "as prescribed", route: "oral", frequency: "qd", days: "30" }
+              : { ipNo: patientNo, brand: drugName, generic: drugName, strength: "as prescribed", route: "oral", frequency: "qd", days: "30" }
+            ),
+          });
+        }
+      }
+
+      setFhirResult("success");
+      // Don't clear success — keeps button disabled permanently after load
+    } catch (err) {
+      console.error("FHIR load failed:", err);
+      setFhirResult("error");
+      setTimeout(() => setFhirResult(null), 5000);
+    } finally {
+      setFhirLoading(false);
+    }
+  };
+
   return (
     <div className="pd-tab-content">
+
+      {/* ── Load from FHIR banner ─────────────────────────────────────── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "10px 16px", marginBottom: 16,
+        background: "#f0f7ff", border: "1px solid #c7deff",
+        borderRadius: 10,
+      }}>
+        <button
+          onClick={loadFromFHIR}
+          disabled={fhirLoading}
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 16px",
+            background: fhirLoading ? "#e8f0fe" : "#1a73e8",
+            color: fhirLoading ? "#1a73e8" : "#fff",
+            border: "none", borderRadius: 7,
+            fontSize: "0.82rem", fontWeight: 700,
+            cursor: fhirLoading ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap", flexShrink: 0,
+          }}
+        >
+          {fhirLoading ? "⏳ Loading..." : "🏥 Load from FHIR"}
+        </button>
+
+        <div style={{ fontSize: "0.78rem", color: "#555" }}>
+          {!fhirResult && !fhirLoading && (
+            <span>Pull medications, lab values &amp; conditions from InterSystems IRIS EHR for <strong>{patientNo}</strong></span>
+          )}
+          {fhirLoading && (
+            <span style={{ color: "#1a73e8" }}>Connecting to IRIS FHIR server...</span>
+          )}
+          {fhirResult === "success" && fhirData && (
+            <span style={{ color: "#1e8a3c", fontWeight: 600 }}>
+              ✅ Loaded — {fhirData.medications.join(" · ")}
+              {fhirData.lab_values?.egfr ? ` · eGFR ${fhirData.lab_values.egfr}` : ""}
+              {fhirData.lab_values?.potassium ? ` · K⁺ ${fhirData.lab_values.potassium}` : ""}
+            </span>
+          )}
+          {fhirResult === "not_found" && (
+            <span style={{ color: "#b45309", fontWeight: 600 }}>
+              ⚠️ {patientNo} not found in FHIR server
+            </span>
+          )}
+          {fhirResult === "error" && (
+            <span style={{ color: "#dc2626", fontWeight: 600 }}>
+              ❌ Could not connect to FHIR server — is IRIS running?
+            </span>
+          )}
+        </div>
+      </div>
+
       <Section title="Demographics">
         <Row label="Full Name"          value={p.Name} />
         <Row label="Age"                value={`${p.Age} years`} />
@@ -171,7 +277,6 @@ const PatientInfoTab = ({ p, isOutpatient, user }) => {
         <Row label="Follow-up Outcome" value={p.Followup_Outcome} />
       </Section>
 
-      {/* ── Clinical Voice Notes ── */}
       <VoiceNotesSection
         patientNo={isOutpatient ? p.OP_No : p.IP_No}
         isOutpatient={isOutpatient}
