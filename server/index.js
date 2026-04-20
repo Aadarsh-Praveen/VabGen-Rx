@@ -9,7 +9,12 @@ const { loadSecrets } = require('./secrets');
   const jwt        = require('jsonwebtoken');
   const bcrypt     = require('bcrypt');
   const nodemailer = require('nodemailer');
-  const { BlobServiceClient } = require('@azure/storage-blob');
+  const {
+    BlobServiceClient,
+    generateBlobSASQueryParameters,
+    BlobSASPermissions,
+    StorageSharedKeyCredential,
+  } = require('@azure/storage-blob');
   const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
   const SALT_ROUNDS          = 12;
@@ -141,8 +146,51 @@ const { loadSecrets } = require('./secrets');
     process.env.AZURE_CONTAINER_NAME
   );
 
+  // ── SAS token helper ────────────────────────────────────────────────────────
+  const _parseStorageConnStr = (connStr) => {
+    const parts = {};
+    (connStr || '').split(';').forEach(part => {
+      const eq = part.indexOf('=');
+      if (eq > 0) parts[part.slice(0, eq)] = part.slice(eq + 1);
+    });
+    return { accountName: parts.AccountName || '', accountKey: parts.AccountKey || '' };
+  };
+
+  const generateVoiceNoteSasUrl = (blobName) => {
+    try {
+      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
+      const { accountName, accountKey } = _parseStorageConnStr(connStr);
+      if (!accountName || !accountKey) {
+        console.warn('SAS: Missing storage credentials — returning null');
+        return null;
+      }
+      const credential = new StorageSharedKeyCredential(accountName, accountKey);
+      const sasToken   = generateBlobSASQueryParameters(
+        {
+          containerName: process.env.AZURE_CONTAINER_NAME,
+          blobName,
+          permissions:   BlobSASPermissions.parse('r'),
+          startsOn:      new Date(),
+          expiresOn:     new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+        },
+        credential
+      ).toString();
+      return `https://${accountName}.blob.core.windows.net/${process.env.AZURE_CONTAINER_NAME}/${blobName}?${sasToken}`;
+    } catch (err) {
+      console.error('SAS generation error:', err.message);
+      return null;
+    }
+  };
+
   const parseMultipart = (req) => new Promise((resolve, reject) => {
     upload.single('image')(req, {}, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+
+  const parseMultipartField = (req, fieldName) => new Promise((resolve, reject) => {
+    upload.single(fieldName)(req, {}, (err) => {
       if (err) reject(err);
       else resolve();
     });
@@ -161,7 +209,7 @@ const { loadSecrets } = require('./secrets');
     res.writeHead(code, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     });
     res.end(JSON.stringify(data));
@@ -175,6 +223,7 @@ const { loadSecrets } = require('./secrets');
     catch { return null; }
   };
 
+  // ── Public routes (no token required) ─────────────────────────────────────
   const PUBLIC_ROUTES = [
     { method: 'POST', url: '/api/signin'            },
     { method: 'POST', url: '/api/register'          },
@@ -182,11 +231,14 @@ const { loadSecrets } = require('./secrets');
     { method: 'POST', url: '/api/verify-unlock-otp' },
     { method: 'POST', url: '/api/reset-password'    },
     { method: 'GET',  url: '/'                      },
+    { method: 'POST', url: '/api/patient/signin'    },
+    { method: 'GET',  url: '/api/users'             },
   ];
 
   const PUBLIC_PREFIXES = [
     '/api/profile',
     '/api/password-expiry-status',
+    '/api/appointments/doctor/',
   ];
 
   const isPublic = (method, url) =>
@@ -215,7 +267,7 @@ const { loadSecrets } = require('./secrets');
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
@@ -231,6 +283,7 @@ const { loadSecrets } = require('./secrets');
       req.user = decoded;
     }
 
+    // ── Upload image ───────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/upload-image') {
       try {
         await parseMultipart(req);
@@ -246,6 +299,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get user profile ───────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/profile')) {
       const email = decodeURIComponent(req.url.split('?email=')[1] || '');
       try {
@@ -265,6 +319,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Doctor sign in ─────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/signin') {
       const { email, password } = await getBody(req);
       if (!email || !password)
@@ -335,6 +390,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Send unlock OTP ────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/send-unlock-otp') {
       const { email } = await getBody(req);
       if (!email) return sendJSON(res, 400, { message: 'Email required.' });
@@ -353,6 +409,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Verify unlock OTP ──────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/verify-unlock-otp') {
       const { email, otp } = await getBody(req);
       if (!email || !otp) return sendJSON(res, 400, { message: 'Email and OTP required.' });
@@ -368,6 +425,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Reset password ─────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/reset-password') {
       const { email, newPassword } = await getBody(req);
       if (!email || !newPassword) return sendJSON(res, 400, { message: 'Email and new password required.' });
@@ -392,6 +450,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Register doctor ────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/register') {
       const { hospital_id, licence_no, name, designation, department,
               dob, age, sex, address, contact_no, email, password } = await getBody(req);
@@ -428,6 +487,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Update address ─────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/profile/update-address') {
       const { email, address } = await getBody(req);
       if (!email || !address) return sendJSON(res, 400, { message: 'Email and address required.' });
@@ -442,6 +502,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Change password ────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/profile/change-password') {
       const { email, currentPassword, newPassword } = await getBody(req);
       if (!email || !currentPassword || !newPassword)
@@ -465,6 +526,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get all users ──────────────────────────────────────────────────────
     if (req.method === 'GET' && req.url === '/api/users') {
       try {
         const pool = await poolPromise;
@@ -475,6 +537,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get all IP patients ────────────────────────────────────────────────
     if (req.method === 'GET' && req.url === '/api/patients') {
       try {
         const pool       = await patientsPoolPromise;
@@ -499,6 +562,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get single IP patient ──────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/patients/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/patients/')[1]);
       if (!ipNo) return sendJSON(res, 400, { message: 'Invalid IP number' });
@@ -520,6 +584,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get all OP patients ────────────────────────────────────────────────
     if (req.method === 'GET' && req.url === '/api/outpatients') {
       try {
         const pool       = await patientsPoolPromise;
@@ -544,6 +609,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Get single OP patient ──────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/outpatients/')) {
       const opNo = decodeURIComponent(req.url.split('/api/outpatients/')[1]);
       if (!opNo) return sendJSON(res, 400, { message: 'Invalid OP number' });
@@ -565,6 +631,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Assign departments ─────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/admin/assign-depts') {
       try {
         const pool = await patientsPoolPromise;
@@ -593,6 +660,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP diagnosis ───────────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-diagnosis/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-diagnosis/')[1]);
       try {
@@ -631,6 +699,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP diagnosis ───────────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-diagnosis/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-diagnosis/')[1]);
       try {
@@ -669,6 +738,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP lab results ─────────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/lab/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/lab/')[1]);
       try {
@@ -686,6 +756,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP lab results ─────────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-lab/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-lab/')[1]);
       try {
@@ -708,6 +779,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Drug inventory search ──────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/drug-inventory/search')) {
       const rawQ = req.url.split('?q=')[1] || '';
       const q    = decodeURIComponent(rawQ.split('&')[0]);
@@ -724,6 +796,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP prescriptions ───────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-prescriptions/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-prescriptions/')[1]);
       try {
@@ -794,6 +867,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP prescriptions ───────────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-prescriptions/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-prescriptions/')[1]);
       try {
@@ -864,6 +938,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP prescription notes ──────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/ip-prescription-notes/')) {
       const ipNo = decodeURIComponent(req.url.split('/api/ip-prescription-notes/')[1]);
       try {
@@ -913,6 +988,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP prescription notes ──────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/op-prescription-notes/')) {
       const opNo = decodeURIComponent(req.url.split('/api/op-prescription-notes/')[1]);
       try {
@@ -962,6 +1038,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP drug interactions ───────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-drug-interactions') {
       const { ip_no, dd_severe, dd_moderate, dd_minor,
               ddis_contraindicated, ddis_moderate, ddis_minor, drug_food } = await getBody(req);
@@ -1016,6 +1093,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP drug interactions ───────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-drug-interactions') {
       const { op_no, dd_severe, dd_moderate, dd_minor,
               ddis_contraindicated, ddis_moderate, ddis_minor, drug_food } = await getBody(req);
@@ -1070,6 +1148,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP dosing recommendations ──────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-dosing-recommendations') {
       const { ip_no, high, medium } = await getBody(req);
       if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1109,6 +1188,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP dosing recommendations ──────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-dosing-recommendations') {
       const { op_no, high, medium } = await getBody(req);
       if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1148,6 +1228,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP patient counselling ─────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-patient-counselling') {
       const { ip_no, drug_counselling, condition_counselling } = await getBody(req);
       if (!ip_no) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1191,6 +1272,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP patient counselling ─────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-patient-counselling') {
       const { op_no, drug_counselling, condition_counselling } = await getBody(req);
       if (!op_no) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1234,6 +1316,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── IP referral ────────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/ip-referral') {
       const { ipNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
       if (!ipNo) return sendJSON(res, 400, { message: 'IP_No required.' });
@@ -1299,6 +1382,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── OP referral ────────────────────────────────────────────────────────
     if (req.method === 'POST' && req.url === '/api/op-referral') {
       const { opNo, to_dept, to_doctor, urgency, reason, notes, date } = await getBody(req);
       if (!opNo) return sendJSON(res, 400, { message: 'OP_No required.' });
@@ -1364,6 +1448,7 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ── Password expiry status ─────────────────────────────────────────────
     if (req.method === 'GET' && req.url.startsWith('/api/password-expiry-status')) {
       const email = decodeURIComponent(req.url.split('?email=')[1] || '');
       if (!email) return sendJSON(res, 400, { message: 'Email required.' });
@@ -1383,12 +1468,422 @@ const { loadSecrets } = require('./secrets');
       return;
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // ── PATIENT PORTAL ROUTES ─────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+
+    if (req.method === 'POST' && req.url === '/api/patient/signin') {
+      const { email, password } = await getBody(req);
+      if (!email || !password)
+        return sendJSON(res, 400, { message: 'Email and password required.' });
+      try {
+        const pool = await patientsPoolPromise;
+        const result = await pool.request()
+          .input('email', sql.VarChar, email)
+          .query(`
+            SELECT
+              pc.Credential_ID, pc.IP_No, pc.OP_No, pc.Email, pc.Password,
+              COALESCE(ip.Name, op.Name) AS Name,
+              COALESCE(ip.Age,  op.Age)  AS Age,
+              COALESCE(ip.Sex,  op.Sex)  AS Sex,
+              COALESCE(ip.Dept, op.Dept) AS Dept
+            FROM dbo.patient_credential pc
+            LEFT JOIN dbo.patient_records    ip ON ip.IP_No = pc.IP_No
+            LEFT JOIN dbo.outpatient_records op ON op.OP_No = pc.OP_No
+            WHERE pc.Email = @email
+          `);
+        if (!result.recordset.length)
+          return sendJSON(res, 401, { message: 'Invalid email or password.' });
+        const patient = result.recordset[0];
+        const match   = await bcrypt.compare(password, patient.Password);
+        if (!match)
+          return sendJSON(res, 401, { message: 'Invalid email or password.' });
+        const token = jwt.sign(
+          { id: patient.Credential_ID, email: patient.Email, name: patient.Name,
+            ip_no: patient.IP_No || null, op_no: patient.OP_No || null, role: 'patient' },
+          JWT_SECRET, { expiresIn: JWT_EXPIRES_IN }
+        );
+        sendJSON(res, 200, {
+          message: 'Sign in successful', token,
+          patient: { name: patient.Name, age: patient.Age, sex: patient.Sex,
+                     dept: patient.Dept, ip_no: patient.IP_No || null,
+                     op_no: patient.OP_No || null, email: patient.Email },
+        });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/patient/me/ip') {
+      if (req.user?.role !== 'patient') return sendJSON(res, 403, { message: 'Access denied.' });
+      if (!req.user.ip_no) return sendJSON(res, 404, { message: 'No inpatient record linked.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request().input('ipNo', sql.VarChar, req.user.ip_no)
+          .query(`SELECT IP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language, Occupation,
+              Dept, DOA, DOD, Reason_for_Admission, Past_Medical_History,
+              Past_Medication_History, Smoker, Alcoholic, Insurance_Type,
+              Weight_kg, Height_cm, BMI, Followup_Outcome
+            FROM dbo.patient_records WHERE IP_No = @ipNo`);
+        if (!result.recordset.length) return sendJSON(res, 404, { message: 'Record not found.' });
+        sendJSON(res, 200, { patient: result.recordset[0] });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/patient/me/op') {
+      if (req.user?.role !== 'patient') return sendJSON(res, 403, { message: 'Access denied.' });
+      if (!req.user.op_no) return sendJSON(res, 404, { message: 'No outpatient record linked.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request().input('opNo', sql.VarChar, req.user.op_no)
+          .query(`SELECT OP_No, Name, Age, Sex, Race, Ethnicity, Preferred_Language, Occupation,
+              Dept, DOA, Reason_for_Admission, Past_Medical_History,
+              Past_Medication_History, Smoker, Alcoholic, Insurance_Type,
+              Weight_kg, Height_cm, BMI, Followup_Outcome
+            FROM dbo.outpatient_records WHERE OP_No = @opNo`);
+        if (!result.recordset.length) return sendJSON(res, 404, { message: 'Record not found.' });
+        sendJSON(res, 200, { patient: result.recordset[0] });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/patient/me/prescriptions') {
+      if (req.user?.role !== 'patient') return sendJSON(res, 403, { message: 'Access denied.' });
+      try {
+        const pool = await patientsPoolPromise;
+        if (req.user.ip_no) {
+          const result = await pool.request().input('ipNo', sql.VarChar, req.user.ip_no)
+            .query(`SELECT Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
+                    FROM dbo.ip_prescriptions WHERE IP_No = @ipNo AND Is_Held = 0 ORDER BY ID ASC`);
+          return sendJSON(res, 200, { prescriptions: result.recordset });
+        }
+        if (req.user.op_no) {
+          const result = await pool.request().input('opNo', sql.VarChar, req.user.op_no)
+            .query(`SELECT Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
+                    FROM dbo.op_prescriptions WHERE OP_No = @opNo AND Is_Held = 0 ORDER BY ID ASC`);
+          return sendJSON(res, 200, { prescriptions: result.recordset });
+        }
+        sendJSON(res, 404, { message: 'No patient record linked.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ── APPOINTMENT ROUTES ────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════
+
+    if (req.method === 'POST' && req.url === '/api/appointments') {
+      const { doctor_name, doctor_dept, date, time, reason } = await getBody(req);
+      if (!doctor_name || !date || !time)
+        return sendJSON(res, 400, { message: 'Doctor name, date and time are required.' });
+      const patientNo   = req.user.ip_no || req.user.op_no;
+      const patientType = req.user.ip_no ? 'IP' : 'OP';
+      if (!patientNo)
+        return sendJSON(res, 400, { message: 'No patient record linked to this account.' });
+      try {
+        const pool = await patientsPoolPromise;
+        const conflict = await pool.request()
+          .input('doctorName', sql.VarChar, doctor_name)
+          .input('date',       sql.Date,    date)
+          .input('time',       sql.VarChar, time)
+          .query(`SELECT ID FROM dbo.appointments
+                  WHERE Doctor_Name=@doctorName AND Appointment_Date=@date
+                    AND Appointment_Time=@time AND Status != 'Cancelled'`);
+        if (conflict.recordset.length > 0)
+          return sendJSON(res, 409, { message: 'This time slot has already been booked. Please choose another.' });
+        await pool.request()
+          .input('patientNo',   sql.VarChar, patientNo)
+          .input('patientType', sql.VarChar, patientType)
+          .input('patientName', sql.VarChar, req.user.name || '')
+          .input('doctorName',  sql.VarChar, doctor_name)
+          .input('doctorDept',  sql.VarChar, doctor_dept || '')
+          .input('date',        sql.Date,    date)
+          .input('time',        sql.VarChar, time)
+          .input('reason',      sql.VarChar, reason || '')
+          .query(`INSERT INTO dbo.appointments
+            (Patient_No, Patient_Type, Patient_Name, Doctor_Name, Doctor_Dept,
+             Appointment_Date, Appointment_Time, Reason, Status)
+            VALUES
+            (@patientNo, @patientType, @patientName, @doctorName, @doctorDept,
+             @date, @time, @reason, 'Scheduled')`);
+        sendJSON(res, 201, { message: 'Appointment booked successfully.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/api/appointments/doctor/')) {
+      const doctorName = decodeURIComponent(req.url.split('/api/appointments/doctor/')[1]);
+      if (!doctorName) return sendJSON(res, 400, { message: 'Doctor name required.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request().input('name', sql.VarChar, doctorName)
+          .query(`SELECT ID, Patient_No, Patient_Type, Patient_Name,
+                         Doctor_Name, Doctor_Dept, Appointment_Date, Appointment_Time,
+                         Reason, Status, Created_At
+                  FROM dbo.appointments WHERE Doctor_Name = @name
+                  ORDER BY Appointment_Date ASC, Appointment_Time ASC`);
+        sendJSON(res, 200, { appointments: result.recordset });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/patient/me/appointments') {
+      if (req.user?.role !== 'patient') return sendJSON(res, 403, { message: 'Access denied.' });
+      const patientNo = req.user.ip_no || req.user.op_no;
+      if (!patientNo) return sendJSON(res, 404, { message: 'No patient record linked.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const result = await pool.request().input('no', sql.VarChar, patientNo)
+          .query(`SELECT ID, Doctor_Name, Doctor_Dept, Appointment_Date, Appointment_Time,
+                         Reason, Status, Created_At
+                  FROM dbo.appointments WHERE Patient_No = @no
+                  ORDER BY Appointment_Date DESC, Appointment_Time ASC`);
+        sendJSON(res, 200, { appointments: result.recordset });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/appointments/update-status') {
+      const { id, status } = await getBody(req);
+      const VALID = ['Scheduled', 'Checked In', 'Waiting', 'Completed', 'Cancelled'];
+      if (!id || !VALID.includes(status))
+        return sendJSON(res, 400, { message: `Status must be one of: ${VALID.join(', ')}` });
+      try {
+        const pool = await patientsPoolPromise;
+        await pool.request()
+          .input('id',     sql.Int,     id)
+          .input('status', sql.VarChar, status)
+          .query(`UPDATE dbo.appointments SET Status=@status WHERE ID=@id`);
+        sendJSON(res, 200, { message: 'Appointment status updated.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ── VOICE NOTES ROUTES ────────────────────────────────────────────────
+    //
+    // SQL migration (run once — safe to re-run):
+    //
+    //   IF NOT EXISTS (
+    //     SELECT 1 FROM sys.tables
+    //     WHERE object_id = OBJECT_ID('dbo.voice_notes')
+    //   )
+    //   CREATE TABLE dbo.voice_notes (
+    //     ID                  INT IDENTITY(1,1) PRIMARY KEY,
+    //     Patient_No          VARCHAR(50)   NOT NULL,
+    //     Patient_Type        VARCHAR(10)   NOT NULL,
+    //     Blob_Name           VARCHAR(500)  NOT NULL,
+    //     Duration_Seconds    FLOAT         NULL,
+    //     Recorded_By         VARCHAR(200)  NULL,
+    //     Transcript          NVARCHAR(MAX) NULL,   -- raw Whisper text
+    //     Diarized_Transcript NVARCHAR(MAX) NULL,   -- JSON array [{speaker,text}]
+    //     Soap_Note           NVARCHAR(MAX) NULL,   -- JSON object (SOAP sections)
+    //     Language_Detected   NVARCHAR(20)  NULL,   -- e.g. "english", "hindi"
+    //     Created_At          DATETIME      DEFAULT GETDATE()
+    //   );
+    //
+    //   -- Safe column additions if table already exists:
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Transcript')
+    //     ALTER TABLE dbo.voice_notes ADD Transcript NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Diarized_Transcript')
+    //     ALTER TABLE dbo.voice_notes ADD Diarized_Transcript NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Soap_Note')
+    //     ALTER TABLE dbo.voice_notes ADD Soap_Note NVARCHAR(MAX) NULL;
+    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Language_Detected')
+    //     ALTER TABLE dbo.voice_notes ADD Language_Detected NVARCHAR(20) NULL;
+    //
+    // ══════════════════════════════════════════════════════════════════════
+
+    // ── POST /api/voice-notes — Upload audio + store transcript data ───────
+    if (req.method === 'POST' && req.url === '/api/voice-notes') {
+      try {
+        await parseMultipartField(req, 'audio');
+        const file = req.file;
+        if (!file) return sendJSON(res, 400, { message: 'No audio file uploaded.' });
+
+        const patientNo   = req.body?.patientNo   || '';
+        const patientType = req.body?.patientType || 'IP';
+        const duration    = parseFloat(req.body?.duration)  || null;
+        const recordedBy  = req.body?.recordedBy  || req.user?.name || '';
+
+        // Transcript fields — sent from frontend after calling /agent/transcribe-summarize
+        const transcript         = req.body?.transcript          || null;
+        const diarizedRaw        = req.body?.diarized_transcript || null;
+        const soapRaw            = req.body?.soap_note           || null;
+        const languageDetected   = req.body?.language_detected   || null;
+
+        // Validate and normalise JSON fields
+        const safeJson = (raw) => {
+          if (!raw) return null;
+          if (typeof raw === 'object') return JSON.stringify(raw);
+          try { JSON.parse(raw); return raw; }   // already valid JSON string
+          catch { return null; }
+        };
+
+        if (!patientNo) return sendJSON(res, 400, { message: 'patientNo is required.' });
+
+        const ext             = (file.originalname.split('.').pop() || 'webm').toLowerCase();
+        const blobName        = `voice-notes/${patientNo}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+        await blockBlobClient.uploadData(file.buffer, {
+          blobHTTPHeaders: { blobContentType: file.mimetype || 'audio/webm' },
+        });
+
+        const pool = await patientsPoolPromise;
+        await pool.request()
+          .input('patientNo',          sql.VarChar,  patientNo)
+          .input('patientType',        sql.VarChar,  patientType)
+          .input('blobName',           sql.VarChar,  blobName)
+          .input('duration',           sql.Float,    duration)
+          .input('recordedBy',         sql.VarChar,  recordedBy)
+          .input('transcript',         sql.NVarChar, transcript)
+          .input('diarizedTranscript', sql.NVarChar, safeJson(diarizedRaw))
+          .input('soapNote',           sql.NVarChar, safeJson(soapRaw))
+          .input('languageDetected',   sql.NVarChar, languageDetected)
+          .query(`INSERT INTO dbo.voice_notes
+                    (Patient_No, Patient_Type, Blob_Name, Duration_Seconds,
+                     Recorded_By, Transcript, Diarized_Transcript, Soap_Note, Language_Detected)
+                  VALUES
+                    (@patientNo, @patientType, @blobName, @duration,
+                     @recordedBy, @transcript, @diarizedTranscript, @soapNote, @languageDetected)`);
+
+        sendJSON(res, 201, { message: 'Voice note saved.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── GET /api/voice-notes/:patientNo?type=IP|OP — List notes ───────────
+    // IMPORTANT: this route MUST be checked BEFORE the transcript route
+    // because both start with /api/voice-notes/. The transcript route
+    // matches /api/voice-notes/:id/transcript (has a second path segment).
+    if (req.method === 'GET' && req.url.startsWith('/api/voice-notes/')) {
+      const rawSeg  = req.url.split('/api/voice-notes/')[1] || '';
+      const segments = rawSeg.split('?')[0].split('/');
+
+      // ── GET /api/voice-notes/:id/transcript — Lazy-load transcript ───────
+      // Matches when there are exactly 2 path segments: <id>/transcript
+      if (segments.length === 2 && segments[1] === 'transcript') {
+        const id = parseInt(segments[0], 10);
+        if (!id || isNaN(id)) return sendJSON(res, 400, { message: 'Invalid voice note ID.' });
+        try {
+          const pool   = await patientsPoolPromise;
+          const result = await pool.request()
+            .input('id', sql.Int, id)
+            .query(`SELECT ID, Patient_No, Patient_Type,
+                           Transcript, Diarized_Transcript, Soap_Note, Language_Detected
+                    FROM dbo.voice_notes WHERE ID = @id`);
+
+          if (!result.recordset.length)
+            return sendJSON(res, 404, { message: 'Voice note not found.' });
+
+          const row = result.recordset[0];
+
+          // Verify the requesting doctor can access this patient
+          const patientType = row.Patient_Type || 'IP';
+          const access = await canAccessPatient(
+            pool, row.Patient_No, patientType, req.user.department
+          );
+          if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
+
+          const parseJson = (val) => {
+            if (!val) return null;
+            if (typeof val === 'object') return val;
+            try { return JSON.parse(val); } catch { return null; }
+          };
+
+          const transcript  = row.Transcript         || '';
+          const diarized    = parseJson(row.Diarized_Transcript) || [];
+          const soap        = parseJson(row.Soap_Note)           || {};
+          const language    = row.Language_Detected              || '';
+
+          if (!transcript && !diarized.length && !Object.keys(soap).length) {
+            return sendJSON(res, 404, { message: 'No transcript stored for this note yet.' });
+          }
+
+          return sendJSON(res, 200, {
+            transcript,
+            diarized_transcript: diarized,
+            soap_note:           soap,
+            language_detected:   language,
+          });
+        } catch (err) { return sendJSON(res, 500, { message: err.message }); }
+      }
+
+      // ── GET /api/voice-notes/:patientNo?type=IP|OP — List all notes ──────
+      const patientNo   = decodeURIComponent(segments[0]);
+      const patientType = rawSeg.includes('type=OP') ? 'OP' : 'IP';
+
+      if (!patientNo) return sendJSON(res, 400, { message: 'Patient number required.' });
+      try {
+        const pool   = await patientsPoolPromise;
+        const access = await canAccessPatient(pool, patientNo, patientType, req.user.department);
+        if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
+
+        const result = await pool.request()
+          .input('patientNo',   sql.VarChar, patientNo)
+          .input('patientType', sql.VarChar, patientType)
+          .query(`SELECT ID, Patient_No, Patient_Type, Blob_Name,
+                         Duration_Seconds, Recorded_By, Created_At,
+                         -- include a flag so frontend knows if transcript exists
+                         CASE WHEN Transcript IS NOT NULL AND LEN(Transcript) > 0
+                              THEN 1 ELSE 0 END AS Has_Transcript
+                  FROM dbo.voice_notes
+                  WHERE Patient_No = @patientNo AND Patient_Type = @patientType
+                  ORDER BY Created_At DESC`);
+
+        // Generate 1-hour SAS URL per note. Transcript text is NOT included
+        // in the list response — it is fetched on demand via the /transcript route.
+        const notes = result.recordset.map(note => ({
+          ID:               note.ID,
+          Patient_No:       note.Patient_No,
+          Patient_Type:     note.Patient_Type,
+          Blob_URL:         note.Blob_Name ? generateVoiceNoteSasUrl(note.Blob_Name) : null,
+          Duration_Seconds: note.Duration_Seconds,
+          Recorded_By:      note.Recorded_By,
+          Created_At:       note.Created_At,
+          Has_Transcript:   !!note.Has_Transcript,  // tells frontend whether to show accordion
+        }));
+
+        sendJSON(res, 200, { notes });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── DELETE /api/voice-notes/:id — Delete a voice note ─────────────────
+    if (req.method === 'DELETE' && req.url.startsWith('/api/voice-notes/')) {
+      const seg = req.url.split('/api/voice-notes/')[1] || '';
+      const id  = parseInt(seg, 10);
+      if (!id || isNaN(id)) return sendJSON(res, 400, { message: 'Invalid voice note ID.' });
+      try {
+        const pool = await patientsPoolPromise;
+        const row  = await pool.request()
+          .input('id', sql.Int, id)
+          .query('SELECT Blob_Name FROM dbo.voice_notes WHERE ID = @id');
+        if (!row.recordset.length) return sendJSON(res, 404, { message: 'Voice note not found.' });
+
+        try {
+          const blockBlobClient = containerClient.getBlockBlobClient(row.recordset[0].Blob_Name);
+          await blockBlobClient.deleteIfExists();
+        } catch (blobErr) {
+          console.warn('Azure blob delete warning:', blobErr.message);
+        }
+
+        await pool.request()
+          .input('id', sql.Int, id)
+          .query('DELETE FROM dbo.voice_notes WHERE ID = @id');
+
+        sendJSON(res, 200, { message: 'Voice note deleted.' });
+      } catch (err) { sendJSON(res, 500, { message: err.message }); }
+      return;
+    }
+
+    // ── 404 fallback ───────────────────────────────────────────────────────
     sendJSON(res, 404, { message: 'Route not found' });
   });
 
   const PORT = process.env.PORT || 8080;
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 VabGenRx API running on port ${PORT}`);
-});
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 VabGenRx API running on port ${PORT}`);
+  });
 })();

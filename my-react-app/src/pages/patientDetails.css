@@ -440,3 +440,74 @@
 [data-theme="dark"] .ref-reason,
 [data-theme="dark"] .ref-notes                          { color: #aaa; }
 [data-theme="dark"] .ref-card-footer                    { background: #16162a; border-color: #2a2a40; }
+/* ══════════════════════════════════════════════════════════════
+   ADD THESE STYLES TO YOUR patientDetails.css
+   (Lab action bar — "Order new lab test" button)
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Lab action bar ─────────────────────────────────────────── */
+.pd-lab-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.pd-lab-action-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pd-lab-action-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+}
+
+.pd-lab-action-sub {
+  font-size: 11.5px;
+  color: var(--text-muted, #94a3b8);
+}
+
+/* ── "Order new lab test" button ─────────────────────────────── */
+.pd-new-lab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #185FA5;
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  box-shadow: 0 2px 8px rgba(24,95,165,0.22);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pd-new-lab-btn:hover {
+  background: #0C447C;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(24,95,165,0.32);
+}
+
+.pd-new-lab-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(24,95,165,0.18);
+}
+
+/* Dark mode */
+[data-theme="dark"] .pd-lab-action-bar {
+  background: var(--card-bg, #1e2533);
+  border-color: #2d3748;
+}
