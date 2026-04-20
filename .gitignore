@@ -11,4 +11,6 @@ venv/
 node_modules/
 
 # Mac system file
-.DS_Store
+.DS_StoreVabGen-Rx/
+scripts/
+offline/

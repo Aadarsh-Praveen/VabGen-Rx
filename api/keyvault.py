@@ -157,6 +157,19 @@ def load_all_secrets() -> dict:
         "AZURE_CONTENT_SAFETY_ENDPOINT":
             get_secret("AZURE-CONTENT-SAFETY-ENDPOINT",
                        "AZURE_CONTENT_SAFETY_ENDPOINT"),
+
+        # ── Azure Whisper ─────────────────────────────────────────
+        "AZURE_WHISPER_DEPLOYMENT":
+            get_secret("AZURE-WHISPER-DEPLOYMENT", "AZURE_WHISPER_DEPLOYMENT"),
+
+        "AZURE_WHISPER_KEY":
+            get_secret("AZURE-WHISPER-KEY", "AZURE_WHISPER_KEY"),
+
+        "AZURE_WHISPER_ENDPOINT":
+            get_secret("AZURE-WHISPER-ENDPOINT", "AZURE_WHISPER_ENDPOINT"),
+
+        "AZURE_WHISPER_API_VERSION":
+            get_secret("AZURE-WHISPER-API-VERSION", "AZURE_WHISPER_API_VERSION"),
     }
 
     loaded = 0
