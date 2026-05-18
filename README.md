@@ -611,7 +611,7 @@ Built for the **AI Dev Days Hackathon 2025** by:
 | Name | Microsoft Learn Username | Role |
 |---|---|---|
 | **Aadarsh Praveen Selvaraj Ajithakumari** | selvarajajithakuma.a@northeastern.edu | Backend & AI Agent Architecture |
-| **Vignesh Kangeyan** | vigneshkangeyan111@gmail.com | Backend & Azure Infrastructure |
+| **Vignesh Kangeyan** | vigneshkangeyan111@gmail.com | Clinical and Regulatory |
 | **Gokul Ravi** | ravi.go@northeastern.edu | Frontend Development |
 | **Bharathi Kishna Vinayaga Sundar** | vsbk01@gmail.com | Frontend Development |
 
