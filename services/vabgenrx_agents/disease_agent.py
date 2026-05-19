@@ -486,6 +486,12 @@ Return ONLY a single valid JSON object:
             has_any_evidence = ev.get("pubmed_count", 0) > 0 or fda_found
             sections_found   = ev.get("fda_label_sections_found", [])
 
+            instruction = (
+                "Synthesize a real clinical assessment. Do NOT return insufficient evidence if FDA content is present."
+                if has_any_evidence else
+                "Return severity=unknown confidence=null — truly no evidence found."
+            )
+
             parts.append(
                 f"PAIR: {drug} + {disease}\n"
                 f"  PubMed papers found: {ev.get('pubmed_count', 0)}\n"
@@ -499,10 +505,9 @@ Return ONLY a single valid JSON object:
                 f"{index_lines}\n"
                 f"\n"
                 f"  PubMed abstracts:\n"
-                f"{abstracts_text or '  None found.\n'}"
+                f"{abstracts_text or '  None found.'}\n"
                 f"\n"
-                f"  INSTRUCTION: "
-                f"{'Synthesize a real clinical assessment. Do NOT return insufficient evidence if FDA content is present.' if has_any_evidence else 'Return severity=unknown confidence=null — truly no evidence found.'}\n"
+                f"  INSTRUCTION: {instruction}\n"
             )
 
         return "\n\n".join(parts)

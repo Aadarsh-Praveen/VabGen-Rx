@@ -583,6 +583,11 @@ Return ONLY valid JSON:
                 f"  This is REAL EVIDENCE — factor into severity and confidence.\n"
             ) if fda_reports > 0 else ""
 
+            instruction = (
+                "Synthesize clinical assessment. Do NOT return insufficient evidence or null confidence when fda_reports > 0."
+                if has_any_evidence else
+                "Return severity=unknown confidence=null — zero evidence"
+            )
             parts.append(
                 f"PAIR: {drug1} + {drug2}\n"
                 f"  {tier_note}\n"
@@ -592,15 +597,14 @@ Return ONLY valid JSON:
                 f"{fda_signal}"
                 f"\n"
                 f"  ── CORE FDA CONTENT ──\n"
-                f"{core_text or '  No core FDA sections found.\n'}"
+                f"{core_text or '  No core FDA sections found.'}\n"
                 f"\n"
                 f"  ── ADDITIONAL SECTIONS (index) ──\n"
-                f"{index_text or '  None.\n'}"
+                f"{index_text or '  None.'}\n"
                 f"\n"
                 f"  Research abstracts:\n"
-                f"{abstracts_text or '  None found.\n'}"
-                f"  INSTRUCTION: "
-                f"{'Synthesize clinical assessment. Do NOT return insufficient evidence or null confidence when fda_reports > 0.' if has_any_evidence else 'Return severity=unknown confidence=null — zero evidence'}\n"
+                f"{abstracts_text or '  None found.'}\n"
+                f"  INSTRUCTION: {instruction}\n"
             )
 
         return "\n\n".join(parts)
@@ -631,7 +635,7 @@ Return ONLY valid JSON:
             parts.append(
                 f"DRUG: {drug}\n"
                 f"  PubMed papers found: {ev.get('pubmed_count', 0)}\n"
-                f"  Research abstracts:\n{abstracts_text or '  None.\n'}"
+                f"  Research abstracts:\n{abstracts_text or '  None.'}\n"
             )
 
         return "\n\n".join(parts)
