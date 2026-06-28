@@ -9,6 +9,11 @@ import clinicalAlertsIcon  from "../assets/clinical_alerts.png";
 import dataSecurityIcon    from "../assets/data-security.png";
 import auditIcon           from "../assets/audit.png";
 
+/* ── Founding member photos ──
+   TODO: drop the real photos in src/assets/ and swap each placeholder import below,
+   e.g.  import founder1 from "../assets/founders/founder1.jpg";  */
+import founderPlaceholder  from "../assets/patient.png";
+
 const EMAILJS_SERVICE_ID  = "service_97qx5xd";
 const EMAILJS_TEMPLATE_ID = "template_try3ahp";
 const EMAILJS_PUBLIC_KEY  = "rO528XfcHEen6uDon";
@@ -75,6 +80,16 @@ const WHY_ITEMS = [
     title: "Explainable AI Alerts",
     body: "Every alert includes the underlying clinical mechanism, supporting evidence sources and recommended actions, giving physicians full transparency and control over their prescribing decisions.",
   },
+];
+
+/* ── Founding Members ──
+   TODO: replace name / position / linkedin with real values, and set `img`
+   to each founder's imported photo once added to src/assets/. */
+const FOUNDERS = [
+  { img: "/founders/vignesh.jpeg",  name: "Dr. Vignesh Kangeyan, Pharm D., M.S.", position: "Founder & Clinical Lead", description: "Clinical workflows, Regulatory & compliance strategy, Business alignment", linkedin: "https://www.linkedin.com/in/vignesh-kangeyan-pharm-d-ms-501670190/" },
+  { img: "/founders/aadarsh.png",   name: "Aadarsh Praveen, M.S.", position: "Co-Founder & AI/ML Lead", description: "Multi-agent AI systems architecture, API Integration, Cloud Integration, Business strategy",  linkedin: "https://www.linkedin.com/in/aadarsh-praveen/" },
+  { img: "/founders/gokul.jpeg",    name: "Gokul Ravi, M.S.", position: "Co-Founder & AI Software Lead", description: "Conversational AI design, Prompt engineering, LLM fine-tuning & clinical reasoning systems", linkedin: "https://www.linkedin.com/in/gokul-ravi-288b1422a/" },
+  { img: "/founders/bharathi.jpeg", name: "Bharathi Kishna, M.S.", position: "Co-Founder & Infrastructure Lead", description: "System and cloud architecture, Database design, Hospital integrations, Business operations", linkedin: "https://www.linkedin.com/in/bharathi-kishna-6bb5841b1/" },
 ];
 
 function animateCounter(el) {
@@ -403,6 +418,41 @@ const AboutSection = () => {
                 </div>
                 <h4 className="about-why-card-title">{item.title}</h4>
                 <p className="about-why-card-body">{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Founding Members ── */}
+        <div className="about-founders-section">
+          <p className="about-section-label reveal">Our Team</p>
+          <h2 className="about-section-title reveal reveal-delay-1">Founding Members</h2>
+          <div className="about-founders-grid">
+            {FOUNDERS.map((m, i) => (
+              <div key={i} className={`about-founder-card reveal reveal-delay-${i}`}>
+                <div className="about-founder-photo-wrap">
+                  <img
+                    src={m.img}
+                    alt={m.name}
+                    className="about-founder-photo"
+                    onError={(e) => { e.currentTarget.src = founderPlaceholder; }}
+                  />
+                </div>
+                <h3 className="about-founder-name">{m.name}</h3>
+                <p className="about-founder-position">{m.position}</p>
+                {m.description && <p className="about-founder-desc">{m.description}</p>}
+                <a
+                  className="about-founder-linkedin"
+                  href={m.linkedin}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`${m.name} on LinkedIn`}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.07 2.07 0 1 1 0-4.14 2.07 2.07 0 0 1 0 4.14zM7.12 20.45H3.55V9h3.57v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/>
+                  </svg>
+                  <span>LinkedIn</span>
+                </a>
               </div>
             ))}
           </div>
