@@ -67,7 +67,7 @@ Drug interaction risk assessment
 
 Caching Strategy
 ----------------
-Interaction evidence is cached using Azure SQL to:
+Interaction evidence is cached using Supabase Postgres to:
 
 • Reduce PubMed API usage
 • Reduce FDA API latency

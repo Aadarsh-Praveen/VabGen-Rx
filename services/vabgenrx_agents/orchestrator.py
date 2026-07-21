@@ -36,7 +36,7 @@ Phase 5 — Patient Counseling
 
 Phase 6 — Orchestrator Synthesis
     Cross-domain reasoning produces the final clinical
-    intelligence report. Output is scanned through Azure AI
+    intelligence report. Output is scanned through OpenAI moderation
     Content Safety before reaching the prescriber. A session_id
     UUID is attached for OpenTelemetry trace correlation.
 
@@ -49,16 +49,14 @@ Architecture Benefits
   polypharmacy risks
 """
 
-import os
 import uuid
 import itertools
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List
 
-from azure.ai.agents import AgentsClient
-from azure.identity  import DefaultAzureCredential
-from dotenv          import load_dotenv
+from dotenv import load_dotenv
 
+from services.openai_client import get_openai_client, OPENAI_MODEL
 from services.evidence.safety_evidence  import SafetyEvidenceService
 from services.evidence.disease_evidence import DiseaseEvidenceService
 from services.signals.signal_extractor  import SignalExtractor
@@ -83,18 +81,9 @@ class VabGenRxOrchestrator:
     """
 
     def __init__(self):
-        endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
-        if not endpoint:
-            raise ValueError(
-                "AZURE_AI_PROJECT_ENDPOINT not set in .env"
-            )
-
-        self.client   = AgentsClient(
-            endpoint   = endpoint,
-            credential = DefaultAzureCredential()
-        )
-        self.model    = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-        self.endpoint = endpoint.rstrip('/')
+        self.client   = get_openai_client()
+        self.model    = OPENAI_MODEL
+        self.endpoint = None
 
         # ── Specialist agents ──────────────────────────────────────
         self.safety_agent       = VabGenRxSafetyAgent(
@@ -121,7 +110,7 @@ class VabGenRxOrchestrator:
         self.signal_extractor = SignalExtractor()
 
         print("✅ VabGenRx Multi-Agent System initialized")
-        print(f"   Endpoint : {endpoint}")
+        print(f"   Provider : OpenAI")
         print(f"   Model    : {self.model}")
         print(
             f"   Agents   : SafetyAgent | DiseaseAgent | "

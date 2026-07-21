@@ -39,7 +39,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List
 
-from azure.ai.agents import AgentsClient
+from openai import OpenAI
 
 from .base_agent import _BaseAgent
 
@@ -52,7 +52,7 @@ class VabGenRxDosingAgent(_BaseAgent):
 
     def __init__(
         self,
-        client:   AgentsClient,
+        client:   OpenAI,
         model:    str,
         endpoint: str
     ):

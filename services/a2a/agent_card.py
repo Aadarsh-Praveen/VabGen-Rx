@@ -32,7 +32,7 @@ AGENT_CARD = {
     "name":          "VabGenRx Clinical Intelligence Agent",
     "description": (
         "A multi-agent clinical pharmacology platform powered by "
-        "Microsoft Agent Framework. "
+        "OpenAI. "
         "Analyzes drug-drug interactions, drug-disease "
         "contraindications, FDA-based dosing adjustments, and "
         "generates patient counseling in 100+ languages. "
@@ -43,7 +43,8 @@ AGENT_CARD = {
         "adverse event database."
     ),
     "version": "3.0.0",
-    "url":     "https://vabgenrx.azurewebsites.net",
+    # TODO(Phase 6): update to the production Render URL once provisioned.
+    "url":     "https://vabgenrx-agent.onrender.com",
     "provider": {
         "name":    "VabGenRx Team",
         "url":     "https://github.com/Aadarsh-Praveen/VabGen-Rx",

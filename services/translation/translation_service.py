@@ -12,7 +12,7 @@ Key Design Principles
 ---------------------
 • Translation is optional and triggered only when the patient
   specifies a non-English preferred language.
-• Uses Azure OpenAI GPT models for high-quality medical translation.
+• Uses OpenAI GPT models for high-quality medical translation.
 • Drug names, dosage values, and clinical abbreviations are never
   translated to avoid clinical ambiguity.
 • Translates only patient-readable fields while preserving internal
@@ -30,12 +30,12 @@ clinical guidance to patients in over 100 languages without
 modifying underlying medical data.
 """
 
-import os
 import json
 import copy
 from typing import Dict, List, Optional
-from openai import AzureOpenAI
 from dotenv import load_dotenv
+
+from services.openai_client import get_openai_client, OPENAI_MODEL
 
 load_dotenv()
 
@@ -49,12 +49,7 @@ ENGLISH_VARIANTS = {
 class TranslationService:
 
     def __init__(self):
-        self.llm = AzureOpenAI(
-            api_key        = os.getenv("AZURE_OPENAI_KEY"),
-            api_version    = os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        self.llm = get_openai_client()
 
     # ── Public Methods ────────────────────────────────────────────────────────
 
@@ -470,7 +465,7 @@ Text to translate:
 Return JSON with exact same keys, translated values."""
 
             response = self.llm.chat.completions.create(
-                model    = self.deployment,
+                model    = OPENAI_MODEL,
                 messages = [
                     {
                         "role":    "system",

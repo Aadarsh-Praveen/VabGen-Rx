@@ -1,20 +1,12 @@
 require('dotenv').config();
-const { loadSecrets } = require('./secrets');
 
 (async () => {
-  await loadSecrets();
-
   const http       = require('http');
   const multer     = require('multer');
   const jwt        = require('jsonwebtoken');
   const bcrypt     = require('bcrypt');
   const nodemailer = require('nodemailer');
-  const {
-    BlobServiceClient,
-    generateBlobSASQueryParameters,
-    BlobSASPermissions,
-    StorageSharedKeyCredential,
-  } = require('@azure/storage-blob');
+  const { createClient } = require('@supabase/supabase-js');
   const { sql, poolPromise, patientsPoolPromise } = require('./db');
 
   const SALT_ROUNDS          = 12;
@@ -139,45 +131,29 @@ const { loadSecrets } = require('./secrets');
 
   const upload = multer({ storage: multer.memoryStorage() });
 
-  const blobServiceClient = BlobServiceClient.fromConnectionString(
-    process.env.AZURE_STORAGE_CONNECTION_STRING
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-  const containerClient = blobServiceClient.getContainerClient(
-    process.env.AZURE_CONTAINER_NAME
-  );
+  const PROFILE_IMAGES_BUCKET = process.env.PROFILE_IMAGES_BUCKET || 'profile-images';
+  const VOICE_NOTES_BUCKET    = process.env.VOICE_NOTES_BUCKET    || 'voice-notes';
 
-  // ── SAS token helper ────────────────────────────────────────────────────────
-  const _parseStorageConnStr = (connStr) => {
-    const parts = {};
-    (connStr || '').split(';').forEach(part => {
-      const eq = part.indexOf('=');
-      if (eq > 0) parts[part.slice(0, eq)] = part.slice(eq + 1);
-    });
-    return { accountName: parts.AccountName || '', accountKey: parts.AccountKey || '' };
-  };
-
-  const generateVoiceNoteSasUrl = (blobName) => {
+  // ── Signed URL helper ───────────────────────────────────────────────────────
+  // Direct equivalent of the old Azure Blob SAS-token generator: a 1-hour
+  // read-only URL for a private voice-note recording.
+  const generateVoiceNoteSasUrl = async (blobName) => {
     try {
-      const connStr = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
-      const { accountName, accountKey } = _parseStorageConnStr(connStr);
-      if (!accountName || !accountKey) {
-        console.warn('SAS: Missing storage credentials — returning null');
+      const { data, error } = await supabase
+        .storage
+        .from(VOICE_NOTES_BUCKET)
+        .createSignedUrl(blobName, 60 * 60); // 1 hour
+      if (error) {
+        console.warn('Signed URL generation error:', error.message);
         return null;
       }
-      const credential = new StorageSharedKeyCredential(accountName, accountKey);
-      const sasToken   = generateBlobSASQueryParameters(
-        {
-          containerName: process.env.AZURE_CONTAINER_NAME,
-          blobName,
-          permissions:   BlobSASPermissions.parse('r'),
-          startsOn:      new Date(),
-          expiresOn:     new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-        },
-        credential
-      ).toString();
-      return `https://${accountName}.blob.core.windows.net/${process.env.AZURE_CONTAINER_NAME}/${blobName}?${sasToken}`;
+      return data.signedUrl;
     } catch (err) {
-      console.error('SAS generation error:', err.message);
+      console.error('Signed URL generation error:', err.message);
       return null;
     }
   };
@@ -254,13 +230,13 @@ const { loadSecrets } = require('./secrets');
     const direct = await pool.request()
       .input('no',   sql.VarChar, patientNo)
       .input('dept', sql.VarChar, doctorDept)
-      .query(`SELECT 1 AS ok FROM dbo.${tbl} WHERE ${col}=@no AND Dept=@dept`);
+      .query(`SELECT 1 AS ok FROM clinical.${tbl} WHERE ${col}=@no AND Dept=@dept`);
     if (direct.recordset.length > 0) return true;
     const ref = await pool.request()
       .input('no',   sql.VarChar, patientNo)
       .input('type', sql.VarChar, patientType)
       .input('dept', sql.VarChar, doctorDept)
-      .query(`SELECT 1 AS ok FROM dbo.patient_referral_access
+      .query(`SELECT 1 AS ok FROM clinical.patient_referral_access
               WHERE Patient_No=@no AND Patient_Type=@type AND To_Dept=@dept`);
     return ref.recordset.length > 0;
   };
@@ -290,11 +266,12 @@ const { loadSecrets } = require('./secrets');
         const file = req.file;
         if (!file) return sendJSON(res, 400, { message: 'No file uploaded' });
         const blobName = `${Date.now()}-${file.originalname}`;
-        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-        await blockBlobClient.uploadData(file.buffer, {
-          blobHTTPHeaders: { blobContentType: file.mimetype }
-        });
-        sendJSON(res, 200, { imageUrl: blockBlobClient.url });
+        const { error: uploadErr } = await supabase.storage
+          .from(PROFILE_IMAGES_BUCKET)
+          .upload(blobName, file.buffer, { contentType: file.mimetype });
+        if (uploadErr) return sendJSON(res, 500, { message: uploadErr.message });
+        const { data } = supabase.storage.from(PROFILE_IMAGES_BUCKET).getPublicUrl(blobName);
+        sendJSON(res, 200, { imageUrl: data.publicUrl });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
     }
@@ -306,7 +283,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT * FROM users WHERE email = @email');
+          .query('SELECT * FROM app.users WHERE email = @email');
         if (result.recordset.length > 0) {
           const user = result.recordset[0];
           if (user.dob instanceof Date) user.dob = user.dob.toISOString().split('T')[0];
@@ -333,7 +310,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT * FROM users WHERE email = @email');
+          .query('SELECT * FROM app.users WHERE email = @email');
         if (result.recordset.length === 0)
           return sendJSON(res, 401, { message: 'Invalid email or password' });
 
@@ -398,7 +375,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT id, name FROM users WHERE email = @email');
+          .query('SELECT id, name FROM app.users WHERE email = @email');
         if (!result.recordset.length)
           return sendJSON(res, 404, { message: 'Email not found.' });
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -434,7 +411,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT name FROM users WHERE email = @email');
+          .query('SELECT name FROM app.users WHERE email = @email');
         if (!result.recordset.length) return sendJSON(res, 404, { message: 'User not found.' });
         const { name } = result.recordset[0];
         const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
@@ -442,7 +419,7 @@ const { loadSecrets } = require('./secrets');
           .input('email',    sql.VarChar,  email)
           .input('password', sql.VarChar,  hash)
           .input('now',      sql.DateTime, new Date())
-          .query('UPDATE users SET password = @password, password_changed_at = @now WHERE email = @email');
+          .query('UPDATE app.users SET password = @password, password_changed_at = @now WHERE email = @email');
         delete loginAttempts[email];
         await sendPasswordChangedEmail(email, name);
         sendJSON(res, 200, { message: 'Password reset successfully. Please login.' });
@@ -459,7 +436,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const existing = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT id FROM users WHERE email = @email');
+          .query('SELECT id FROM app.users WHERE email = @email');
         if (existing.recordset.length > 0)
           return sendJSON(res, 409, { message: 'Email already registered.' });
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
@@ -476,7 +453,7 @@ const { loadSecrets } = require('./secrets');
           .input('contact_no',   sql.VarChar, contact_no   || '')
           .input('email',        sql.VarChar, email)
           .input('password',     sql.VarChar, hashedPassword)
-          .query(`INSERT INTO users
+          .query(`INSERT INTO app.users
             (hospital_id, licence_no, name, designation, department,
              dob, age, sex, address, contact_no, email, password)
             VALUES
@@ -496,7 +473,7 @@ const { loadSecrets } = require('./secrets');
         await pool.request()
           .input('email',   sql.VarChar, email)
           .input('address', sql.VarChar, JSON.stringify(address))
-          .query('UPDATE users SET address = @address WHERE email = @email');
+          .query('UPDATE app.users SET address = @address WHERE email = @email');
         sendJSON(res, 200, { message: 'Address updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -511,7 +488,7 @@ const { loadSecrets } = require('./secrets');
         const pool = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT password FROM users WHERE email = @email');
+          .query('SELECT password FROM app.users WHERE email = @email');
         if (!result.recordset.length) return sendJSON(res, 404, { message: 'User not found.' });
         const match = await bcrypt.compare(currentPassword, result.recordset[0].password);
         if (!match) return sendJSON(res, 401, { message: 'Current password is incorrect.' });
@@ -520,7 +497,7 @@ const { loadSecrets } = require('./secrets');
           .input('email',    sql.VarChar,  email)
           .input('password', sql.VarChar,  newHash)
           .input('now',      sql.DateTime, new Date())
-          .query('UPDATE users SET password = @password, password_changed_at = @now WHERE email = @email');
+          .query('UPDATE app.users SET password = @password, password_changed_at = @now WHERE email = @email');
         sendJSON(res, 200, { message: 'Password changed successfully.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -531,7 +508,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await poolPromise;
         const result = await pool.request()
-          .query('SELECT name, department, designation FROM dbo.users ORDER BY name ASC');
+          .query('SELECT name, department, designation FROM app.users ORDER BY name ASC');
         sendJSON(res, 200, { users: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -550,8 +527,8 @@ const { loadSecrets } = require('./secrets');
               p.Reason_for_Admission, p.Past_Medical_History, p.Past_Medication_History,
               p.Smoker, p.Alcoholic, p.Insurance_Type,
               p.Weight_kg, p.Height_cm, p.BMI, p.Followup_Outcome
-            FROM dbo.patient_records p
-            LEFT JOIN dbo.patient_referral_access r
+            FROM clinical.patient_records p
+            LEFT JOIN clinical.patient_referral_access r
               ON r.Patient_No = p.IP_No AND r.Patient_Type = 'IP' AND r.To_Dept = @dept
             WHERE p.Dept = @dept OR r.To_Dept = @dept
               OR @dept IS NULL
@@ -577,7 +554,7 @@ const { loadSecrets } = require('./secrets');
               Past_Medical_History, Past_Medication_History,
               Smoker, Alcoholic, Insurance_Type,
               Weight_kg, Height_cm, BMI, Followup_Outcome, Assigned_Dept
-            FROM dbo.patient_records WHERE IP_No = @ipNo`);
+            FROM clinical.patient_records WHERE IP_No = @ipNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { patient: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Patient not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -597,8 +574,8 @@ const { loadSecrets } = require('./secrets');
               p.Reason_for_Admission, p.Past_Medical_History, p.Past_Medication_History,
               p.Smoker, p.Alcoholic, p.Insurance_Type,
               p.Weight_kg, p.Height_cm, p.BMI, p.Followup_Outcome
-            FROM dbo.outpatient_records p
-            LEFT JOIN dbo.patient_referral_access r
+            FROM clinical.outpatient_records p
+            LEFT JOIN clinical.patient_referral_access r
               ON r.Patient_No = p.OP_No AND r.Patient_Type = 'OP' AND r.To_Dept = @dept
             WHERE p.Dept = @dept OR r.To_Dept = @dept
               OR @dept IS NULL
@@ -624,7 +601,7 @@ const { loadSecrets } = require('./secrets');
               Past_Medical_History, Past_Medication_History,
               Smoker, Alcoholic, Insurance_Type,
               Weight_kg, Height_cm, BMI, Followup_Outcome, Assigned_Dept
-            FROM dbo.outpatient_records WHERE OP_No = @opNo`);
+            FROM clinical.outpatient_records WHERE OP_No = @opNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { patient: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Outpatient not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -636,24 +613,24 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         const ip   = await pool.request().query(
-          `SELECT IP_No, Reason_for_Admission, Past_Medical_History FROM dbo.patient_records WHERE Assigned_Dept IS NULL`
+          `SELECT IP_No, Reason_for_Admission, Past_Medical_History FROM clinical.patient_records WHERE Assigned_Dept IS NULL`
         );
         for (const p of ip.recordset) {
           const dept = inferDept(p.Reason_for_Admission, p.Past_Medical_History);
           await pool.request()
             .input('ipNo', sql.VarChar, p.IP_No)
             .input('dept', sql.VarChar, dept)
-            .query(`UPDATE dbo.patient_records SET Assigned_Dept=@dept WHERE IP_No=@ipNo`);
+            .query(`UPDATE clinical.patient_records SET Assigned_Dept=@dept WHERE IP_No=@ipNo`);
         }
         const op = await pool.request().query(
-          `SELECT OP_No, Reason_for_Admission, Past_Medical_History FROM dbo.outpatient_records WHERE Assigned_Dept IS NULL`
+          `SELECT OP_No, Reason_for_Admission, Past_Medical_History FROM clinical.outpatient_records WHERE Assigned_Dept IS NULL`
         );
         for (const p of op.recordset) {
           const dept = inferDept(p.Reason_for_Admission, p.Past_Medical_History);
           await pool.request()
             .input('opNo', sql.VarChar, p.OP_No)
             .input('dept', sql.VarChar, dept)
-            .query(`UPDATE dbo.outpatient_records SET Assigned_Dept=@dept WHERE OP_No=@opNo`);
+            .query(`UPDATE clinical.outpatient_records SET Assigned_Dept=@dept WHERE OP_No=@opNo`);
         }
         sendJSON(res, 200, { message: `Assigned depts: ${ip.recordset.length} IP, ${op.recordset.length} OP patients.` });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -672,7 +649,7 @@ const { loadSecrets } = require('./secrets');
           .query(`SELECT IP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
               Drugs_Prescribed, Drug_Drug_Interactions,
               Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
-            FROM dbo.ip_diagnosis WHERE IP_No = @ipNo`);
+            FROM clinical.ip_diagnosis WHERE IP_No = @ipNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { diagnosis: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Diagnosis not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -691,7 +668,7 @@ const { loadSecrets } = require('./secrets');
           .input('primary',   sql.VarChar, primary   || '')
           .input('secondary', sql.VarChar, secondary || '')
           .input('notes',     sql.VarChar, notes     || '')
-          .query(`UPDATE dbo.ip_diagnosis
+          .query(`UPDATE clinical.ip_diagnosis
             SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
             WHERE IP_No=@ipNo`);
         sendJSON(res, 200, { message: 'Diagnosis saved' });
@@ -711,7 +688,7 @@ const { loadSecrets } = require('./secrets');
           .query(`SELECT OP_No, Diagnosis, Secondary_Diagnosis, Clinical_Notes,
               Drugs_Prescribed, Drug_Drug_Interactions,
               Drug_Disease_Alerts, Drug_Food_Alerts, Dose_Adjustment_Notes
-            FROM dbo.op_diagnosis WHERE OP_No = @opNo`);
+            FROM clinical.op_diagnosis WHERE OP_No = @opNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { diagnosis: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Diagnosis not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -730,7 +707,7 @@ const { loadSecrets } = require('./secrets');
           .input('primary',   sql.VarChar, primary   || '')
           .input('secondary', sql.VarChar, secondary || '')
           .input('notes',     sql.VarChar, notes     || '')
-          .query(`UPDATE dbo.op_diagnosis
+          .query(`UPDATE clinical.op_diagnosis
             SET Diagnosis=@primary, Secondary_Diagnosis=@secondary, Clinical_Notes=@notes
             WHERE OP_No=@opNo`);
         sendJSON(res, 200, { message: 'Diagnosis saved' });
@@ -749,7 +726,7 @@ const { loadSecrets } = require('./secrets');
           .input('ipNo', sql.VarChar, ipNo)
           .query(`SELECT IP_No, Pulse, eGFR_mL_min_1_73m2, Sodium, Potassium, Chloride,
               Total_Bilirubin, FreeT3, FreeT4, TSH, Other_Investigations
-            FROM dbo.ip_lab_results WHERE IP_No = @ipNo`);
+            FROM clinical.ip_lab_results WHERE IP_No = @ipNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { lab: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Lab results not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -772,7 +749,7 @@ const { loadSecrets } = require('./secrets');
               SGOT, SGPT, ALP, Total_Bilirubin,
               Lipid_Profile, ECG, Xray, Ultrasound, CT, MRI,
               FreeT3, FreeT4, TSH, Other_Investigations
-            FROM dbo.op_lab_results WHERE OP_No = @opNo`);
+            FROM clinical.op_lab_results WHERE OP_No = @opNo`);
         if (result.recordset.length > 0) sendJSON(res, 200, { lab: result.recordset[0] });
         else sendJSON(res, 404, { message: 'Outpatient lab results not found' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -787,10 +764,11 @@ const { loadSecrets } = require('./secrets');
         const pool   = await patientsPoolPromise;
         const result = await pool.request()
           .input('q', sql.VarChar, `%${q}%`)
-          .query(`SELECT TOP 20 ID, Brand_Name, Generic_Name, Strength, Route, Stocks, Cost_Per_30_USD
-            FROM dbo.drug_inventory
+          .query(`SELECT ID, Brand_Name, Generic_Name, Strength, Route, Stocks, Cost_Per_30_USD
+            FROM clinical.drug_inventory
             WHERE Brand_Name LIKE @q OR Generic_Name LIKE @q
-            ORDER BY Generic_Name, Strength ASC`);
+            ORDER BY Generic_Name, Strength ASC
+            LIMIT 20`);
         sendJSON(res, 200, { drugs: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -805,7 +783,7 @@ const { loadSecrets } = require('./secrets');
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
           .query(`SELECT ID, IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On, Is_Held
-                  FROM dbo.ip_prescriptions WHERE IP_No = @ipNo ORDER BY ID ASC`);
+                  FROM clinical.ip_prescriptions WHERE IP_No = @ipNo ORDER BY ID ASC`);
         sendJSON(res, 200, { prescriptions: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -823,7 +801,7 @@ const { loadSecrets } = require('./secrets');
           .input('generic', sql.VarChar, generic).input('strength', sql.VarChar, strength || '')
           .input('route', sql.VarChar, route || '').input('frequency', sql.VarChar, frequency || '')
           .input('days', sql.VarChar, days || '')
-          .query(`INSERT INTO dbo.ip_prescriptions (IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
+          .query(`INSERT INTO clinical.ip_prescriptions (IP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
                   VALUES (@ipNo, @brand, @generic, @strength, @route, @frequency, @days)`);
         sendJSON(res, 201, { message: 'IP prescription saved.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -837,7 +815,7 @@ const { loadSecrets } = require('./secrets');
         await pool.request()
           .input('id', sql.Int, id).input('route', sql.VarChar, route || '')
           .input('frequency', sql.VarChar, frequency || '').input('days', sql.VarChar, days || '')
-          .query(`UPDATE dbo.ip_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
+          .query(`UPDATE clinical.ip_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -848,7 +826,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id)
-          .query(`DELETE FROM dbo.ip_prescriptions WHERE ID = @id`);
+          .query(`DELETE FROM clinical.ip_prescriptions WHERE ID = @id`);
         sendJSON(res, 200, { message: 'Deleted.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -860,8 +838,8 @@ const { loadSecrets } = require('./secrets');
         const pool = await patientsPoolPromise;
         await pool.request()
           .input('id',   sql.Int, id)
-          .input('held', sql.Bit, held ? 1 : 0)
-          .query(`UPDATE dbo.ip_prescriptions SET Is_Held=@held WHERE ID=@id`);
+          .input('held', sql.Bit, !!held)
+          .query(`UPDATE clinical.ip_prescriptions SET Is_Held=@held WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Hold state updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -876,7 +854,7 @@ const { loadSecrets } = require('./secrets');
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
           .query(`SELECT ID, OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On, Is_Held
-                  FROM dbo.op_prescriptions WHERE OP_No = @opNo ORDER BY ID ASC`);
+                  FROM clinical.op_prescriptions WHERE OP_No = @opNo ORDER BY ID ASC`);
         sendJSON(res, 200, { prescriptions: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -894,7 +872,7 @@ const { loadSecrets } = require('./secrets');
           .input('generic', sql.VarChar, generic).input('strength', sql.VarChar, strength || '')
           .input('route', sql.VarChar, route || '').input('frequency', sql.VarChar, frequency || '')
           .input('days', sql.VarChar, days || '')
-          .query(`INSERT INTO dbo.op_prescriptions (OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
+          .query(`INSERT INTO clinical.op_prescriptions (OP_No, Brand_Name, Generic_Name, Strength, Route, Frequency, Days)
                   VALUES (@opNo, @brand, @generic, @strength, @route, @frequency, @days)`);
         sendJSON(res, 201, { message: 'OP prescription saved.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -908,7 +886,7 @@ const { loadSecrets } = require('./secrets');
         await pool.request()
           .input('id', sql.Int, id).input('route', sql.VarChar, route || '')
           .input('frequency', sql.VarChar, frequency || '').input('days', sql.VarChar, days || '')
-          .query(`UPDATE dbo.op_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
+          .query(`UPDATE clinical.op_prescriptions SET Route=@route, Frequency=@frequency, Days=@days WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -919,7 +897,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id)
-          .query(`DELETE FROM dbo.op_prescriptions WHERE ID = @id`);
+          .query(`DELETE FROM clinical.op_prescriptions WHERE ID = @id`);
         sendJSON(res, 200, { message: 'Deleted.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -931,8 +909,8 @@ const { loadSecrets } = require('./secrets');
         const pool = await patientsPoolPromise;
         await pool.request()
           .input('id',   sql.Int, id)
-          .input('held', sql.Bit, held ? 1 : 0)
-          .query(`UPDATE dbo.op_prescriptions SET Is_Held=@held WHERE ID=@id`);
+          .input('held', sql.Bit, !!held)
+          .query(`UPDATE clinical.op_prescriptions SET Is_Held=@held WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Hold state updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -946,7 +924,7 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ipNo, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
-          .query(`SELECT ID, IP_No, Notes, Added_On FROM dbo.ip_prescription_notes WHERE IP_No=@ipNo ORDER BY Added_On DESC`);
+          .query(`SELECT ID, IP_No, Notes, Added_On FROM clinical.ip_prescription_notes WHERE IP_No=@ipNo ORDER BY Added_On DESC`);
         sendJSON(res, 200, { notes: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -960,7 +938,7 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ipNo, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         await pool.request().input('ipNo', sql.VarChar, ipNo).input('notes', sql.NVarChar, notes)
-          .query(`INSERT INTO dbo.ip_prescription_notes (IP_No, Notes) VALUES (@ipNo, @notes)`);
+          .query(`INSERT INTO clinical.ip_prescription_notes (IP_No, Notes) VALUES (@ipNo, @notes)`);
         sendJSON(res, 201, { message: 'IP note saved.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -971,7 +949,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id).input('notes', sql.NVarChar, notes)
-          .query(`UPDATE dbo.ip_prescription_notes SET Notes=@notes WHERE ID=@id`);
+          .query(`UPDATE clinical.ip_prescription_notes SET Notes=@notes WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -982,7 +960,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id)
-          .query(`DELETE FROM dbo.ip_prescription_notes WHERE ID=@id`);
+          .query(`DELETE FROM clinical.ip_prescription_notes WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Deleted.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -996,7 +974,7 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, opNo, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
-          .query(`SELECT ID, OP_No, Notes, Added_On FROM dbo.op_prescription_notes WHERE OP_No=@opNo ORDER BY Added_On DESC`);
+          .query(`SELECT ID, OP_No, Notes, Added_On FROM clinical.op_prescription_notes WHERE OP_No=@opNo ORDER BY Added_On DESC`);
         sendJSON(res, 200, { notes: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1010,7 +988,7 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, opNo, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         await pool.request().input('opNo', sql.VarChar, opNo).input('notes', sql.NVarChar, notes)
-          .query(`INSERT INTO dbo.op_prescription_notes (OP_No, Notes) VALUES (@opNo, @notes)`);
+          .query(`INSERT INTO clinical.op_prescription_notes (OP_No, Notes) VALUES (@opNo, @notes)`);
         sendJSON(res, 201, { message: 'OP note saved.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1021,7 +999,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id).input('notes', sql.NVarChar, notes)
-          .query(`UPDATE dbo.op_prescription_notes SET Notes=@notes WHERE ID=@id`);
+          .query(`UPDATE clinical.op_prescription_notes SET Notes=@notes WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1032,7 +1010,7 @@ const { loadSecrets } = require('./secrets');
       try {
         const pool = await patientsPoolPromise;
         await pool.request().input('id', sql.Int, id)
-          .query(`DELETE FROM dbo.op_prescription_notes WHERE ID=@id`);
+          .query(`DELETE FROM clinical.op_prescription_notes WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Deleted.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1048,12 +1026,12 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ip_no, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('ipNo', sql.VarChar, ip_no)
-          .query('SELECT ID FROM dbo.ip_drug_interactions WHERE IP_No = @ipNo');
+          .query('SELECT ID FROM clinical.ip_drug_interactions WHERE IP_No = @ipNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.ip_drug_interactions SET DD_Severe=@ddSev,DD_Moderate=@ddMod,DD_Minor=@ddMin,
+          ? `UPDATE clinical.ip_drug_interactions SET DD_Severe=@ddSev,DD_Moderate=@ddMod,DD_Minor=@ddMin,
               DDis_Contraindicated=@disCon,DDis_Moderate=@disMod,DDis_Minor=@disMin,
               Drug_Food=@food,Updated_At=@now WHERE IP_No=@ipNo`
-          : `INSERT INTO dbo.ip_drug_interactions
+          : `INSERT INTO clinical.ip_drug_interactions
               (IP_No,DD_Severe,DD_Moderate,DD_Minor,DDis_Contraindicated,DDis_Moderate,DDis_Minor,Drug_Food)
               VALUES(@ipNo,@ddSev,@ddMod,@ddMin,@disCon,@disMod,@disMin,@food)`;
         await pool.request()
@@ -1079,7 +1057,11 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ipNo, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
-          .query('SELECT * FROM dbo.ip_drug_interactions WHERE IP_No = @ipNo');
+          .query(`SELECT IP_No, DD_Severe::text AS DD_Severe, DD_Moderate::text AS DD_Moderate,
+              DD_Minor::text AS DD_Minor, DDis_Contraindicated::text AS DDis_Contraindicated,
+              DDis_Moderate::text AS DDis_Moderate, DDis_Minor::text AS DDis_Minor,
+              Drug_Food::text AS Drug_Food, Updated_At
+            FROM clinical.ip_drug_interactions WHERE IP_No = @ipNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1103,12 +1085,12 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, op_no, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('opNo', sql.VarChar, op_no)
-          .query('SELECT ID FROM dbo.op_drug_interactions WHERE OP_No = @opNo');
+          .query('SELECT ID FROM clinical.op_drug_interactions WHERE OP_No = @opNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.op_drug_interactions SET DD_Severe=@ddSev,DD_Moderate=@ddMod,DD_Minor=@ddMin,
+          ? `UPDATE clinical.op_drug_interactions SET DD_Severe=@ddSev,DD_Moderate=@ddMod,DD_Minor=@ddMin,
               DDis_Contraindicated=@disCon,DDis_Moderate=@disMod,DDis_Minor=@disMin,
               Drug_Food=@food,Updated_At=@now WHERE OP_No=@opNo`
-          : `INSERT INTO dbo.op_drug_interactions
+          : `INSERT INTO clinical.op_drug_interactions
               (OP_No,DD_Severe,DD_Moderate,DD_Minor,DDis_Contraindicated,DDis_Moderate,DDis_Minor,Drug_Food)
               VALUES(@opNo,@ddSev,@ddMod,@ddMin,@disCon,@disMod,@disMin,@food)`;
         await pool.request()
@@ -1134,7 +1116,11 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, opNo, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
-          .query('SELECT * FROM dbo.op_drug_interactions WHERE OP_No = @opNo');
+          .query(`SELECT OP_No, DD_Severe::text AS DD_Severe, DD_Moderate::text AS DD_Moderate,
+              DD_Minor::text AS DD_Minor, DDis_Contraindicated::text AS DDis_Contraindicated,
+              DDis_Moderate::text AS DDis_Moderate, DDis_Minor::text AS DDis_Minor,
+              Drug_Food::text AS Drug_Food, Updated_At
+            FROM clinical.op_drug_interactions WHERE OP_No = @opNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1157,10 +1143,10 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ip_no, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('ipNo', sql.VarChar, ip_no)
-          .query('SELECT ID FROM dbo.ip_dosing_recommendations WHERE IP_No = @ipNo');
+          .query('SELECT ID FROM clinical.ip_dosing_recommendations WHERE IP_No = @ipNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.ip_dosing_recommendations SET High=@high,Medium=@medium,Updated_At=@now WHERE IP_No=@ipNo`
-          : `INSERT INTO dbo.ip_dosing_recommendations (IP_No,High,Medium) VALUES(@ipNo,@high,@medium)`;
+          ? `UPDATE clinical.ip_dosing_recommendations SET High=@high,Medium=@medium,Updated_At=@now WHERE IP_No=@ipNo`
+          : `INSERT INTO clinical.ip_dosing_recommendations (IP_No,High,Medium) VALUES(@ipNo,@high,@medium)`;
         await pool.request()
           .input('ipNo',   sql.VarChar,  ip_no)
           .input('high',   sql.NVarChar, JSON.stringify(high   || []))
@@ -1179,7 +1165,8 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ipNo, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
-          .query('SELECT * FROM dbo.ip_dosing_recommendations WHERE IP_No = @ipNo');
+          .query(`SELECT IP_No, High::text AS High, Medium::text AS Medium, Updated_At
+            FROM clinical.ip_dosing_recommendations WHERE IP_No = @ipNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1197,10 +1184,10 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, op_no, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('opNo', sql.VarChar, op_no)
-          .query('SELECT ID FROM dbo.op_dosing_recommendations WHERE OP_No = @opNo');
+          .query('SELECT ID FROM clinical.op_dosing_recommendations WHERE OP_No = @opNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.op_dosing_recommendations SET High=@high,Medium=@medium,Updated_At=@now WHERE OP_No=@opNo`
-          : `INSERT INTO dbo.op_dosing_recommendations (OP_No,High,Medium) VALUES(@opNo,@high,@medium)`;
+          ? `UPDATE clinical.op_dosing_recommendations SET High=@high,Medium=@medium,Updated_At=@now WHERE OP_No=@opNo`
+          : `INSERT INTO clinical.op_dosing_recommendations (OP_No,High,Medium) VALUES(@opNo,@high,@medium)`;
         await pool.request()
           .input('opNo',   sql.VarChar,  op_no)
           .input('high',   sql.NVarChar, JSON.stringify(high   || []))
@@ -1219,7 +1206,8 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, opNo, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
-          .query('SELECT * FROM dbo.op_dosing_recommendations WHERE OP_No = @opNo');
+          .query(`SELECT OP_No, High::text AS High, Medium::text AS Medium, Updated_At
+            FROM clinical.op_dosing_recommendations WHERE OP_No = @opNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1237,10 +1225,10 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ip_no, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('ipNo', sql.VarChar, ip_no)
-          .query('SELECT ID FROM dbo.ip_patient_counselling WHERE IP_No = @ipNo');
+          .query('SELECT ID FROM clinical.ip_patient_counselling WHERE IP_No = @ipNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.ip_patient_counselling SET Drug_Counselling=@dc,Condition_Counselling=@cc,Updated_At=@now WHERE IP_No=@ipNo`
-          : `INSERT INTO dbo.ip_patient_counselling (IP_No,Drug_Counselling,Condition_Counselling) VALUES(@ipNo,@dc,@cc)`;
+          ? `UPDATE clinical.ip_patient_counselling SET Drug_Counselling=@dc,Condition_Counselling=@cc,Updated_At=@now WHERE IP_No=@ipNo`
+          : `INSERT INTO clinical.ip_patient_counselling (IP_No,Drug_Counselling,Condition_Counselling) VALUES(@ipNo,@dc,@cc)`;
         await pool.request()
           .input('ipNo', sql.VarChar,  ip_no)
           .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
@@ -1259,7 +1247,9 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, ipNo, 'IP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
-          .query('SELECT * FROM dbo.ip_patient_counselling WHERE IP_No = @ipNo');
+          .query(`SELECT IP_No, Drug_Counselling::text AS Drug_Counselling,
+              Condition_Counselling::text AS Condition_Counselling, Updated_At
+            FROM clinical.ip_patient_counselling WHERE IP_No = @ipNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1281,10 +1271,10 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, op_no, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const existing = await pool.request().input('opNo', sql.VarChar, op_no)
-          .query('SELECT ID FROM dbo.op_patient_counselling WHERE OP_No = @opNo');
+          .query('SELECT ID FROM clinical.op_patient_counselling WHERE OP_No = @opNo');
         const q = existing.recordset.length > 0
-          ? `UPDATE dbo.op_patient_counselling SET Drug_Counselling=@dc,Condition_Counselling=@cc,Updated_At=@now WHERE OP_No=@opNo`
-          : `INSERT INTO dbo.op_patient_counselling (OP_No,Drug_Counselling,Condition_Counselling) VALUES(@opNo,@dc,@cc)`;
+          ? `UPDATE clinical.op_patient_counselling SET Drug_Counselling=@dc,Condition_Counselling=@cc,Updated_At=@now WHERE OP_No=@opNo`
+          : `INSERT INTO clinical.op_patient_counselling (OP_No,Drug_Counselling,Condition_Counselling) VALUES(@opNo,@dc,@cc)`;
         await pool.request()
           .input('opNo', sql.VarChar,  op_no)
           .input('dc',   sql.NVarChar, JSON.stringify(drug_counselling      || []))
@@ -1303,7 +1293,9 @@ const { loadSecrets } = require('./secrets');
         const access = await canAccessPatient(pool, opNo, 'OP', req.user.department);
         if (!access) return sendJSON(res, 403, { message: 'Access denied.' });
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
-          .query('SELECT * FROM dbo.op_patient_counselling WHERE OP_No = @opNo');
+          .query(`SELECT OP_No, Drug_Counselling::text AS Drug_Counselling,
+              Condition_Counselling::text AS Condition_Counselling, Updated_At
+            FROM clinical.op_patient_counselling WHERE OP_No = @opNo`);
         if (!result.recordset.length) return sendJSON(res, 200, { found: false, data: null });
         const r = result.recordset[0];
         const parse = v => { try { return JSON.parse(v || '[]'); } catch { return []; } };
@@ -1332,7 +1324,7 @@ const { loadSecrets } = require('./secrets');
           .input('date',     sql.Date,    date       || null)
           .input('reason',   sql.VarChar, reason     || '')
           .input('notes',    sql.VarChar, notes      || null)
-          .query(`INSERT INTO dbo.ip_refferal
+          .query(`INSERT INTO clinical.ip_refferal
             (IP_No,Refer_To_Department,Refer_To_Doctor,Urgency,Referral_Date,Reason_For_Referral,Additional_Notes)
             VALUES(@ipNo,@toDept,@toDoctor,@urgency,@date,@reason,@notes)`);
         await pool.request()
@@ -1341,7 +1333,7 @@ const { loadSecrets } = require('./secrets');
           .input('fromDept',   sql.VarChar, req.user.department)
           .input('toDept',     sql.VarChar, to_dept || '')
           .input('referredBy', sql.VarChar, req.user.name)
-          .query(`INSERT INTO dbo.patient_referral_access
+          .query(`INSERT INTO clinical.patient_referral_access
             (Patient_No,Patient_Type,From_Dept,To_Dept,Referred_By)
             VALUES(@patientNo,@type,@fromDept,@toDept,@referredBy)`);
         sendJSON(res, 201, { message: 'IP referral saved.' });
@@ -1359,7 +1351,7 @@ const { loadSecrets } = require('./secrets');
           .input('toDoctor', sql.VarChar, to_doctor || '')
           .input('toDept',   sql.VarChar, to_dept   || '')
           .input('date',     sql.Date,    date      || null)
-          .query(`DELETE FROM dbo.ip_refferal
+          .query(`DELETE FROM clinical.ip_refferal
                   WHERE IP_No=@ipNo AND Refer_To_Doctor=@toDoctor
                     AND Refer_To_Department=@toDept AND Referral_Date=@date`);
         sendJSON(res, 200, { message: 'IP referral deleted.' });
@@ -1376,7 +1368,7 @@ const { loadSecrets } = require('./secrets');
         const result = await pool.request().input('ipNo', sql.VarChar, ipNo)
           .query(`SELECT IP_No,Refer_To_Department,Refer_To_Doctor,Urgency,
                          Referral_Date,Reason_For_Referral,Additional_Notes,Created_At
-                  FROM dbo.ip_refferal WHERE IP_No=@ipNo ORDER BY Created_At DESC`);
+                  FROM clinical.ip_refferal WHERE IP_No=@ipNo ORDER BY Created_At DESC`);
         sendJSON(res, 200, { referrals: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1398,7 +1390,7 @@ const { loadSecrets } = require('./secrets');
           .input('date',     sql.Date,    date       || null)
           .input('reason',   sql.VarChar, reason     || '')
           .input('notes',    sql.VarChar, notes      || null)
-          .query(`INSERT INTO dbo.op_refferal
+          .query(`INSERT INTO clinical.op_refferal
             (OP_No,Refer_To_Department,Refer_To_Doctor,Urgency,Referral_Date,Reason_For_Referral,Additional_Notes)
             VALUES(@opNo,@toDept,@toDoctor,@urgency,@date,@reason,@notes)`);
         await pool.request()
@@ -1407,7 +1399,7 @@ const { loadSecrets } = require('./secrets');
           .input('fromDept',   sql.VarChar, req.user.department)
           .input('toDept',     sql.VarChar, to_dept || '')
           .input('referredBy', sql.VarChar, req.user.name)
-          .query(`INSERT INTO dbo.patient_referral_access
+          .query(`INSERT INTO clinical.patient_referral_access
             (Patient_No,Patient_Type,From_Dept,To_Dept,Referred_By)
             VALUES(@patientNo,@type,@fromDept,@toDept,@referredBy)`);
         sendJSON(res, 201, { message: 'OP referral saved.' });
@@ -1425,7 +1417,7 @@ const { loadSecrets } = require('./secrets');
           .input('toDoctor', sql.VarChar, to_doctor || '')
           .input('toDept',   sql.VarChar, to_dept   || '')
           .input('date',     sql.Date,    date      || null)
-          .query(`DELETE FROM dbo.op_refferal
+          .query(`DELETE FROM clinical.op_refferal
                   WHERE OP_No=@opNo AND Refer_To_Doctor=@toDoctor
                     AND Refer_To_Department=@toDept AND Referral_Date=@date`);
         sendJSON(res, 200, { message: 'OP referral deleted.' });
@@ -1442,7 +1434,7 @@ const { loadSecrets } = require('./secrets');
         const result = await pool.request().input('opNo', sql.VarChar, opNo)
           .query(`SELECT OP_No,Refer_To_Department,Refer_To_Doctor,Urgency,
                          Referral_Date,Reason_For_Referral,Additional_Notes,Created_At
-                  FROM dbo.op_refferal WHERE OP_No=@opNo ORDER BY Created_At DESC`);
+                  FROM clinical.op_refferal WHERE OP_No=@opNo ORDER BY Created_At DESC`);
         sendJSON(res, 200, { referrals: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1456,7 +1448,7 @@ const { loadSecrets } = require('./secrets');
         const pool   = await poolPromise;
         const result = await pool.request()
           .input('email', sql.VarChar, email)
-          .query('SELECT name, password_changed_at FROM users WHERE email = @email');
+          .query('SELECT name, password_changed_at FROM app.users WHERE email = @email');
         if (!result.recordset.length) return sendJSON(res, 404, { message: 'User not found.' });
         const { password_changed_at } = result.recordset[0];
         const changedAt   = password_changed_at ? new Date(password_changed_at) : new Date(0);
@@ -1487,9 +1479,9 @@ const { loadSecrets } = require('./secrets');
               COALESCE(ip.Age,  op.Age)  AS Age,
               COALESCE(ip.Sex,  op.Sex)  AS Sex,
               COALESCE(ip.Dept, op.Dept) AS Dept
-            FROM dbo.patient_credential pc
-            LEFT JOIN dbo.patient_records    ip ON ip.IP_No = pc.IP_No
-            LEFT JOIN dbo.outpatient_records op ON op.OP_No = pc.OP_No
+            FROM clinical.patient_credential pc
+            LEFT JOIN clinical.patient_records    ip ON ip.IP_No = pc.IP_No
+            LEFT JOIN clinical.outpatient_records op ON op.OP_No = pc.OP_No
             WHERE pc.Email = @email
           `);
         if (!result.recordset.length)
@@ -1523,7 +1515,7 @@ const { loadSecrets } = require('./secrets');
               Dept, DOA, DOD, Reason_for_Admission, Past_Medical_History,
               Past_Medication_History, Smoker, Alcoholic, Insurance_Type,
               Weight_kg, Height_cm, BMI, Followup_Outcome
-            FROM dbo.patient_records WHERE IP_No = @ipNo`);
+            FROM clinical.patient_records WHERE IP_No = @ipNo`);
         if (!result.recordset.length) return sendJSON(res, 404, { message: 'Record not found.' });
         sendJSON(res, 200, { patient: result.recordset[0] });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -1540,7 +1532,7 @@ const { loadSecrets } = require('./secrets');
               Dept, DOA, Reason_for_Admission, Past_Medical_History,
               Past_Medication_History, Smoker, Alcoholic, Insurance_Type,
               Weight_kg, Height_cm, BMI, Followup_Outcome
-            FROM dbo.outpatient_records WHERE OP_No = @opNo`);
+            FROM clinical.outpatient_records WHERE OP_No = @opNo`);
         if (!result.recordset.length) return sendJSON(res, 404, { message: 'Record not found.' });
         sendJSON(res, 200, { patient: result.recordset[0] });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -1554,13 +1546,13 @@ const { loadSecrets } = require('./secrets');
         if (req.user.ip_no) {
           const result = await pool.request().input('ipNo', sql.VarChar, req.user.ip_no)
             .query(`SELECT Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
-                    FROM dbo.ip_prescriptions WHERE IP_No = @ipNo AND Is_Held = 0 ORDER BY ID ASC`);
+                    FROM clinical.ip_prescriptions WHERE IP_No = @ipNo AND Is_Held = false ORDER BY ID ASC`);
           return sendJSON(res, 200, { prescriptions: result.recordset });
         }
         if (req.user.op_no) {
           const result = await pool.request().input('opNo', sql.VarChar, req.user.op_no)
             .query(`SELECT Brand_Name, Generic_Name, Strength, Route, Frequency, Days, Added_On
-                    FROM dbo.op_prescriptions WHERE OP_No = @opNo AND Is_Held = 0 ORDER BY ID ASC`);
+                    FROM clinical.op_prescriptions WHERE OP_No = @opNo AND Is_Held = false ORDER BY ID ASC`);
           return sendJSON(res, 200, { prescriptions: result.recordset });
         }
         sendJSON(res, 404, { message: 'No patient record linked.' });
@@ -1586,7 +1578,7 @@ const { loadSecrets } = require('./secrets');
           .input('doctorName', sql.VarChar, doctor_name)
           .input('date',       sql.Date,    date)
           .input('time',       sql.VarChar, time)
-          .query(`SELECT ID FROM dbo.appointments
+          .query(`SELECT ID FROM clinical.appointments
                   WHERE Doctor_Name=@doctorName AND Appointment_Date=@date
                     AND Appointment_Time=@time AND Status != 'Cancelled'`);
         if (conflict.recordset.length > 0)
@@ -1600,7 +1592,7 @@ const { loadSecrets } = require('./secrets');
           .input('date',        sql.Date,    date)
           .input('time',        sql.VarChar, time)
           .input('reason',      sql.VarChar, reason || '')
-          .query(`INSERT INTO dbo.appointments
+          .query(`INSERT INTO clinical.appointments
             (Patient_No, Patient_Type, Patient_Name, Doctor_Name, Doctor_Dept,
              Appointment_Date, Appointment_Time, Reason, Status)
             VALUES
@@ -1620,7 +1612,7 @@ const { loadSecrets } = require('./secrets');
           .query(`SELECT ID, Patient_No, Patient_Type, Patient_Name,
                          Doctor_Name, Doctor_Dept, Appointment_Date, Appointment_Time,
                          Reason, Status, Created_At
-                  FROM dbo.appointments WHERE Doctor_Name = @name
+                  FROM clinical.appointments WHERE Doctor_Name = @name
                   ORDER BY Appointment_Date ASC, Appointment_Time ASC`);
         sendJSON(res, 200, { appointments: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -1636,7 +1628,7 @@ const { loadSecrets } = require('./secrets');
         const result = await pool.request().input('no', sql.VarChar, patientNo)
           .query(`SELECT ID, Doctor_Name, Doctor_Dept, Appointment_Date, Appointment_Time,
                          Reason, Status, Created_At
-                  FROM dbo.appointments WHERE Patient_No = @no
+                  FROM clinical.appointments WHERE Patient_No = @no
                   ORDER BY Appointment_Date DESC, Appointment_Time ASC`);
         sendJSON(res, 200, { appointments: result.recordset });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -1653,7 +1645,7 @@ const { loadSecrets } = require('./secrets');
         await pool.request()
           .input('id',     sql.Int,     id)
           .input('status', sql.VarChar, status)
-          .query(`UPDATE dbo.appointments SET Status=@status WHERE ID=@id`);
+          .query(`UPDATE clinical.appointments SET Status=@status WHERE ID=@id`);
         sendJSON(res, 200, { message: 'Appointment status updated.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
       return;
@@ -1662,36 +1654,7 @@ const { loadSecrets } = require('./secrets');
     // ══════════════════════════════════════════════════════════════════════
     // ── VOICE NOTES ROUTES ────────────────────────────────────────────────
     //
-    // SQL migration (run once — safe to re-run):
-    //
-    //   IF NOT EXISTS (
-    //     SELECT 1 FROM sys.tables
-    //     WHERE object_id = OBJECT_ID('dbo.voice_notes')
-    //   )
-    //   CREATE TABLE dbo.voice_notes (
-    //     ID                  INT IDENTITY(1,1) PRIMARY KEY,
-    //     Patient_No          VARCHAR(50)   NOT NULL,
-    //     Patient_Type        VARCHAR(10)   NOT NULL,
-    //     Blob_Name           VARCHAR(500)  NOT NULL,
-    //     Duration_Seconds    FLOAT         NULL,
-    //     Recorded_By         VARCHAR(200)  NULL,
-    //     Transcript          NVARCHAR(MAX) NULL,   -- raw Whisper text
-    //     Diarized_Transcript NVARCHAR(MAX) NULL,   -- JSON array [{speaker,text}]
-    //     Soap_Note           NVARCHAR(MAX) NULL,   -- JSON object (SOAP sections)
-    //     Language_Detected   NVARCHAR(20)  NULL,   -- e.g. "english", "hindi"
-    //     Created_At          DATETIME      DEFAULT GETDATE()
-    //   );
-    //
-    //   -- Safe column additions if table already exists:
-    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Transcript')
-    //     ALTER TABLE dbo.voice_notes ADD Transcript NVARCHAR(MAX) NULL;
-    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Diarized_Transcript')
-    //     ALTER TABLE dbo.voice_notes ADD Diarized_Transcript NVARCHAR(MAX) NULL;
-    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Soap_Note')
-    //     ALTER TABLE dbo.voice_notes ADD Soap_Note NVARCHAR(MAX) NULL;
-    //   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('dbo.voice_notes') AND name='Language_Detected')
-    //     ALTER TABLE dbo.voice_notes ADD Language_Detected NVARCHAR(20) NULL;
-    //
+    // clinical.voice_notes DDL lives in supabase/migrations/0003_clinical_patients.sql
     // ══════════════════════════════════════════════════════════════════════
 
     // ── POST /api/voice-notes — Upload audio + store transcript data ───────
@@ -1722,13 +1685,13 @@ const { loadSecrets } = require('./secrets');
 
         if (!patientNo) return sendJSON(res, 400, { message: 'patientNo is required.' });
 
-        const ext             = (file.originalname.split('.').pop() || 'webm').toLowerCase();
-        const blobName        = `voice-notes/${patientNo}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+        const ext      = (file.originalname.split('.').pop() || 'webm').toLowerCase();
+        const blobName = `${patientNo}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-        await blockBlobClient.uploadData(file.buffer, {
-          blobHTTPHeaders: { blobContentType: file.mimetype || 'audio/webm' },
-        });
+        const { error: uploadErr } = await supabase.storage
+          .from(VOICE_NOTES_BUCKET)
+          .upload(blobName, file.buffer, { contentType: file.mimetype || 'audio/webm' });
+        if (uploadErr) return sendJSON(res, 500, { message: uploadErr.message });
 
         const pool = await patientsPoolPromise;
         await pool.request()
@@ -1741,7 +1704,7 @@ const { loadSecrets } = require('./secrets');
           .input('diarizedTranscript', sql.NVarChar, safeJson(diarizedRaw))
           .input('soapNote',           sql.NVarChar, safeJson(soapRaw))
           .input('languageDetected',   sql.NVarChar, languageDetected)
-          .query(`INSERT INTO dbo.voice_notes
+          .query(`INSERT INTO clinical.voice_notes
                     (Patient_No, Patient_Type, Blob_Name, Duration_Seconds,
                      Recorded_By, Transcript, Diarized_Transcript, Soap_Note, Language_Detected)
                   VALUES
@@ -1771,8 +1734,9 @@ const { loadSecrets } = require('./secrets');
           const result = await pool.request()
             .input('id', sql.Int, id)
             .query(`SELECT ID, Patient_No, Patient_Type,
-                           Transcript, Diarized_Transcript, Soap_Note, Language_Detected
-                    FROM dbo.voice_notes WHERE ID = @id`);
+                           Transcript, Diarized_Transcript::text AS Diarized_Transcript,
+                           Soap_Note::text AS Soap_Note, Language_Detected
+                    FROM clinical.voice_notes WHERE ID = @id`);
 
           if (!result.recordset.length)
             return sendJSON(res, 404, { message: 'Voice note not found.' });
@@ -1826,24 +1790,25 @@ const { loadSecrets } = require('./secrets');
           .query(`SELECT ID, Patient_No, Patient_Type, Blob_Name,
                          Duration_Seconds, Recorded_By, Created_At,
                          -- include a flag so frontend knows if transcript exists
-                         CASE WHEN Transcript IS NOT NULL AND LEN(Transcript) > 0
+                         CASE WHEN Transcript IS NOT NULL AND length(Transcript) > 0
                               THEN 1 ELSE 0 END AS Has_Transcript
-                  FROM dbo.voice_notes
+                  FROM clinical.voice_notes
                   WHERE Patient_No = @patientNo AND Patient_Type = @patientType
                   ORDER BY Created_At DESC`);
 
-        // Generate 1-hour SAS URL per note. Transcript text is NOT included
-        // in the list response — it is fetched on demand via the /transcript route.
-        const notes = result.recordset.map(note => ({
+        // Generate a 1-hour signed URL per note. Transcript text is NOT
+        // included in the list response — it is fetched on demand via the
+        // /transcript route.
+        const notes = await Promise.all(result.recordset.map(async note => ({
           ID:               note.ID,
           Patient_No:       note.Patient_No,
           Patient_Type:     note.Patient_Type,
-          Blob_URL:         note.Blob_Name ? generateVoiceNoteSasUrl(note.Blob_Name) : null,
+          Blob_URL:         note.Blob_Name ? await generateVoiceNoteSasUrl(note.Blob_Name) : null,
           Duration_Seconds: note.Duration_Seconds,
           Recorded_By:      note.Recorded_By,
           Created_At:       note.Created_At,
           Has_Transcript:   !!note.Has_Transcript,  // tells frontend whether to show accordion
-        }));
+        })));
 
         sendJSON(res, 200, { notes });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }
@@ -1859,19 +1824,21 @@ const { loadSecrets } = require('./secrets');
         const pool = await patientsPoolPromise;
         const row  = await pool.request()
           .input('id', sql.Int, id)
-          .query('SELECT Blob_Name FROM dbo.voice_notes WHERE ID = @id');
+          .query('SELECT Blob_Name FROM clinical.voice_notes WHERE ID = @id');
         if (!row.recordset.length) return sendJSON(res, 404, { message: 'Voice note not found.' });
 
         try {
-          const blockBlobClient = containerClient.getBlockBlobClient(row.recordset[0].Blob_Name);
-          await blockBlobClient.deleteIfExists();
+          const { error: removeErr } = await supabase.storage
+            .from(VOICE_NOTES_BUCKET)
+            .remove([row.recordset[0].Blob_Name]);
+          if (removeErr) console.warn('Storage delete warning:', removeErr.message);
         } catch (blobErr) {
-          console.warn('Azure blob delete warning:', blobErr.message);
+          console.warn('Storage delete warning:', blobErr.message);
         }
 
         await pool.request()
           .input('id', sql.Int, id)
-          .query('DELETE FROM dbo.voice_notes WHERE ID = @id');
+          .query('DELETE FROM clinical.voice_notes WHERE ID = @id');
 
         sendJSON(res, 200, { message: 'Voice note deleted.' });
       } catch (err) { sendJSON(res, 500, { message: err.message }); }

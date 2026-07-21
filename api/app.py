@@ -11,14 +11,11 @@ Architecture:
     Phase 5  Patient counselling     — drug + condition services
     Phase 6  Orchestrator synthesis  — cross-domain clinical intelligence
 
-Azure Services:
-    Azure AI Foundry / Agent Service  — multi-agent orchestration
-    Azure OpenAI (GPT-4o)             — evidence synthesis + counselling
-    Azure SQL Database                — interaction cache + analysis log
-    Azure SQL Audit Database          — HIPAA-compliant PHI audit log
-    Azure Key Vault                   — secrets management
-    Azure Application Insights        — telemetry + custom alert events
-    Azure AI Foundry Tracing          — LLM prompt/response tracing
+Stack:
+    OpenAI (direct API)               — multi-agent orchestration + synthesis
+    Supabase Postgres (cache schema)  — interaction cache + analysis log
+    Supabase Postgres (audit project) — HIPAA-compliant PHI audit log
+    Supabase Storage                  — profile images + voice notes
 
 HIPAA Compliance:
     All PHI-touching endpoints are logged to phi_audit_log.
@@ -46,61 +43,8 @@ sys.path.insert(0, os.getcwd())
 from dotenv import load_dotenv
 load_dotenv()
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from keyvault import load_all_secrets
-load_all_secrets()
-
-# ── Azure Application Insights ────────────────────────────────────────────────
-_AI_CONN_STR = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
-
-if _AI_CONN_STR:
-    try:
-        from opencensus.ext.azure.log_exporter import AzureLogHandler
-        _ai_handler = AzureLogHandler(connection_string=_AI_CONN_STR)
-        _ai_handler.setLevel(logging.WARNING)
-        logging.getLogger("vabgenrx").addHandler(_ai_handler)
-        print("✅ Azure Application Insights connected")
-    except Exception as e:
-        print(f"⚠️  Application Insights setup failed: {e}")
-else:
-    print("⚠️  Application Insights not configured — skipping")
-
 logger = logging.getLogger("vabgenrx")
 logger.setLevel(logging.INFO)
-
-# ── Azure AI Foundry Tracing ──────────────────────────────────────────────────
-_PROJECT_ENDPOINT = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
-_PROJECT_CONN_STR = _PROJECT_ENDPOINT  # updated below if tracing connects
-
-if _PROJECT_ENDPOINT:
-    try:
-        import pkg_resources
-        print(f"📦 setuptools version: {pkg_resources.get_distribution('setuptools').version}")
-        from azure.ai.projects           import AIProjectClient
-        from azure.identity              import DefaultAzureCredential
-        from azure.monitor.opentelemetry import configure_azure_monitor
-
-        _project_client   = AIProjectClient(
-            endpoint   = _PROJECT_ENDPOINT,
-            credential = DefaultAzureCredential()
-        )
-        _foundry_conn_str = (
-            _project_client.telemetry
-            .get_application_insights_connection_string()
-        )
-        configure_azure_monitor(connection_string=_foundry_conn_str)
-        _PROJECT_CONN_STR = _foundry_conn_str
-        print("✅ Azure AI Foundry tracing enabled")
-
-    except ImportError as e:
-        print(f"⚠️  Foundry tracing: package not found — {e}")
-    except AttributeError as e:
-        print(f"⚠️  Foundry tracing: API mismatch — {e}")
-    except Exception as e:
-        print(f"⚠️  Foundry tracing setup failed: {e}")
-else:
-    print("⚠️  Foundry tracing not configured — skipping")
-
 
 # ── Service imports ───────────────────────────────────────────────────────────
 from services.pubmed_service              import PubMedService
@@ -135,14 +79,20 @@ app = FastAPI(
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+# FRONTEND_URL is the deployed Vercel URL (set as a Render env var) — no
+# hardcoded production origin, since that changes with each hosting target.
+_frontend_url = os.getenv("FRONTEND_URL", "")
+_cors_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8080",
+]
+if _frontend_url:
+    _cors_origins.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = [
-        "https://yellow-sea-05177870f.2.azurestaticapps.net",  # production frontend
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:8080",
-    ],
+    allow_origins     = _cors_origins,
     allow_credentials = True,
     allow_methods     = ["*"],
     allow_headers     = ["*"],
@@ -513,8 +463,6 @@ def root():
         "ready":      _services_ready,
         "platform":   "Clinical Intelligence Platform",
         "version":    "3.0.0",
-        "monitoring": "Azure Application Insights" if _AI_CONN_STR else "disabled",
-        "tracing":    "Azure AI Foundry" if _PROJECT_CONN_STR else "disabled",
     }
 
 
@@ -527,8 +475,6 @@ def health():
         "cache":       cache.get_stats() if cache else {},
         "fda_cache":   fda.get_cache_stats() if fda else {},
         "audit":       audit.get_stats() if audit else {},
-        "monitoring":  "Azure Application Insights" if _AI_CONN_STR else "disabled",
-        "tracing":     "Azure AI Foundry" if _PROJECT_CONN_STR else "disabled",
         "api_version": "3.0.0"
     }
 
@@ -1372,9 +1318,9 @@ async def transcribe_and_summarize(
         }
 
     HIPAA:
-        Audio is transmitted to Azure OpenAI Whisper.
-        Requires BAA with Microsoft and abuse-monitoring opt-out
-        on the Azure OpenAI resource before use with real patient data.
+        Audio is transmitted to OpenAI's Whisper endpoint.
+        Requires a BAA with OpenAI and zero-data-retention
+        configuration before use with real patient data.
         All accesses are logged to phi_audit_log.
     """
     _check_ready()
@@ -1415,7 +1361,7 @@ async def transcribe_and_summarize(
         )
 
     # ── Run transcription + SOAP in thread pool ───────────────────────────────
-    # TranscriptionService makes blocking HTTP calls to Azure OpenAI.
+    # TranscriptionService makes blocking HTTP calls to OpenAI.
     # run_in_executor keeps the async event loop unblocked.
     try:
         loop   = asyncio.get_event_loop()

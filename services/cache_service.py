@@ -1,8 +1,9 @@
 """
-Azure SQL Cache Service for VabGenRx.
+Supabase Postgres Cache Service for VabGenRx.
 
 This module manages the caching layer for drug interaction
-analyses and evidence results using Azure SQL Database.
+analyses and evidence results using the `cache` schema in the
+main Supabase Postgres project.
 
 Purpose
 -------
@@ -31,14 +32,18 @@ import os
 from datetime import datetime
 from typing import Dict, Optional
 from dotenv import load_dotenv
+from psycopg2.extras import NamedTupleCursor
 
 load_dotenv()
 
-CACHE_TTL_DAYS       = int(os.getenv("CACHE_TTL_DAYS", 30))
+CACHE_TTL_DAYS        = int(os.getenv("CACHE_TTL_DAYS", 30))
 ANALYSIS_LOG_TTL_DAYS = int(os.getenv("ANALYSIS_LOG_TTL_DAYS", 365))
 
 
 class AzureSQLCacheService:
+    # Class name kept as-is — renaming would touch every call site across
+    # the agents/services that instantiate this class, out of scope for
+    # a platform migration.
 
     def __init__(self):
         self.available = self._test_connection()
@@ -52,7 +57,7 @@ class AzureSQLCacheService:
             conn.cursor().execute("SELECT 1")
             return True
         except Exception as e:
-            print(f"⚠️  Azure SQL Cache unavailable: {e}")
+            print(f"⚠️  Supabase cache unavailable: {e}")
             print("   Running without cache (results won't be stored)")
             return False
 
@@ -61,15 +66,8 @@ class AzureSQLCacheService:
             from services.db_connection import get_connection
             return get_connection()
         except Exception:
-            import pyodbc
-            conn_str = (
-                f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-                f"SERVER={os.getenv('AZURE_SQL_SERVER')};"
-                f"DATABASE={os.getenv('AZURE_SQL_DATABASE')};"
-                f"UID={os.getenv('AZURE_SQL_USERNAME')};"
-                f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
-            )
-            return pyodbc.connect(conn_str, timeout=10)
+            import psycopg2
+            return psycopg2.connect(os.getenv("DATABASE_URL"), connect_timeout=10)
 
     # ── Shared normaliser ─────────────────────────────────────────────────────
 
@@ -102,23 +100,23 @@ class AzureSQLCacheService:
         d1, d2 = sorted([drug1.lower(), drug2.lower()])
         try:
             conn = self._conn()
-            cur  = conn.cursor()
+            cur  = conn.cursor(cursor_factory=NamedTupleCursor)
             cur.execute("""
-                SELECT full_result, cached_at, access_count
-                FROM interaction_cache
-                WHERE drug1 = ? AND drug2 = ?
-                  AND DATEDIFF(day, cached_at, GETDATE()) < ?
-            """, d1, d2, CACHE_TTL_DAYS)
+                SELECT full_result::text AS full_result, cached_at, access_count
+                FROM cache.interaction_cache
+                WHERE drug1 = %s AND drug2 = %s
+                  AND cached_at > now() - make_interval(days => %s)
+            """, (d1, d2, CACHE_TTL_DAYS))
             row = cur.fetchone()
             if row:
                 cur.execute("""
-                    UPDATE interaction_cache
+                    UPDATE cache.interaction_cache
                     SET access_count  = access_count + 1,
-                        last_accessed = GETDATE()
-                    WHERE drug1 = ? AND drug2 = ?
-                """, d1, d2)
+                        last_accessed = now()
+                    WHERE drug1 = %s AND drug2 = %s
+                """, (d1, d2))
                 conn.commit()
-                age = (datetime.now() - row.cached_at).days
+                age = (datetime.now(row.cached_at.tzinfo) - row.cached_at).days
                 print(f"      💾 Cache HIT: {d1}+{d2} "
                       f"(cached {age}d ago, "
                       f"{row.access_count} uses)")
@@ -164,39 +162,27 @@ class AzureSQLCacheService:
             result["evidence"]             = ev
 
             cur.execute("""
-                MERGE interaction_cache AS t
-                USING (SELECT ? AS drug1, ? AS drug2) AS s
-                ON t.drug1 = s.drug1 AND t.drug2 = s.drug2
-                WHEN MATCHED THEN UPDATE SET
-                    full_result              = ?,
-                    severity                 = ?,
-                    confidence               = ?,
-                    pubmed_papers            = ?,
-                    fda_reports              = ?,
-                    fda_label_sections_count = ?,
-                    cached_at                = GETDATE()
-                WHEN NOT MATCHED THEN INSERT
-                    (drug1, drug2, interaction_type,
-                     severity, confidence,
-                     pubmed_papers, fda_reports,
-                     fda_label_sections_count, full_result)
-                VALUES (?, ?, 'drug_drug', ?, ?, ?, ?, ?, ?);
-            """,
+                INSERT INTO cache.interaction_cache
+                    (drug1, drug2, interaction_type, severity, confidence,
+                     pubmed_papers, fda_reports, fda_label_sections_count, full_result)
+                VALUES (%s, %s, 'drug_drug', %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (drug1, drug2) DO UPDATE SET
+                    full_result              = excluded.full_result,
+                    severity                 = excluded.severity,
+                    confidence               = excluded.confidence,
+                    pubmed_papers            = excluded.pubmed_papers,
+                    fda_reports              = excluded.fda_reports,
+                    fda_label_sections_count = excluded.fda_label_sections_count,
+                    cached_at                = now()
+            """, (
                 d1, d2,
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_reports,
+                fda_sec_count,
                 json.dumps(result),
-                result.get("severity"),
-                result.get("confidence", 0.0),
-                pubmed_papers,
-                fda_reports,
-                fda_sec_count,
-                d1, d2,
-                result.get("severity"),
-                result.get("confidence", 0.0),
-                pubmed_papers,
-                fda_reports,
-                fda_sec_count,
-                json.dumps(result)
-            )
+            ))
             conn.commit()
             print(f"      💾 Saved drug-drug cache: {d1}+{d2}")
         except Exception as e:
@@ -212,23 +198,23 @@ class AzureSQLCacheService:
         d, dis = drug.lower(), disease.lower()
         try:
             conn = self._conn()
-            cur  = conn.cursor()
+            cur  = conn.cursor(cursor_factory=NamedTupleCursor)
             cur.execute("""
-                SELECT full_result, cached_at, access_count
-                FROM disease_cache
-                WHERE drug = ? AND disease = ?
-                  AND DATEDIFF(day, cached_at, GETDATE()) < ?
-            """, d, dis, CACHE_TTL_DAYS)
+                SELECT full_result::text AS full_result, cached_at, access_count
+                FROM cache.disease_cache
+                WHERE drug = %s AND disease = %s
+                  AND cached_at > now() - make_interval(days => %s)
+            """, (d, dis, CACHE_TTL_DAYS))
             row = cur.fetchone()
             if row:
                 cur.execute("""
-                    UPDATE disease_cache
+                    UPDATE cache.disease_cache
                     SET access_count  = access_count + 1,
-                        last_accessed = GETDATE()
-                    WHERE drug = ? AND disease = ?
-                """, d, dis)
+                        last_accessed = now()
+                    WHERE drug = %s AND disease = %s
+                """, (d, dis))
                 conn.commit()
-                age = (datetime.now() - row.cached_at).days
+                age = (datetime.now(row.cached_at.tzinfo) - row.cached_at).days
                 print(f"      💾 Cache HIT: {d}+{dis} "
                       f"(cached {age}d ago)")
                 result = json.loads(row.full_result)
@@ -293,38 +279,27 @@ class AzureSQLCacheService:
             result["evidence"]             = ev
 
             cur.execute("""
-                MERGE disease_cache AS t
-                USING (SELECT ? AS drug, ? AS disease) AS s
-                ON t.drug = s.drug AND t.disease = s.disease
-                WHEN MATCHED THEN UPDATE SET
-                    full_result              = ?,
-                    severity                 = ?,
-                    confidence               = ?,
-                    pubmed_papers            = ?,
-                    fda_label_sections_count = ?,
-                    contraindicated          = ?,
-                    cached_at                = GETDATE()
-                WHEN NOT MATCHED THEN INSERT
-                    (drug, disease, contraindicated, severity,
-                     confidence, pubmed_papers,
-                     fda_label_sections_count, full_result)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """,
+                INSERT INTO cache.disease_cache
+                    (drug, disease, contraindicated, severity, confidence,
+                     pubmed_papers, fda_label_sections_count, full_result)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (drug, disease) DO UPDATE SET
+                    full_result              = excluded.full_result,
+                    severity                 = excluded.severity,
+                    confidence               = excluded.confidence,
+                    pubmed_papers            = excluded.pubmed_papers,
+                    fda_label_sections_count = excluded.fda_label_sections_count,
+                    contraindicated          = excluded.contraindicated,
+                    cached_at                = now()
+            """, (
                 d, dis,
+                bool(result.get("contraindicated")),
+                result.get("severity"),
+                result.get("confidence", 0.0),
+                pubmed_papers,
+                fda_sec_count,
                 json.dumps(result),
-                result.get("severity"),
-                result.get("confidence", 0.0),
-                pubmed_papers,
-                fda_sec_count,
-                1 if result.get("contraindicated") else 0,
-                d, dis,
-                1 if result.get("contraindicated") else 0,
-                result.get("severity"),
-                result.get("confidence", 0.0),
-                pubmed_papers,
-                fda_sec_count,
-                json.dumps(result)
-            )
+            ))
             conn.commit()
             print(f"      💾 Saved drug-disease cache: {d}+{dis}")
         except Exception as e:
@@ -338,23 +313,23 @@ class AzureSQLCacheService:
         d = drug.lower()
         try:
             conn = self._conn()
-            cur  = conn.cursor()
+            cur  = conn.cursor(cursor_factory=NamedTupleCursor)
             cur.execute("""
-                SELECT full_result, cached_at, access_count
-                FROM food_cache
-                WHERE drug = ?
-                  AND DATEDIFF(day, cached_at, GETDATE()) < ?
-            """, d, CACHE_TTL_DAYS)
+                SELECT full_result::text AS full_result, cached_at, access_count
+                FROM cache.food_cache
+                WHERE drug = %s
+                  AND cached_at > now() - make_interval(days => %s)
+            """, (d, CACHE_TTL_DAYS))
             row = cur.fetchone()
             if row:
                 cur.execute("""
-                    UPDATE food_cache
+                    UPDATE cache.food_cache
                     SET access_count  = access_count + 1,
-                        last_accessed = GETDATE()
-                    WHERE drug = ?
-                """, d)
+                        last_accessed = now()
+                    WHERE drug = %s
+                """, (d,))
                 conn.commit()
-                age = (datetime.now() - row.cached_at).days
+                age = (datetime.now(row.cached_at.tzinfo) - row.cached_at).days
                 print(f"      💾 Cache HIT: {d} food "
                       f"(cached {age}d ago)")
                 return json.loads(row.full_result)
@@ -372,34 +347,25 @@ class AzureSQLCacheService:
             conn = self._conn()
             cur  = conn.cursor()
             cur.execute("""
-                MERGE food_cache AS t
-                USING (SELECT ? AS drug) AS s
-                ON t.drug = s.drug
-                WHEN MATCHED THEN UPDATE SET
-                    full_result       = ?,
-                    foods_to_avoid    = ?,
-                    foods_to_separate = ?,
-                    foods_to_monitor  = ?,
-                    pubmed_papers     = ?,
-                    cached_at         = GETDATE()
-                WHEN NOT MATCHED THEN INSERT
+                INSERT INTO cache.food_cache
                     (drug, foods_to_avoid, foods_to_separate,
                      foods_to_monitor, pubmed_papers, full_result)
-                VALUES (?, ?, ?, ?, ?, ?);
-            """,
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (drug) DO UPDATE SET
+                    full_result       = excluded.full_result,
+                    foods_to_avoid    = excluded.foods_to_avoid,
+                    foods_to_separate = excluded.foods_to_separate,
+                    foods_to_monitor  = excluded.foods_to_monitor,
+                    pubmed_papers     = excluded.pubmed_papers,
+                    cached_at         = now()
+            """, (
                 d,
+                json.dumps(result.get("foods_to_avoid", [])),
+                json.dumps(result.get("foods_to_separate", [])),
+                json.dumps(result.get("foods_to_monitor", [])),
+                result.get("pubmed_count", 0),
                 json.dumps(result),
-                json.dumps(result.get("foods_to_avoid", [])),
-                json.dumps(result.get("foods_to_separate", [])),
-                json.dumps(result.get("foods_to_monitor", [])),
-                result.get("pubmed_count", 0),
-                d,
-                json.dumps(result.get("foods_to_avoid", [])),
-                json.dumps(result.get("foods_to_separate", [])),
-                json.dumps(result.get("foods_to_monitor", [])),
-                result.get("pubmed_count", 0),
-                json.dumps(result)
-            )
+            ))
             conn.commit()
             print(f"      💾 Saved food cache: {d}")
         except Exception as e:
@@ -441,18 +407,18 @@ class AzureSQLCacheService:
             conn = self._conn()
             cur  = conn.cursor()
             cur.execute("""
-                INSERT INTO analysis_log
+                INSERT INTO cache.analysis_log
                     (session_id, medications, diseases,
                      risk_level, severe_ddi, moderate_ddi,
                      total_papers)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
                 session_id,
                 ", ".join(medications),
                 ", ".join(diseases) if diseases else "",
                 risk, severe, moderate,
-                ddi_papers + dis_papers + food_papers
-            )
+                ddi_papers + dis_papers + food_papers,
+            ))
             conn.commit()
             print(f"   📊 Analysis logged "
                   f"(session: {session_id}, risk: {risk})")
@@ -469,11 +435,11 @@ class AzureSQLCacheService:
 
         Retention periods come from env vars — no hardcoded values:
           CACHE_TTL_DAYS        → cache tables  (default 30 days)
-          ANALYSIS_LOG_TTL_DAYS → analysis_log  (default 365 days)
+          ANALYSIS_LOG_TTL_DAYS → cache.analysis_log (default 365 days)
 
         PHI audit log retention (6 years) is handled separately
         by AuditLogService.enforce_retention_policy() in logs/
-        because it lives in a different database.
+        because it lives in a different Supabase project.
 
         Returns dict of {table_name: rows_deleted} for logging.
         Never raises — retention cleanup must never break startup.
@@ -488,17 +454,16 @@ class AzureSQLCacheService:
 
             # ── Cache tables — CACHE_TTL_DAYS (default 30) ────────
             for table, col in [
-                ("interaction_cache",          "cached_at"),
-                ("disease_cache",              "cached_at"),
-                ("food_cache",                 "cached_at"),
-                ("drug_counseling_cache",      "cached_at"),
-                ("condition_counseling_cache", "cached_at"),
+                ("cache.interaction_cache",          "cached_at"),
+                ("cache.disease_cache",               "cached_at"),
+                ("cache.food_cache",                  "cached_at"),
+                ("cache.drug_counseling_cache",       "cached_at"),
+                ("cache.condition_counseling_cache",  "cached_at"),
             ]:
                 cur.execute(f"""
                     DELETE FROM {table}
-                    WHERE DATEDIFF(day, {col}, GETUTCDATE())
-                          > ?
-                """, CACHE_TTL_DAYS)
+                    WHERE {col} < now() - make_interval(days => %s)
+                """, (CACHE_TTL_DAYS,))
                 deleted         = cur.rowcount
                 results[table]  = deleted
                 if deleted > 0:
@@ -507,16 +472,17 @@ class AzureSQLCacheService:
                           f"(>{CACHE_TTL_DAYS} days old)")
 
             # ── Analysis log — ANALYSIS_LOG_TTL_DAYS (default 365) ─
+            # NOTE: was `logged_at` in the pre-migration query, which
+            # never matched the DDL's `analyzed_at` column — fixed here.
             cur.execute("""
-                DELETE FROM analysis_log
-                WHERE DATEDIFF(day, logged_at, GETUTCDATE())
-                      > ?
-            """, ANALYSIS_LOG_TTL_DAYS)
+                DELETE FROM cache.analysis_log
+                WHERE analyzed_at < now() - make_interval(days => %s)
+            """, (ANALYSIS_LOG_TTL_DAYS,))
             deleted                  = cur.rowcount
-            results["analysis_log"]  = deleted
+            results["cache.analysis_log"] = deleted
             if deleted > 0:
                 print(f"   🗑️  Retention: deleted {deleted} "
-                      f"rows from analysis_log "
+                      f"rows from cache.analysis_log "
                       f"(>{ANALYSIS_LOG_TTL_DAYS} days old)")
 
             conn.commit()
@@ -532,23 +498,23 @@ class AzureSQLCacheService:
 
     def get_stats(self) -> Dict:
         if not self.available:
-            return {"cache_location": "Azure SQL (not connected)"}
+            return {"cache_location": "Supabase Postgres (not connected)"}
         try:
             conn = self._conn()
             cur  = conn.cursor()
             cur.execute(
                 "SELECT COUNT(*), SUM(access_count) "
-                "FROM interaction_cache"
+                "FROM cache.interaction_cache"
             )
             ddi_row  = cur.fetchone()
             cur.execute(
                 "SELECT COUNT(*), SUM(access_count) "
-                "FROM disease_cache"
+                "FROM cache.disease_cache"
             )
             dis_row  = cur.fetchone()
-            cur.execute("SELECT COUNT(*) FROM food_cache")
+            cur.execute("SELECT COUNT(*) FROM cache.food_cache")
             food_row = cur.fetchone()
-            cur.execute("SELECT COUNT(*) FROM analysis_log")
+            cur.execute("SELECT COUNT(*) FROM cache.analysis_log")
             log_row  = cur.fetchone()
             return {
                 "drug_drug_cached":    ddi_row[0]  or 0,
@@ -558,10 +524,10 @@ class AzureSQLCacheService:
                 "total_cache_hits":    (
                     (ddi_row[1] or 0) + (dis_row[1] or 0)
                 ),
-                "cache_location":      "Azure SQL Database",
+                "cache_location":      "Supabase Postgres",
             }
         except Exception as e:
             return {
                 "error":          str(e),
-                "cache_location": "Azure SQL (error)",
+                "cache_location": "Supabase Postgres (error)",
             }

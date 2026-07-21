@@ -1,5 +1,5 @@
 """
-Test VabGenRx Agent with new drugs not in Azure SQL cache.
+Test VabGenRx Agent with new drugs not in Supabase cache.
 Edit the test cases below and run:
     python tests/test_agent_new_drugs.py
 """

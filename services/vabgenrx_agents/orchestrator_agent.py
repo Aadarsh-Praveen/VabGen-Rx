@@ -27,7 +27,7 @@ Capabilities
 • Prioritization of clinical actions
 • Unified clinical summary generation
 • Evidence aggregation across domains
-• Azure AI Content Safety scan on all output text
+• OpenAI moderation scan on all output text
 • OpenTelemetry trace correlation via session_id
 
 Architecture Role
@@ -67,7 +67,7 @@ import json
 import logging
 from typing import Dict, List
 
-from azure.ai.agents import AgentsClient
+from openai import OpenAI
 
 from .base_agent          import _BaseAgent
 from services.content_safety import ClinicalContentSafety
@@ -83,13 +83,13 @@ class VabGenRxOrchestratorAgent(_BaseAgent):
     - Identifies compounding risk patterns across domains
     - Prioritizes clinical actions by urgency
     - Generates unified clinical summary
-    - Scans all output through Azure AI Content Safety (single call)
+    - Scans all output through OpenAI moderation (single call)
     - Correlates traces via session_id for observability
     """
 
     def __init__(
         self,
-        client:   AgentsClient,
+        client:   OpenAI,
         model:    str,
         endpoint: str
     ):
@@ -240,7 +240,7 @@ Return ONLY valid JSON:
                 session_id
             )
 
-        # ── Azure AI Content Safety scan ──────────────────────────
+        # ── OpenAI moderation scan ──────────────────────────
         # Combines clinical_summary and priority_actions into one
         # API call to reduce latency. session_id is a UUID — not PHI.
         clinical_summary = result.get("clinical_summary", "")

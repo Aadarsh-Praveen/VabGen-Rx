@@ -1,5 +1,5 @@
 """
-Thread-Safe Azure SQL Connection Manager for VabGenRx.
+Thread-Safe Supabase Postgres Connection Manager for VabGenRx.
 
 This module provides a shared database connection utility
 used by the caching and logging services.
@@ -20,23 +20,17 @@ database connection.
 Typical Usage
 -------------
 Other services call get_connection() whenever they need
-to interact with the Azure SQL database.
+to interact with the cache schema in the main Supabase project.
 """
 
 import os
-import pyodbc
+import psycopg2
 from threading import local
 from dotenv import load_dotenv
 
 load_dotenv()
 
-_conn_str = (
-    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-    f"SERVER={os.getenv('AZURE_SQL_SERVER')};"
-    f"DATABASE={os.getenv('AZURE_SQL_DATABASE')};"
-    f"UID={os.getenv('AZURE_SQL_USERNAME')};"
-    f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
-)
+_dsn = os.getenv("DATABASE_URL")
 
 # Each thread gets its own private connection object
 _thread_local = local()
@@ -59,6 +53,6 @@ def get_connection():
         _thread_local.connection = None
 
     # Create a new connection for this thread
-    _thread_local.connection = pyodbc.connect(_conn_str, timeout=10)
-    print("✅ Azure SQL Cache connected")
+    _thread_local.connection = psycopg2.connect(_dsn, connect_timeout=10)
+    print("✅ Supabase Postgres (cache schema) connected")
     return _thread_local.connection

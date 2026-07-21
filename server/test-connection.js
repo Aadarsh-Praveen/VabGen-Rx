@@ -1,33 +1,28 @@
 require('dotenv').config();
-const sql = require('mssql');
-
-const baseConfig = {
-  server: process.env.DB_SERVER,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  port: parseInt(process.env.DB_PORT),
-  options: { encrypt: true, trustServerCertificate: false },
-  connectionTimeout: 15000,
-};
-
-const testDB = async (database) => {
-  console.log(`\n🔌 Testing [${database}]...`);
-  try {
-    const pool = await new sql.ConnectionPool({ ...baseConfig, database }).connect();
-    const result = await pool.request().query('SELECT DB_NAME() AS db, GETDATE() AS now');
-    console.log(`✅ [${database}] connected! DB reports:`, result.recordset[0]);
-    await pool.close();
-  } catch (err) {
-    console.error(`❌ [${database}] FAILED`);
-    console.error(`   Code: ${err.code}`);
-    console.error(`   Message: ${err.message}`);
-  }
-};
+const { Pool } = require('pg');
 
 (async () => {
-  console.log('Server:', process.env.DB_SERVER);
-  console.log('User:  ', process.env.DB_USER);
-  await testDB('credentials');
-  await testDB('patients');
-  console.log('\nDone.');
+  console.log('Connecting to:', process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/:[^:@]*@/, ':****@') : '(DATABASE_URL not set)');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+  try {
+    const result = await pool.query('SELECT current_database() AS db, now() AS now');
+    console.log('✅ Connected! DB reports:', result.rows[0]);
+
+    const schemas = await pool.query(`
+      SELECT table_schema, count(*) AS table_count
+      FROM information_schema.tables
+      WHERE table_schema IN ('app', 'clinical')
+      GROUP BY table_schema
+      ORDER BY table_schema
+    `);
+    console.log('Tables per schema:', schemas.rows);
+  } catch (err) {
+    console.error('❌ Connection FAILED');
+    console.error('   Message:', err.message);
+  } finally {
+    await pool.end();
+  }
 })();

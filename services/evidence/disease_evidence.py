@@ -63,7 +63,7 @@ Drug-disease risk analysis
 
 Caching Strategy
 ----------------
-Drug–disease evidence is cached using Azure SQL to:
+Drug–disease evidence is cached using Supabase Postgres to:
 
 • Reduce PubMed API calls
 • Reduce FDA label retrieval latency

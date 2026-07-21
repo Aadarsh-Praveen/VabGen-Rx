@@ -6,7 +6,7 @@ sources such as PubMed and FDA databases to determine
 the clinical significance of drug interactions and
 drug–disease contraindications.
 
-The analyzer uses Azure OpenAI GPT-4o to synthesize
+The analyzer uses OpenAI to synthesize
 evidence and produce structured clinical recommendations.
 
 Core Responsibilities
@@ -28,12 +28,12 @@ This ensures clinical transparency and avoids
 hallucinated medical conclusions.
 """
 
-from openai import AzureOpenAI
 import json
-import os
 import logging
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
+
+from services.openai_client import get_openai_client, OPENAI_MODEL
 
 load_dotenv()
 
@@ -43,7 +43,7 @@ logger = logging.getLogger("vabgenrx")
 
 class EvidenceAnalyzer:
     """
-    Analyzes medical evidence using Azure OpenAI GPT-4o.
+    Analyzes medical evidence using OpenAI.
 
     Evidence-only approach:
     - Tier 1: High evidence  (20+ papers or 1000+ FDA reports)
@@ -53,12 +53,7 @@ class EvidenceAnalyzer:
     """
 
     def __init__(self):
-        self.client = AzureOpenAI(
-            api_key        = os.getenv("AZURE_OPENAI_KEY"),
-            api_version    = os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        self.client = get_openai_client()
 
     # ── Evidence Tier ─────────────────────────────────────────────────────────
 
@@ -601,13 +596,13 @@ If none found: {{"no_significant_interactions": true}}
 
     def _call_gpt4o(self, prompt: str) -> Dict:
         """
-        Call Azure OpenAI GPT-4o with error handling.
+        Call OpenAI with error handling.
         System prompt updated — removed AI knowledge fallback
         instruction.
         """
         try:
             response = self.client.chat.completions.create(
-                model    = self.deployment,
+                model    = OPENAI_MODEL,
                 messages = [
                     {
                         "role":    "system",
@@ -655,7 +650,7 @@ If none found: {{"no_significant_interactions": true}}
 
         except Exception as e:
             # ── Alert 8: LLM failure ──────────────────────────────
-            # Covers Azure OpenAI timeouts, quota errors,
+            # Covers OpenAI timeouts, quota errors,
             # auth failures, and JSON parse errors.
             # evidence_analyzer is the most critical LLM caller —
             # failures here mean drug interaction analysis returned

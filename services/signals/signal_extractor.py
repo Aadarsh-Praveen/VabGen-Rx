@@ -55,7 +55,7 @@ Round 2 (only if needed):
 Reliability Features
 --------------------
 • Robust JSON parsing for LLM responses
-• Azure Application Insights logging for failures
+• Structured logging for failures
 • Graceful degradation — pipeline continues even if
   signal extraction fails
 
@@ -64,12 +64,12 @@ context-aware polypharmacy risk analysis without relying
 on hardcoded rule sets or predefined organ-system lists.
 """
 
-import os
 import json
 import logging
 from typing import Dict, List
-from openai import AzureOpenAI
 from dotenv import load_dotenv
+
+from services.openai_client import get_openai_client, OPENAI_MODEL
 
 load_dotenv()
 
@@ -88,12 +88,7 @@ class SignalExtractor:
     """
 
     def __init__(self):
-        self.llm = AzureOpenAI(
-            api_key        = os.getenv("AZURE_OPENAI_KEY"),
-            api_version    = os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        self.llm = get_openai_client()
 
     # ── Public ────────────────────────────────────────────────────────────────
 
@@ -336,7 +331,7 @@ If no compounding signals:
 
         try:
             response = self.llm.chat.completions.create(
-                model    = self.deployment,
+                model    = OPENAI_MODEL,
                 messages = [
                     {
                         "role":    "system",

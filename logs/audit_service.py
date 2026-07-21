@@ -13,13 +13,17 @@ HIPAA Requirements covered:
   and seeded into the DB on startup — no hardcoded SQL values.
 
 
-Database: vabgenrx-audit-logs (separate from cache DB)
-Credentials: AZURE_SQL_AUDIT_* env vars (separate from cache)
+Database: a separate Supabase project (audit schema), physically
+isolated from the main project (app/clinical/cache schemas).
+Credentials: AUDIT_DATABASE_URL env var (separate from DATABASE_URL) —
+this connects as the restricted `audit_writer` role (INSERT/SELECT
+only, see supabase-audit/migrations/0001_audit.sql), so a leaked
+main-project credential has no path to tamper with audit history.
 """
 
 import os
 import hashlib
-import pyodbc
+import psycopg2
 from datetime import datetime
 from threading import local
 from typing   import Dict, Optional
@@ -27,59 +31,61 @@ from dotenv   import load_dotenv
 
 load_dotenv()
 
-# ── Audit DB connection string ────────────────────────────────────
-# Audit DB is on a SEPARATE server from the cache DB.
-# AZURE_SQL_AUDIT_SERVER points to admin-vabgen.database.windows.net
-# AZURE_SQL_SERVER points to drug-interactions.database.windows.net
-# Keeping them on separate servers is correct HIPAA architecture —
-# audit logs cannot be tampered with if the cache server is compromised.
-_audit_conn_str = (
-    f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-    f"SERVER={os.getenv('AZURE_SQL_AUDIT_SERVER')};"
-    f"DATABASE={os.getenv('AZURE_SQL_AUDIT_DATABASE', 'vabgenrx-audit-logs')};"
-    f"UID={os.getenv('AZURE_SQL_AUDIT_USERNAME')};"
-    f"PWD={os.getenv('AZURE_SQL_AUDIT_PASSWORD')}"
-)
+# ── Audit DB connections ──────────────────────────────────────────
+# Audit DB is a SEPARATE Supabase project from the main project.
+# Two roles, two DSNs — matches supabase-audit/migrations/0001_audit.sql:
+#   AUDIT_DATABASE_URL       -> audit_writer (INSERT/SELECT only) — used
+#                               for every day-to-day log() write, so a
+#                               leaked write-path credential can append
+#                               but never tamper with existing history.
+#   AUDIT_ADMIN_DATABASE_URL -> audit_admin (adds UPDATE/DELETE) — used
+#                               only for seeding data_retention_policy
+#                               and the 6-year retention purge.
+# Keeping this DB physically separate from the main app/cache project is
+# correct HIPAA architecture — audit logs cannot be tampered with even if
+# the main project's credentials are compromised.
+_audit_dsn       = os.getenv("AUDIT_DATABASE_URL")
+_audit_admin_dsn = os.getenv("AUDIT_ADMIN_DATABASE_URL", _audit_dsn)
 
-# Thread-local connection — same pattern as main db_connection.py
+# Thread-local connections — same pattern as main db_connection.py
 _thread_local = local()
 
 # ── Retention policies defined in code ───────────────────────────
-# Single source of truth — seeded into data_retention_policy table
+# Single source of truth — seeded into audit.data_retention_policy
 # on startup. Change here → takes effect on next deploy.
 RETENTION_POLICIES = [
     # Cache DB tables — 30 days
     {
         "table_name":     "interaction_cache",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("CACHE_TTL_DAYS", 30)),
         "description":    "Drug-drug interaction synthesis cache.",
         "hipaa_required": False,
     },
     {
         "table_name":     "disease_cache",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("CACHE_TTL_DAYS", 30)),
         "description":    "Drug-disease contraindication cache.",
         "hipaa_required": False,
     },
     {
         "table_name":     "food_cache",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("CACHE_TTL_DAYS", 30)),
         "description":    "Drug-food interaction cache.",
         "hipaa_required": False,
     },
     {
         "table_name":     "drug_counseling_cache",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("CACHE_TTL_DAYS", 30)),
         "description":    "Drug counseling points cache.",
         "hipaa_required": False,
     },
     {
         "table_name":     "condition_counseling_cache",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("CACHE_TTL_DAYS", 30)),
         "description":    "Condition counseling cache.",
         "hipaa_required": False,
@@ -87,7 +93,7 @@ RETENTION_POLICIES = [
     # Analysis log — 1 year
     {
         "table_name":     "analysis_log",
-        "database_name":  "vabgenrx-drug-interactions-cache",
+        "database_name":  "vabgenrx-cache",
         "retention_days": int(os.getenv("ANALYSIS_LOG_TTL_DAYS", 365)),
         "description":    "Drug interaction analysis session log.",
         "hipaa_required": False,
@@ -95,7 +101,7 @@ RETENTION_POLICIES = [
     # Audit log — 6 years (HIPAA mandatory minimum)
     {
         "table_name":     "phi_audit_log",
-        "database_name":  "vabgenrx-audit-logs",
+        "database_name":  "vabgenrx-audit",
         "retention_days": int(os.getenv("AUDIT_LOG_TTL_DAYS", 2190)),
         "description":    (
             "PHI access audit log. "
@@ -106,23 +112,28 @@ RETENTION_POLICIES = [
 ]
 
 
-def _get_audit_connection():
+def _get_audit_connection(admin: bool = False):
     """
     Get or create a thread-local audit DB connection.
-    Each thread gets its own private connection.
+    Each thread gets its own private connection per role.
+
+    admin=False (default) -> audit_writer, used by log().
+    admin=True            -> audit_admin, used only by retention
+                              policy seeding/enforcement.
     """
-    conn = getattr(_thread_local, "connection", None)
+    attr = "admin_connection" if admin else "connection"
+    conn = getattr(_thread_local, attr, None)
     try:
         if conn:
             conn.cursor().execute("SELECT 1")
             return conn
     except Exception:
-        _thread_local.connection = None
+        setattr(_thread_local, attr, None)
 
-    _thread_local.connection = pyodbc.connect(
-        _audit_conn_str, timeout=10
-    )
-    return _thread_local.connection
+    dsn = _audit_admin_dsn if admin else _audit_dsn
+    new_conn = psycopg2.connect(dsn, connect_timeout=10)
+    setattr(_thread_local, attr, new_conn)
+    return new_conn
 
 
 def _hash_patient_id(patient_id: str) -> str:
@@ -172,7 +183,8 @@ class ResourceType:
 class AuditLogService:
     """
     HIPAA-compliant audit logging service.
-    Writes to dedicated vabgenrx-audit-logs database.
+    Writes to a dedicated Supabase project (audit schema), separate
+    from the main app/clinical/cache project.
     Never breaks the main request pipeline on failure.
     Retention policies are defined in RETENTION_POLICIES above
     and seeded into the DB on first startup.
@@ -187,51 +199,45 @@ class AuditLogService:
         try:
             conn = _get_audit_connection()
             conn.cursor().execute("SELECT 1")
-            print("✅ Audit Log DB connected "
-                  "(vabgenrx-audit-logs)")
+            print("✅ Audit Log DB connected (Supabase audit project)")
             return True
         except Exception as e:
             print(f"⚠️  Audit Log DB unavailable: {e}")
             print("   PHI audit logging disabled — "
-                  "check AZURE_SQL_AUDIT_* env vars")
+                  "check AUDIT_DATABASE_URL env var")
             return False
 
     def _seed_retention_policies(self):
         """
-        Seed data_retention_policy table from RETENTION_POLICIES.
-        Uses MERGE so re-running on startup is always safe —
+        Seed audit.data_retention_policy from RETENTION_POLICIES.
+        Uses ON CONFLICT so re-running on startup is always safe —
         existing rows are updated, new rows are inserted.
+
+        Requires the audit_admin role (audit_writer is INSERT/SELECT
+        only and cannot UPDATE existing rows) — see
+        supabase-audit/migrations/0001_audit.sql.
         """
         try:
-            conn = _get_audit_connection()
+            conn = _get_audit_connection(admin=True)
             cur  = conn.cursor()
             for policy in RETENTION_POLICIES:
                 cur.execute("""
-                    MERGE data_retention_policy AS t
-                    USING (SELECT ? AS table_name) AS s
-                    ON t.table_name = s.table_name
-                    WHEN MATCHED THEN UPDATE SET
-                        retention_days = ?,
-                        database_name  = ?,
-                        description    = ?,
-                        hipaa_required = ?
-                    WHEN NOT MATCHED THEN INSERT
-                        (table_name, database_name,
-                         retention_days, description,
-                         hipaa_required)
-                    VALUES (?, ?, ?, ?, ?);
-                """,
-                    policy["table_name"],
-                    policy["retention_days"],
-                    policy["database_name"],
-                    policy["description"],
-                    1 if policy["hipaa_required"] else 0,
+                    INSERT INTO audit.data_retention_policy
+                        (table_name, database_name, retention_days,
+                         description, hipaa_required)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (table_name) DO UPDATE SET
+                        retention_days = excluded.retention_days,
+                        database_name  = excluded.database_name,
+                        description    = excluded.description,
+                        hipaa_required = excluded.hipaa_required
+                """, (
                     policy["table_name"],
                     policy["database_name"],
                     policy["retention_days"],
                     policy["description"],
-                    1 if policy["hipaa_required"] else 0,
-                )
+                    policy["hipaa_required"],
+                ))
             conn.commit()
             print(f"   ✅ Retention policies seeded "
                   f"({len(RETENTION_POLICIES)} tables)")
@@ -285,18 +291,18 @@ class AuditLogService:
             conn = _get_audit_connection()
             cur  = conn.cursor()
             cur.execute("""
-                INSERT INTO phi_audit_log
+                INSERT INTO audit.phi_audit_log
                     (user_id, user_email, action, resource_type,
                      resource_id, ip_address, session_id,
                      endpoint, http_method, status_code,
                      success, detail)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
                 user_id, user_email, action, resource_type,
                 hashed_id, ip_address, session_id,
                 endpoint, http_method, status_code,
-                1 if success else 0, detail
-            )
+                bool(success), detail,
+            ))
             conn.commit()
             return True
         except Exception as e:
@@ -375,6 +381,9 @@ class AuditLogService:
         HIPAA requires minimum 6 years (2190 days) retention —
         this deletes anything BEYOND that window.
 
+        Requires the audit_admin role (audit_writer cannot DELETE) —
+        see supabase-audit/migrations/0001_audit.sql.
+
         Cache table cleanup is handled by cache_service.py.
         This method only manages the audit DB tables.
         """
@@ -382,14 +391,13 @@ class AuditLogService:
             return {}
         results = {}
         try:
-            conn = _get_audit_connection()
+            conn = _get_audit_connection(admin=True)
             cur  = conn.cursor()
 
             cur.execute("""
-                DELETE FROM phi_audit_log
-                WHERE DATEDIFF(day, event_time, GETUTCDATE())
-                      > 2190
-            """)
+                DELETE FROM audit.phi_audit_log
+                WHERE event_time < now() - make_interval(days => %s)
+            """, (2190,))
             results["phi_audit_log_deleted"] = cur.rowcount
 
             conn.commit()
@@ -412,7 +420,7 @@ class AuditLogService:
         if not self.available:
             return {
                 "available":   False,
-                "audit_db":    "vabgenrx-audit-logs",
+                "audit_db":    "vabgenrx-audit (Supabase)",
                 "status":      "unavailable"
             }
         try:
@@ -422,19 +430,19 @@ class AuditLogService:
             cur.execute("""
                 SELECT
                     COUNT(*)                          AS total_events,
-                    SUM(CASE WHEN success = 1
+                    SUM(CASE WHEN success = true
                         THEN 1 ELSE 0 END)            AS successful,
-                    SUM(CASE WHEN success = 0
+                    SUM(CASE WHEN success = false
                         THEN 1 ELSE 0 END)            AS failed,
                     MIN(event_time)                   AS oldest_record,
                     MAX(event_time)                   AS newest_record
-                FROM phi_audit_log
+                FROM audit.phi_audit_log
             """)
             row = cur.fetchone()
 
             cur.execute("""
                 SELECT action, COUNT(*) AS cnt
-                FROM phi_audit_log
+                FROM audit.phi_audit_log
                 GROUP BY action
                 ORDER BY cnt DESC
             """)
@@ -444,7 +452,7 @@ class AuditLogService:
 
             return {
                 "available":     True,
-                "audit_db":      "vabgenrx-audit-logs",
+                "audit_db":      "vabgenrx-audit (Supabase)",
                 "total_events":  row[0] or 0,
                 "successful":    row[1] or 0,
                 "failed":        row[2] or 0,

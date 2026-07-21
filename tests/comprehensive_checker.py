@@ -26,7 +26,7 @@ class MedGuardAI:
     2. Drug-Disease(medicine + patient condition)
     3. Drug-Food   (medicine + diet)
 
-    All results are cached in Azure SQL Database.
+    All results are cached in Supabase Postgres.
     Repeat queries are served from cache instantly.
     """
 
@@ -37,7 +37,7 @@ class MedGuardAI:
         self.cache    = AzureSQLCacheService()
 
         print("✅ MedGuard AI System Initialized")
-        print("   Evidence sources: PubMed, FDA, Azure OpenAI, Azure SQL Cache")
+        print("   Evidence sources: PubMed, FDA, OpenAI, Supabase Postgres Cache")
 
     # ── Drug-Drug ─────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ class MedGuardAI:
         # 1. Cache check
         cached = self.cache.get_drug_drug(drug1, drug2)
         if cached:
-            print(f"   ✅ Loaded from Azure SQL cache (skipping API calls)")
+            print(f"   ✅ Loaded from Supabase cache (skipping API calls)")
             self._display_drug_drug_result(drug1, drug2, cached, {
                 'pubmed': {'count': cached.get('pubmed_papers', 0), 'pmids': []},
                 'fda':    {'total_reports': cached.get('fda_reports', 0)}
@@ -74,7 +74,7 @@ class MedGuardAI:
         fda_label2 = self.fda.get_drug_contraindications(drug2)
         print(f" Retrieved")
 
-        print(f"   • Analyzing evidence with Azure OpenAI GPT-4o...", end="")
+        print(f"   • Analyzing evidence with OpenAI GPT-4o...", end="")
         evidence = {
             'pubmed':     pubmed_data,
             'fda':        fda_data,
@@ -101,7 +101,7 @@ class MedGuardAI:
         # 1. Cache check
         cached = self.cache.get_drug_disease(drug, disease)
         if cached:
-            print(f"   ✅ Loaded from Azure SQL cache (skipping API calls)")
+            print(f"   ✅ Loaded from Supabase cache (skipping API calls)")
             self._display_drug_disease_result(drug, disease, cached, {
                 'pubmed':    {'count': cached.get('pubmed_count', 0), 'pmids': []},
                 'fda_label': {'found': False}
@@ -119,7 +119,7 @@ class MedGuardAI:
         pubmed_data = self.pubmed.search_disease_contraindication(drug, disease)
         print(f" Found {pubmed_data['count']} papers")
 
-        print(f"   • Analyzing evidence with Azure OpenAI...", end="")
+        print(f"   • Analyzing evidence with OpenAI...", end="")
         evidence = {'pubmed': pubmed_data, 'fda_label': fda_label}
         analysis = self.analyzer.analyze_drug_disease_interaction(drug, disease, evidence)
         print(f" Complete")
@@ -149,7 +149,7 @@ class MedGuardAI:
             # 1. Cache check
             cached = self.cache.get_food(drug)
             if cached:
-                print(f"   ✅ Loaded from Azure SQL cache (skipping API calls)")
+                print(f"   ✅ Loaded from Supabase cache (skipping API calls)")
                 analysis   = cached
                 pubmed_count = cached.get('pubmed_count', 0)
             else:
@@ -445,7 +445,7 @@ class MedGuardAI:
         # Cache Stats
         stats = self.cache.get_stats()
         if stats.get('drug_drug_cached') is not None:
-            print(f"\n💾 AZURE SQL CACHE:")
+            print(f"\n💾 SUPABASE POSTGRES CACHE:")
             print(f"   • Drug-drug pairs cached:   {stats.get('drug_drug_cached', 0)}")
             print(f"   • Drug-disease pairs cached:{stats.get('drug_disease_cached', 0)}")
             print(f"   • Food interactions cached: {stats.get('food_cached', 0)}")
@@ -465,8 +465,8 @@ def main():
     print("   • PubMed (35M+ medical research papers)")
     print("   • FDA Official Drug Labels")
     print("   • FDA Adverse Event Database")
-    print("   • Azure OpenAI GPT-4o (Microsoft)")
-    print("   • Azure SQL Database (persistent cache)")
+    print("   • OpenAI GPT-4o")
+    print("   • Supabase Postgres (persistent cache)")
 
     system = MedGuardAI()
 

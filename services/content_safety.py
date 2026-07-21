@@ -2,25 +2,20 @@
 VabGenRx — Clinical Content Safety Service
 
 Scans OrchestratorAgent clinical summaries and priority actions
-through Azure AI Content Safety before they reach the prescriber.
+through OpenAI's moderation endpoint before they reach the prescriber.
 
 This is the final safety gate before AI-generated clinical text
 reaches a doctor. Protects against hallucinated harmful content
 in the clinical summary or priority action recommendations.
 
-Checks four categories:
-    Hate       — discriminatory clinical guidance
-    Violence   — descriptions of physical harm
-    Sexual     — inappropriate content
-    SelfHarm   — content encouraging self-harm
-
-Threshold:
-    SAFE_THRESHOLD = 4 (medium severity)
-    0–2 = safe    → pass through to prescriber
-    4+  = blocked → fallback summary used instead
+OpenAI's moderation endpoint returns a `flagged` boolean plus a
+per-category score (0.0-1.0) — there's no direct equivalent of Azure
+Content Safety's 0-7 severity scale, so a category is treated as
+unsafe once OpenAI itself flags it (`flagged=True` overall, or any
+individual category score crosses SAFE_THRESHOLD).
 
 Failure mode:
-    If Content Safety is misconfigured or unavailable,
+    If the moderation call is misconfigured or unavailable,
     all text passes through — the pipeline never blocks
     due to this service being down.
 """
@@ -35,12 +30,14 @@ load_dotenv()
 
 logger = logging.getLogger("vabgenrx")
 
-SAFE_THRESHOLD = 4
+# Per-category score threshold (0.0-1.0) — used as a secondary signal
+# alongside OpenAI's own `flagged` verdict.
+SAFE_THRESHOLD = 0.5
 
 
 class ClinicalContentSafety:
     """
-    Azure AI Content Safety wrapper for clinical text scanning.
+    OpenAI moderation-endpoint wrapper for clinical text scanning.
 
     Designed as a non-blocking safety gate — if the service is
     unavailable the system degrades gracefully and passes all text.
@@ -53,25 +50,19 @@ class ClinicalContentSafety:
 
     def _init(self):
         """
-        Initialise the Content Safety client.
-        Fails silently if endpoint is not configured.
+        Initialise the moderation client.
+        Fails silently if no API key is configured.
         """
-        endpoint = os.getenv("AZURE_CONTENT_SAFETY_ENDPOINT", "")
-        if not endpoint:
-            print("   ⚠️  Content Safety: endpoint not configured "
+        if not os.getenv("OPENAI_API_KEY"):
+            print("   ⚠️  Content Safety: OPENAI_API_KEY not configured "
                   "— running without safety scan")
             return
 
         try:
-            from azure.ai.contentsafety import ContentSafetyClient
-            from azure.identity          import DefaultAzureCredential
-
-            self.client  = ContentSafetyClient(
-                endpoint   = endpoint,
-                credential = DefaultAzureCredential()
-            )
+            from services.openai_client import get_openai_client
+            self.client  = get_openai_client()
             self.enabled = True
-            print("   ✅ Azure AI Content Safety connected")
+            print("   ✅ OpenAI moderation content safety connected")
         except Exception as e:
             print(f"   ⚠️  Content Safety init failed: {e} "
                   "— running without safety scan")
@@ -101,39 +92,35 @@ class ClinicalContentSafety:
             return True, {"reason": "empty_text"}
 
         try:
-            from azure.ai.contentsafety.models import AnalyzeTextOptions
+            # Moderation endpoint accepts much longer input than Azure
+            # Content Safety's 1000-char limit, but keep a bound anyway.
+            scan_text = text[:4000]
 
-            # Content Safety API limit is 1000 chars
-            scan_text = text[:1000]
+            response = self.client.moderations.create(input=scan_text)
+            result   = response.results[0]
 
-            result  = self.client.analyze_text(
-                AnalyzeTextOptions(text=scan_text)
+            details = dict(result.category_scores.model_dump())
+            is_safe = not result.flagged and all(
+                score < SAFE_THRESHOLD for score in details.values()
             )
 
-            details = {}
-            is_safe = True
-
-            for item in result.categories_analysis:
-                category = str(item.category)
-                severity = item.severity or 0
-                details[category] = severity
-
-                if severity >= SAFE_THRESHOLD:
-                    is_safe = False
-                    logger.error(
-                        "content_safety_block",
-                        extra={"custom_dimensions": {
-                            "event":      "content_safety_block",
-                            "category":   category,
-                            "severity":   severity,
-                            "session_id": session_id,
-                            "text":       scan_text[:100],
-                        }}
-                    )
+            if not is_safe:
+                flagged_categories = {
+                    k: v for k, v in result.categories.model_dump().items() if v
+                }
+                logger.error(
+                    "content_safety_block",
+                    extra={"custom_dimensions": {
+                        "event":      "content_safety_block",
+                        "categories": str(flagged_categories),
+                        "session_id": session_id,
+                        "text":       scan_text[:100],
+                    }}
+                )
 
             status = "passed" if is_safe else "BLOCKED"
             print(f"   {'✅' if is_safe else '🚫'} Content Safety: "
-                  f"clinical summary {status} — {details}")
+                  f"clinical summary {status}")
 
             return is_safe, details
 

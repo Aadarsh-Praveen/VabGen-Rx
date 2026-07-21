@@ -21,7 +21,7 @@ Design Principles
 
 Caching
 -------
-Counseling responses are cached using Azure SQL to reduce
+Counseling responses are cached using Supabase Postgres to reduce
 repeated LLM calls and improve response latency.
 
 This service forms part of the VabGenRx patient education
@@ -29,13 +29,12 @@ pipeline and integrates with the counseling agent in the
 multi-agent orchestration workflow.
 """
 
-import os
 import json
 import logging
-import pyodbc
 from typing import Dict, List, Optional
-from openai import AzureOpenAI
 from dotenv import load_dotenv
+
+from services.openai_client import get_openai_client, OPENAI_MODEL
 
 load_dotenv()
 
@@ -52,19 +51,7 @@ def _get_age_group(age: int) -> str:
 class DrugCounselingService:
 
     def __init__(self):
-        self.llm = AzureOpenAI(
-            api_key        = os.getenv("AZURE_OPENAI_KEY"),
-            api_version    = os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-        self.conn_str   = (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
-            f"SERVER={os.getenv('AZURE_SQL_SERVER')};"
-            f"DATABASE={os.getenv('AZURE_SQL_DATABASE')};"
-            f"UID={os.getenv('AZURE_SQL_USERNAME')};"
-            f"PWD={os.getenv('AZURE_SQL_PASSWORD')}"
-        )
+        self.llm = get_openai_client()
 
     # ── Cache ──────────────────────────────────────────────────────────────────
 
@@ -87,49 +74,46 @@ class DrugCounselingService:
 
     def _get_cached(self, cache_key: str) -> Optional[Dict]:
         try:
-            conn = pyodbc.connect(self.conn_str, timeout=5)
+            from services.db_connection import get_connection
+            conn = get_connection()
             cur  = conn.cursor()
             cur.execute("""
-                SELECT full_result FROM drug_counseling_cache
-                WHERE cache_key = ?
-                AND DATEDIFF(day, cached_at, GETDATE()) < 30
-            """, cache_key)
+                SELECT full_result::text AS full_result
+                FROM cache.drug_counseling_cache
+                WHERE cache_key = %s
+                AND cached_at > now() - make_interval(days => 30)
+            """, (cache_key,))
             row = cur.fetchone()
             if row:
                 cur.execute("""
-                    UPDATE drug_counseling_cache
+                    UPDATE cache.drug_counseling_cache
                     SET access_count = access_count + 1
-                    WHERE cache_key = ?
-                """, cache_key)
+                    WHERE cache_key = %s
+                """, (cache_key,))
                 conn.commit()
-                conn.close()
                 print(f"   💾 Drug counseling cache HIT: {cache_key}")
                 data = json.loads(row[0])
                 data['from_cache'] = True
                 return data
-            conn.close()
             return None
-        except:
+        except Exception:
             return None
 
     def _save_cache(self, cache_key: str, drug: str,
                     sex: str, age_group: str, result: Dict):
         try:
-            conn = pyodbc.connect(self.conn_str, timeout=5)
+            from services.db_connection import get_connection
+            conn = get_connection()
             cur  = conn.cursor()
             cur.execute("""
-                MERGE drug_counseling_cache AS t
-                USING (SELECT ? AS cache_key) AS s
-                ON t.cache_key = s.cache_key
-                WHEN MATCHED THEN UPDATE SET
-                    full_result = ?, cached_at = GETDATE()
-                WHEN NOT MATCHED THEN INSERT
+                INSERT INTO cache.drug_counseling_cache
                     (cache_key, drug, sex, age_group, full_result)
-                VALUES (?, ?, ?, ?, ?);
-            """, cache_key, json.dumps(result),
-                cache_key, drug, sex, age_group, json.dumps(result))
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (cache_key) DO UPDATE SET
+                    full_result = excluded.full_result,
+                    cached_at   = now()
+            """, (cache_key, drug, sex, age_group, json.dumps(result)))
             conn.commit()
-            conn.close()
         except Exception as e:
             print(f"   ⚠️  Cache save error: {e}")
 
@@ -328,7 +312,7 @@ Return JSON:
     def _call_llm(self, prompt: str, drug: str = "") -> Dict:
         try:
             response = self.llm.chat.completions.create(
-                model           = self.deployment,
+                model           = OPENAI_MODEL,
                 messages        = [
                     {
                         "role":    "system",

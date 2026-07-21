@@ -5,7 +5,6 @@
 # VabGenRx
 ## AI-Powered Clinical Drug Safety & Decision Support
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Azure-0078D4?logo=microsoftazure)](https://yellow-sea-05177870f.2.azurestaticapps.net/login)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -24,7 +23,7 @@ VabGenRx was built for that moment.
 
 It is a production-ready, evidence-based, AI-powered clinical medication safety platform that works in the background of a clinician's workflow doing in seconds what would otherwise take hours of cross-referencing across databases, literature, lab reports and pharmacy systems. When a prescription is written, VabGenRx gets to work immediately.
 
-It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a **six-phase multi-agent AI pipeline** built on Microsoft Agent Framework, hosted on Microsoft Foundry returning a complete, evidence-grounded clinical safety report in under 90 seconds.
+It checks for drug interactions, food conflicts, disease contraindications and dosing risks based on the patient's actual lab values. It verifies real-time pharmacy stock. It generates patient counselling in the patient's own language. And it does all of this through a **six-phase multi-agent AI pipeline** built on OpenAI, returning a complete, evidence-grounded clinical safety report in under 90 seconds.
 
 Not a list of warnings. A clinical narrative that tells the prescriber exactly what the risks are, how serious they are and what to do next grounded strictly in PubMed literature and FDA databases. Never in guesswork.
 
@@ -38,7 +37,7 @@ Not a list of warnings. A clinical narrative that tells the prescriber exactly w
 
 **What does it do?** It runs a complete six-phase AI pipeline — evidence gathering from PubMed and FDA, drug-drug interaction analysis, drug-disease contraindication checking, precision dosing based on patient labs, patient counselling in 100+ languages, and a final cross-domain orchestration layer that detects compounding risks no single check would catch. All grounded strictly in published evidence. Never in hallucination.
 
-**How is it built?** Five specialist Azure AI Agents (Safety, Disease, Dosing, Counselling, Orchestrator) run on Microsoft Foundry using Microsoft Agent Framework. Evidence is sourced live from PubMed NCBI and FDA OpenFDA APIs. Results are cached in Azure SQL. All prescriber-facing output is scanned through Azure AI Content Safety. The platform is deployed on Azure App Service and Azure Static Web Apps, with HIPAA-compliant audit logging and 9 Application Insights monitoring alerts. The A2A protocol endpoint at `/.well-known/agent.json` allows external agents to discover and invoke VabGenRx skills programmatically via Azure MCP.
+**How is it built?** Five specialist AI agents (Safety, Disease, Dosing, Counselling, Orchestrator) run on direct OpenAI chat completions. Evidence is sourced live from PubMed NCBI and FDA OpenFDA APIs. Results are cached in Supabase Postgres. All prescriber-facing output is scanned through OpenAI's moderation endpoint. The platform is deployed on Render (backend services) and Vercel (frontend), with HIPAA-compliant audit logging in a physically separate Supabase project. The A2A protocol endpoint at `/.well-known/agent.json` allows external agents to discover and invoke VabGenRx skills programmatically.
 
 ---
 
@@ -90,7 +89,7 @@ Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR
 
   A prescription without understanding is an incomplete prescription. Inadequate counselling accounts for 55% of medication non-adherence and when a patient cannot understand their discharge instructions because they are in a language they do not speak, the clinical encounter has already begun to fail.
 
-  VabGenRx generates personalised disease and drug counselling for every patient explaining their condition in plain terms, detailing how to take their medication, what foods or activities to avoid and what warning signs to watch for. It then translates that counselling into 100+ languages, powered by Azure OpenAI (GPT-4o). Not a generic machine translation a clinically accurate, patient-safe communication that preserves drug names, dose values and lab abbreviations exactly as written. Because a patient who genuinely understands their treatment is a patient who follows it, recovers and does not come back through the emergency door.
+  VabGenRx generates personalised disease and drug counselling for every patient explaining their condition in plain terms, detailing how to take their medication, what foods or activities to avoid and what warning signs to watch for. It then translates that counselling into 100+ languages, powered by OpenAI (GPT-4o). Not a generic machine translation a clinically accurate, patient-safe communication that preserves drug names, dose values and lab abbreviations exactly as written. Because a patient who genuinely understands their treatment is a patient who follows it, recovers and does not come back through the emergency door.
 
 ---
 
@@ -98,9 +97,9 @@ Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR
 
 | Technology | How It's Used |
 |---|---|
-| **Microsoft Agent Framework** | Five specialist AI agents (Safety, Disease, Dosing, Counselling, Orchestrator) built on `azure-ai-agents`, running with `temperature=0` for deterministic clinical outputs |
-| **Microsoft Foundry** | Agent hosting, AI-Assisted evaluation (100% pass rate on 15/15 test cases), OpenTelemetry tracing, Application Insights monitoring |
-| **Azure MCP** | A2A (Agent-to-Agent) protocol endpoint at `/.well-known/agent.json` — external agents can discover and invoke VabGenRx skills programmatically |
+| **OpenAI** | Five specialist AI agents (Safety, Disease, Dosing, Counselling, Orchestrator) built on direct chat-completions calls, running with `temperature=0` for deterministic clinical outputs |
+| **Supabase** | Postgres database (interaction cache, patient records, doctor accounts) and Storage (profile images, voice notes); a separate Supabase project isolates the HIPAA audit log |
+| **A2A Protocol** | Agent-to-Agent discovery endpoint at `/.well-known/agent.json` — external agents can discover and invoke VabGenRx skills programmatically |
 | **GitHub Copilot** | Used in VS Code for README authoring, test code generation, and code suggestions throughout development |
 
 ---
@@ -111,28 +110,25 @@ Here is a real clinical scenario VabGenRx was designed for: a patient whose eGFR
 
 ```mermaid
 flowchart TD
-    A[Doctor / User] --> B[React Frontend\nVite + Redux]
-    B --> C[Node.js API Server\nJWT Auth + RBAC]
-    C --> D[Azure Blob Storage\nProfile Images]
-    C --> E[Python FastAPI\nAgent Backend]
-    E --> F[VabGenRx Orchestrator Agent\nMicrosoft Foundry]
-    E --> G[Audit Log DB\nHIPAA Retention]
-    E --> H[Azure OpenAI\nGPT-4o]
-    E --> I[Azure App Service]
+    A[Doctor / User] --> B[React Frontend\nVite + Redux, on Vercel]
+    B --> C[Node.js API Server\nJWT Auth + RBAC, on Render]
+    C --> D[Supabase Storage\nProfile Images + Voice Notes]
+    C --> E[Python FastAPI\nAgent Backend, on Render]
+    E --> F[VabGenRx Orchestrator Agent]
+    E --> G[Audit Log DB\nSeparate Supabase Project]
+    E --> H[OpenAI\nGPT-4o]
     F --> J[Safety Agent\nDrug-Drug / Food]
     F --> K[Disease Agent\nDrug-Disease]
     F --> L[Dosing Agent\nDose Recommendation]
     F --> M[Counselling Agent]
-    F --> N[Azure Content Safety]
+    F --> N[OpenAI Moderation]
     J --> O[Evidence Services]
     K --> O
     L --> O
     O --> P[PubMed API\nNCBI]
     O --> Q[FDA Label API\nopenFDA]
-    O --> R[Azure SQL Cache]
-    I --> S[Azure Application Insights]
-    E --> T[Azure Key Vault\nSecrets]
-    B --> U[Azure Static Web App]
+    O --> R[Supabase Postgres Cache]
+    E --> T[Render Environment Variables\nSecrets]
 ```
 
 ### 2. Backend Agent Architecture
@@ -145,14 +141,14 @@ flowchart TD
     B --> E[SignalExtractor\nCompounding Risk Detection]
     B --> F[CounsellingAgent]
     B --> G[OrchestratorAgent\nFinal Clinical Summary]
-    C --> H[EvidenceAnalyzer\nGPT-4o]
+    C --> H[EvidenceAnalyzer\nOpenAI GPT-4o]
     D --> H
     E --> H
     F --> I[TranslationService\n100+ Languages]
     H --> J[PubMedService\nNCBI API]
     H --> K[FDAService\nopenFDA]
-    H --> L[CacheService\nAzure SQL]
-    L --> M[Azure SQL Database]
+    H --> L[CacheService\nSupabase Postgres]
+    L --> M[Supabase Postgres — cache schema]
 ```
 
 ### 3. Evidence Retrieval Pipeline
@@ -164,27 +160,25 @@ flowchart LR
     B -->|Cache Miss| D[Fetch Evidence]
     D --> E[PubMed Search\nNCBI API]
     D --> F[FDA Label Search\nopenFDA]
-    E --> G[Evidence Analyzer\nGPT-4o]
+    E --> G[Evidence Analyzer\nOpenAI GPT-4o]
     F --> G
-    G --> H[Agent Synthesis\nMicrosoft Agent Framework]
-    H --> I[Cache Write\nAzure SQL]
+    G --> H[Agent Synthesis]
+    H --> I[Cache Write\nSupabase Postgres]
     H --> J[Frontend Result]
-    I --> K[SQL Cache]
+    I --> K[Postgres Cache Schema]
 ```
 
-### 4. Azure Deployment Architecture
+### 4. Deployment Architecture
 
 ```mermaid
 flowchart TD
-    A[Users] --> B[Azure Static Web App\nReact Frontend]
-    B --> C[Azure App Service\nNode.js Backend]
-    C --> D[Azure Logic App\nWarm Ping]
-    C --> E[Azure App Service\nFastAPI Agents]
-    C --> F[Azure Blob Storage\nProfile Images]
-    E --> G[Azure OpenAI\nGPT-4o]
-    E --> H[Azure SQL Database\nCache + Audit]
-    E --> I[Azure Key Vault\nSecrets]
-    E --> J[Azure Application Insights\n9 Monitoring Alerts]
+    A[Users] --> B[Vercel\nReact Frontend]
+    B --> C[Render Web Service\nNode.js Backend]
+    C --> E[Render Web Service\nFastAPI Agents]
+    C --> F[Supabase Storage\nProfile Images + Voice Notes]
+    E --> G[OpenAI\nGPT-4o]
+    E --> H[Supabase Postgres\nMain Project — app/clinical/cache schemas]
+    E --> I2[Supabase Postgres\nSeparate Project — audit schema]
     E --> K[PubMed API\nNCBI]
     E --> L[FDA API\nopenFDA]
 ```
@@ -275,20 +269,20 @@ flowchart TD
 
 ### Phase 1 — Parallel Evidence Gathering
 - `SafetyEvidenceService` and `DiseaseEvidenceService` run concurrently
-- Azure SQL cache is checked first (parallel) before any external API call
+- Supabase Postgres cache is checked first (parallel) before any external API call
 - PubMed and FDA OpenFDA are queried only for cache misses
 - Semaphores cap concurrent PubMed requests at **20** and FDA at **3**
 - Combination drugs (e.g. `rosiglitazone/Metformin`) are split into components for accurate FAERS lookup
 
 ### Phase 2 — Round 1 Specialist Synthesis (Parallel)
-Three Azure AI Agents run simultaneously on Microsoft Foundry:
+Three specialist agents run simultaneously against OpenAI:
 
 -  **VabGenRxSafetyAgent** — Synthesizes drug-drug interactions in batches of ≤5 pairs
   - 3-layer resilience: cache bypass, retry on truncation, fill-from-cache/placeholder
 -  **VabGenRxDiseaseAgent** — Synthesizes drug-disease contraindications in batches of ≤8
   - Injects full core FDA sections (up to 600 chars each) directly into agent prompts
 -  **VabGenRxDosingAgent** — Evaluates patient labs (eGFR, potassium, TSH, bilirubin) against FDA thresholds
-  - Runs via `DosingService` directly in parallel with no Azure Agent overhead
+  - Runs via `DosingService` directly in parallel with no agent overhead
 
 > After synthesis, evidence patch methods (`patch_drug_drug_evidence`, `patch_drug_disease_evidence`) stamp correct evidence counts from raw evidence, bypassing any agent misreporting.
 
@@ -308,14 +302,14 @@ Three Azure AI Agents run simultaneously on Microsoft Foundry:
 - Drug and condition counseling generated in parallel
 - Compounding context and confirmed interactions injected as a summary string
 - Strictly evidence-based and never assumes unconfirmed patient habits
-- Supports **100+ languages** via `TranslationService` (Azure OpenAI GPT-4o)
+- Supports **100+ languages** via `TranslationService` (OpenAI GPT-4o)
 - Results cached per `drug|sex|age_group|habits` composite key (30-day TTL)
 
 ### Phase 6 — Orchestrator Synthesis
 - `VabGenRxOrchestratorAgent` performs cross-domain reasoning across all specialist outputs
 - Produces compounding risk patterns, prioritized clinical actions and a narrative clinical summary
-- All output text scanned through **Azure AI Content Safety** (single combined API call)
-- `trace_session_id` (UUID, never PHI) attached for OpenTelemetry correlation in Microsoft Foundry
+- All output text scanned through **OpenAI's moderation endpoint** (single combined API call)
+- `trace_session_id` (UUID, never PHI) attached for log correlation
 - Falls back to basic count-based summary if agent fails so the pipeline always returns a valid response
 
 ---
@@ -330,7 +324,7 @@ Three Azure AI Agents run simultaneously on Microsoft Foundry:
 | `VabGenRxCounsellingAgent` | Patient drug + condition counseling | Phase 5 |
 | `VabGenRxOrchestratorAgent` | Cross-domain clinical intelligence synthesis | Phase 6 |
 
-All agents inherit from `_BaseAgent` which enforces `temperature=0, top_p=1` for deterministic clinical outputs, a shared concurrency semaphore on the `AgentsClient` instance, robust JSON parsing, and guaranteed Azure Agent cleanup in a `finally` block.
+All agents inherit from `_BaseAgent` which enforces `temperature=0, top_p=1` for deterministic clinical outputs, a single stateless chat-completion call per invocation, and robust JSON parsing.
 
 ---
 
@@ -368,7 +362,7 @@ Task lifecycle: `submitted → working → completed | failed`
 
 ---
 
-## Evaluation Results (Microsoft Foundry)
+## Evaluation Results
 
 Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering severe contraindications, moderate cautions, and safe combinations:
 
@@ -384,46 +378,30 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 ## HIPAA Compliance
 
 - All patient IDs (OP_No / IP_No) are **SHA-256 hashed** before storage — raw identifiers never appear in any log
-- Audit logs written to a **physically separate Azure SQL server** from the cache database
+- Audit logs written to a **physically separate Supabase project** from the main app/clinical/cache project — a leaked main-project credential or service-role key has no path to the audit project
+- The audit project uses a restricted `audit_writer` role (INSERT/SELECT only) for day-to-day logging and a separate `audit_admin` role (adds UPDATE/DELETE) only for retention-policy seeding and the 6-year purge
 - PHI audit log retention: **6 years (2,190 days)** as required by HIPAA
 - `enforce_retention_policy()` runs on FastAPI startup
-- HIPAA audit failure triggers Alert 6 at **threshold 0** — any single missed entry fires immediately
 
 ---
 
 ## Monitoring & Observability
 
-9 Application Insights alerts and OpenTelemetry tracing via Microsoft Foundry:
-
-| # | Alert | Threshold | Severity |
-|---|---|---|---|
-| 1 | High Failure Rate | > 5 errors / 5 min | 🔴 Critical |
-| 6 | HIPAA Audit Failure | > 0 | 🔴 Critical |
-| 4 | Agent Timeout | > 2 / 10 min | 🟠 Error |
-| 8 | LLM Failure | > 3 / 5 min | 🟠 Error |
-| 9 | Orchestrator Fallback | > 0 | 🟠 Error |
-| 2 | Slow Response | > 6,000ms | 🟡 Warning |
-| 3 | FDA API Failure | > 3 / 5 min | 🟡 Warning |
-| 5 | A2A Task Failed | > 1 / 5 min | 🟡 Warning |
-| 7 | PubMed Failure | > 5 / 10 min | 🟡 Warning |
+Structured logging via Python's `logging` module (`vabgenrx` logger) covers LLM failures, orchestrator fallbacks, and content-safety blocks. The previous Azure Application Insights / OpenTelemetry tracing integration was removed as part of the Azure migration; wiring up a replacement (e.g. Sentry, Logtail, or Render's built-in logs) is a possible future enhancement, not currently implemented.
 
 ---
 
-## Azure Services
+## Stack
 
-| Service | Purpose |
+| Component | Purpose |
 |---|---|
-| Azure App Service | FastAPI backend + Node.js auth server hosting |
-| Azure Static Web Apps | React frontend hosting |
-| Azure AI Foundry / Agent Service | 5 specialist agents, evaluation, tracing |
-| Azure OpenAI (GPT-4o) | Agent synthesis, signal extraction, dosing, counseling, translation |
-| Azure SQL Database (×2) | Interaction cache DB + HIPAA audit DB (separate servers) |
-| Azure Blob Storage | Doctor profile pictures |
-| Azure Key Vault | All secrets and credentials |
-| Azure AI Content Safety | Final safety scan on all prescriber-facing text |
-| Azure Monitor / Application Insights | 9-alert monitoring suite, OpenTelemetry tracing |
-| Azure Logic App | Keep-warm ping to prevent cold starts |
-| Azure Identity (DefaultAzureCredential) | Passwordless auth across all Azure services |
+| Render (Web Service) | FastAPI agent backend + Node.js auth server hosting |
+| Vercel | React frontend hosting |
+| OpenAI (GPT-4o) | Agent synthesis, signal extraction, dosing, counseling, translation, transcription |
+| OpenAI Moderation | Final safety scan on all prescriber-facing text |
+| Supabase Postgres (main project) | `app` (doctor accounts), `clinical` (patient data), `cache` (interaction cache) schemas |
+| Supabase Postgres (separate project) | HIPAA audit log, physically isolated from the main project |
+| Supabase Storage | Doctor profile pictures + voice-note recordings |
 
 ---
 
@@ -436,20 +414,19 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 
 **Backend**
 - Python 3.11 + FastAPI
-- Azure AI Agents SDK (`azure-ai-agents`)
-- Azure OpenAI (GPT-4o)
-- pyodbc (Azure SQL)
+- OpenAI SDK (direct API)
+- psycopg2 (Supabase Postgres)
 
 **Auth Server**
 - Node.js
 - JWT + bcrypt
+- `pg` (Supabase Postgres) + `@supabase/supabase-js` (Storage)
 - Email service (recovery + notifications)
 
 **AI & Data**
-- Microsoft Foundry (agent hosting + evaluation)
+- OpenAI (chat completions, Whisper, moderation)
 - PubMed NCBI E-utilities API
 - FDA OpenFDA API
-- Azure AI Content Safety
 
 ---
 
@@ -459,15 +436,15 @@ Evaluated on `drug_disease_eval.jsonl` — 15 drug-disease test cases covering s
 VabGenRx/
 │
 ├── api/
-│   ├── app.py                        # FastAPI entry point
-│   └── keyvault.py                   # Azure Key Vault integration
+│   └── app.py                        # FastAPI entry point
 │
-├── database/
-│   ├── drug_database.py              # SQL DDL — cache tables
-│   └── counselling_database.py       # SQL DDL — counseling cache
+├── supabase/
+│   └── migrations/                   # SQL DDL — main project (app/clinical/cache schemas)
+├── supabase-audit/
+│   └── migrations/                   # SQL DDL — separate audit project
 │
 ├── evaluation/
-│   └── drug_disease_eval.jsonl       # Microsoft Foundry evaluation dataset
+│   └── drug_disease_eval.jsonl       # Evaluation dataset
 │
 ├── logs/
 │   └── audit_service.py              # HIPAA PHI audit logging
@@ -484,22 +461,25 @@ VabGenRx/
 │   │   └── condition_service.py      # Condition counseling generation
 │   ├── translation/
 │   │   └── translation_service.py    # 100+ language translation
+│   ├── transcription/
+│   │   └── transcription_service.py  # Whisper transcription + SOAP notes
 │   ├── a2a/
 │   │   ├── agent_card.py             # A2A discovery manifest
 │   │   ├── models.py                 # Task state definitions
 │   │   ├── skill_router.py           # Skill detection + dispatch
 │   │   └── task_store.py             # In-memory task store
 │   ├── vabgenrx_agents/
-│   │   ├── base_agent.py             # Shared Azure Agent infrastructure
+│   │   ├── base_agent.py             # Shared stateless chat-completion infrastructure
 │   │   ├── safety_agent.py           # Drug-drug + food synthesis
 │   │   ├── disease_agent.py          # Drug-disease contraindication
 │   │   ├── dosing_agent.py           # FDA-based dosing agent
 │   │   ├── counselling_agent.py      # Patient counseling agent
-│   │   ├── orchestrator_agent.py     # Cross-domain synthesis + Content Safety
+│   │   ├── orchestrator_agent.py     # Cross-domain synthesis + moderation scan
 │   │   └── orchestrator.py           # 6-phase pipeline coordinator
-│   ├── cache_service.py              # Azure SQL caching layer
-│   ├── content_safety.py             # Azure AI Content Safety scan
-│   ├── db_connection.py              # Thread-local SQL connection manager
+│   ├── openai_client.py              # Shared OpenAI client factory
+│   ├── cache_service.py              # Supabase Postgres caching layer
+│   ├── content_safety.py             # OpenAI moderation scan
+│   ├── db_connection.py              # Thread-local Postgres connection manager
 │   ├── evidence_analyzer.py          # GPT-4o evidence synthesis
 │   ├── fda_service.py                # FDA OpenFDA API
 │   ├── fda_semaphore.py              # FDA concurrency control
@@ -514,9 +494,8 @@ VabGenRx/
 │   └── test_translation.py
 │
 ├── server/                           # Node.js auth server
-│   ├── index.js                      # JWT, bcrypt, RBAC, email routing
-│   ├── db.js                         # Database connection
-│   ├── secrets.js                    # Secrets management
+│   ├── index.js                      # JWT, bcrypt, RBAC, Supabase Storage, email routing
+│   ├── db.js                         # Postgres connection (mssql-compatible facade)
 │   └── scripts/
 │       └── migratePasswords.js
 │
@@ -528,9 +507,10 @@ VabGenRx/
 │   │   ├── services/                 # API calls
 │   │   ├── store/                    # Redux state management
 │   │   └── hooks/                    # Custom React hooks
-│   ├── staticwebapp.config.json
+│   ├── vercel.json
 │   └── vite.config.js
 │
+├── render.yaml
 ├── requirements.txt
 ├── vabgen_logo.png
 └── README.md
@@ -543,9 +523,29 @@ VabGenRx/
 ### Prerequisites
 
 - Python 3.11+ and Node.js 18+
-- Azure CLI authenticated (`az login`)
-- ODBC Driver 18 for SQL Server
-- Access to an Azure AI Foundry project with GPT-4o deployed
+- A Supabase account — two projects: one main project (app/clinical/cache schemas) and one separate project for the HIPAA audit schema
+- An OpenAI API key
+
+### Database Setup
+
+Apply the SQL migrations to each Supabase project (via the SQL Editor or `psql`):
+
+```bash
+# Main project
+psql "$SUPABASE_DB_URL" -f supabase/migrations/0001_schemas_and_roles.sql
+psql "$SUPABASE_DB_URL" -f supabase/migrations/0002_app_credentials.sql
+psql "$SUPABASE_DB_URL" -f supabase/migrations/0003_clinical_patients.sql
+psql "$SUPABASE_DB_URL" -f supabase/migrations/0004_cache.sql
+psql "$SUPABASE_DB_URL" -v vabgenrx_app_password='<pick-a-password>' -f supabase/migrations/0005_grants.sql
+
+# Separate audit project
+psql "$AUDIT_SUPABASE_DB_URL" \
+  -v audit_writer_password='<pick-a-password>' \
+  -v audit_admin_password='<pick-a-password>' \
+  -f supabase-audit/migrations/0001_audit.sql
+```
+
+Create two Supabase Storage buckets in the main project: `profile-images` (public) and `voice-notes` (private).
 
 ### Backend Setup
 
@@ -554,9 +554,7 @@ git clone https://github.com/Aadarsh-Praveen/VabGen-Rx.git
 cd VabGen-Rx
 pip install -r requirements.txt
 
-# Initialize databases
-python database/drug_database.py
-python database/counselling_database.py
+# Set OPENAI_API_KEY, DATABASE_URL, AUDIT_DATABASE_URL, AUDIT_ADMIN_DATABASE_URL in .env
 
 # Run locally
 uvicorn api.app:app --reload --port 8000
@@ -575,17 +573,18 @@ npm run dev
 ```bash
 cd VabGen-Rx/server
 npm install
+# Set DATABASE_URL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY in .env
 node index.js
 ```
 
-### Deploy to Azure
+### Deploy
 
 ```bash
-# Backend
-az webapp up --name vabgenrx-backend --runtime PYTHON:3.11 --sku B2
+# Backend (both Python and Node services) — deploy via the Render dashboard
+# using the included render.yaml Blueprint, or connect the repo directly.
 
-# Frontend
-az staticwebapp create --name vabgenrx-frontend
+# Frontend — connect the repo to a Vercel project (root directory:
+# my-react-app) for automatic build/deploy on push.
 ```
 
 ---
@@ -616,7 +615,7 @@ Built for the **AI Dev Days Hackathon 2025** by:
 | **Bharathi Kishna Vinayaga Sundar** | vsbk01@gmail.com | Frontend Development |
 
 - **GitHub:** [github.com/Aadarsh-Praveen/VabGen-Rx](https://github.com/Aadarsh-Praveen/VabGen-Rx)
-- **Live Demo:** [VabGenRx Clinical Decision Support Platform](https://yellow-sea-05177870f.2.azurestaticapps.net/login)
+- **Live Demo:** TBD — redeploying on Vercel + Render after the Supabase migration
 - **Contact:** vabgenrx@team.com
 
 ---

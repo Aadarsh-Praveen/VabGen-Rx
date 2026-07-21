@@ -37,9 +37,9 @@ Phase 4: Optional Round 2 re-evaluation if compounding signals exist
 
 Design Highlights
 -----------------
-• Batch synthesis prevents Azure token limits
+• Batch synthesis prevents LLM token limits
 • Parallel processing improves throughput
-• Global concurrency control prevents Azure agent quota failures
+• Batches keep requests within OpenAI rate limits
 • Deterministic outputs ensured through temperature=0
 
 Output
@@ -57,7 +57,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple
 
-from azure.ai.agents import AgentsClient
+from openai import OpenAI
 
 from .base_agent import _BaseAgent
 
@@ -95,7 +95,7 @@ class VabGenRxSafetyAgent(_BaseAgent):
 
     def __init__(
         self,
-        client:   AgentsClient,
+        client:   OpenAI,
         model:    str,
         endpoint: str
     ):
@@ -111,7 +111,7 @@ class VabGenRxSafetyAgent(_BaseAgent):
         """
         Round 1 synthesis of all drug-drug and drug-food pairs.
         DDI pairs split into batches of ≤5, processed in parallel.
-        Fully-cached batches bypass the Azure Agent entirely.
+        Fully-cached batches bypass the LLM call entirely.
         Missing pairs after synthesis are filled from cache or flagged.
         """
         n_pairs  = len(evidence.get("drug_drug", {}))

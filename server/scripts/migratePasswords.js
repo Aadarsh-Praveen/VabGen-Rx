@@ -10,7 +10,7 @@ const SALT_ROUNDS = 12;
     console.log('🔐 Starting password migration...');
     const pool = await poolPromise;
 
-    const result = await pool.request().query('SELECT id, email, password FROM users');
+    const result = await pool.request().query('SELECT id, email, password FROM app.users');
     const users  = result.recordset;
     console.log(`Found ${users.length} user(s) to migrate.`);
 
@@ -25,7 +25,7 @@ const SALT_ROUNDS = 12;
       await pool.request()
         .input('id',       sql.Int,     user.id)
         .input('password', sql.VarChar, hashed)
-        .query('UPDATE users SET password = @password WHERE id = @id');
+        .query('UPDATE app.users SET password = @password WHERE id = @id');
 
       console.log(`✅ Hashed password for ${user.email}`);
     }

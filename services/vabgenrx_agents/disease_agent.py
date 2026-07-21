@@ -22,7 +22,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List
 
-from azure.ai.agents import AgentsClient
+from openai import OpenAI
 
 from .base_agent import _BaseAgent
 
@@ -53,9 +53,9 @@ _CORE_SECTIONS = [
     "nursing_mothers",
 ]
 
-# Reduced from 15 to 8 — prevents Azure Agent output token truncation.
+# Reduced from 15 to 8 — prevents LLM output token truncation.
 # Full FDA label content per pair is ~5k chars. 8 pairs × 5k = ~40k
-# output chars, safely under the Azure Agent response limit.
+# output chars, safely under the model's response limit.
 _BATCH_SIZE = 8
 
 
@@ -63,7 +63,7 @@ class VabGenRxDiseaseAgent(_BaseAgent):
 
     def __init__(
         self,
-        client:   AgentsClient,
+        client:   OpenAI,
         model:    str,
         endpoint: str
     ):
@@ -80,7 +80,7 @@ class VabGenRxDiseaseAgent(_BaseAgent):
         """
         Round 1 synthesis of all drug-disease pairs.
         Splits evidence into batches of ≤8 and processes in parallel.
-        Fully-cached batches bypass the Azure Agent entirely.
+        Fully-cached batches bypass the LLM call entirely.
         Missing pairs after synthesis are filled from cache or flagged.
         """
         n_pairs  = len(evidence)

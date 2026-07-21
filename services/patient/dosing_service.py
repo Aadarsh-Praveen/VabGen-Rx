@@ -29,12 +29,12 @@ This service powers the VabGenRx Dosing Agent responsible for
 clinical dose optimization in the multi-agent safety pipeline.
 """
 
-import os
 import json
 import logging
 from typing import Dict, List
-from openai import AzureOpenAI
 from dotenv import load_dotenv
+
+from services.openai_client import get_openai_client, OPENAI_MODEL
 
 load_dotenv()
 
@@ -51,12 +51,7 @@ def _get_age_group(age: int) -> str:
 class DosingService:
 
     def __init__(self):
-        self.llm = AzureOpenAI(
-            api_key        = os.getenv("AZURE_OPENAI_KEY"),
-            api_version    = os.getenv("AZURE_OPENAI_API_VERSION"),
-            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        )
-        self.deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        self.llm = get_openai_client()
 
     # ── Patient Context Builder ───────────────────────────────────────────────
 
@@ -338,7 +333,7 @@ Return JSON:
     def _call_llm(self, prompt: str, drug: str = "") -> Dict:
         try:
             response = self.llm.chat.completions.create(
-                model    = self.deployment,
+                model    = OPENAI_MODEL,
                 messages = [
                     {
                         "role":    "system",
